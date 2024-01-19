@@ -222,7 +222,7 @@ def run_sample(opt: Namespace):
     else:
         process_img_nii(**kwargs)
 
-    logger.print(f"mriseg sample took: {perf_counter() - start_time} seconds")
+    logger.print(f"Sample took: {perf_counter() - start_time} seconds")
     return 1
 
 
@@ -276,7 +276,7 @@ def run_dataset(opt: Namespace):
         start_time_short = format_time_short(start_time)
         cprofile_out = input.joinpath("logs")
         cprofile_out.mkdir(parents=True, exist_ok=True)
-        cprofile_out = cprofile_out.joinpath(f"mriseg_dataset_{start_time_short}_cprofiler_log.log")
+        cprofile_out = cprofile_out.joinpath(f"spineps_dataset_{start_time_short}_cprofiler_log.log")
         with cProfile.Profile() as pr:
             process_dataset(**kwargs)
         pr.dump_stats(cprofile_out)
