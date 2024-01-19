@@ -5,7 +5,7 @@
 
 This is a segmentation pipeline to automatically, and robustly, segment the whole spine in T2w sagittal images.
 
-![workflow_figure](https://github.com/Hendrik-code/spineps/examples/figures/pipeline_processflow.png?raw=true)
+![workflow_figure](https://github.com/Hendrik-code/spineps/tree/main/spineps/example/figures/pipeline_processflow.png?raw=true)
 
 ## Citation
 
@@ -173,7 +173,7 @@ The pipeline segments in multiple steps:
 5. From the two segmentations, calculates centroids for each vertebrae center point, endplate, and IVD and saves that into a .json
 6. From the centroid and the segmentations, makes a snapshot showcasing the result as a .png
 
-![example_semantic](https://github.com/Hendrik-code/spineps/examples/figures/example_semantic.png?raw=true)
+![example_semantic](https://github.com/Hendrik-code/spineps/tree/main/spineps/example/figures/example_semantic.png?raw=true)
 
 ### Labels:
 
