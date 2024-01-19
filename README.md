@@ -5,7 +5,7 @@
 
 This is a segmentation pipeline to automatically, and robustly, segment the whole spine in T2w sagittal images.
 
-![workflow_figure](https://github.com/Hendrik-code/spineps/tree/main/spineps/example/figures/pipeline_processflow.png?raw=true)
+<img src="https://github.com/Hendrik-code/spineps/tree/main/spineps/example/figures/pipeline_processflow.png?raw=true" alt="semantic_figure" height="300"/>
 
 ## Citation
 
@@ -38,25 +38,30 @@ python -c "import torch; print(torch.cuda.is_available())"
 ```
 This should throw no errors and return True
 
-4. Then install all packages according to the `requirements.txt`:
-```bash
-pip install -r requirements.txt
-```
-5. Install our BIDS toolbox: `cd` into the BIDS folder (the one with the `setup.py` in it) and call 
+4. Install our BIDS toolbox: `cd` into the BIDS folder (the one with the `setup.py` in it) and call 
 ```bash
 pip install -e .
 ```
-6. Install NNUnetV2 version 2.2:
-```bash
-pip install nnunetv2==2.2
-```
+You can get a sufficient copy of the toolbox here: https://syncandshare.lrz.de/getlink/fi16bYYmqpwPQZRGd1M4G6/
+
 
 ### Setup this package
-If you want to install this as package, then `cd` into the `mri_segmentor` folder and install it by running `pip install -e .` or using the `setup.py` inside of the project folder.
+If you want to install this as package, then `cd` into the `spineps` folder and install it by running `pip install -e .` or using the `pyproject.toml` inside of the project folder.
 
 1. Download the model weights from https://syncandshare.lrz.de/getlink/fi16bYYmqpwPQZRGd1M4G6/
-2. Extract the downloaded modelweights folders into a folder of your choice (the "mri_segmentor/models" folders will be used as default), from now on referred to as your models folder.
-The models folder should only contain the individual model folders (with weights), and in those, the `inference_config.json`
+2. Extract the downloaded modelweights folders into a folder of your choice (the "spineps/models" folders will be used as default), from now on referred to as your models folder.
+This specified folder should have the following structure:
+```
+<models_folder>
+├── <model_name 1>
+    ├── inference_config.json
+    ├── <other model-specific files and folders>
+├── <model_name 2>
+    ├── inference_config.json
+    ├── <other model-specific files and folders>
+...
+```
+
 3. You need to specify this models folder as argument when running. If you want to set it permanently, set the according environment variable in your `.bashrc` or `.zshrc` (whatever you are using).
 ```bash
 export spineps_segmentor_models=<PATH-to-your-folder>
@@ -78,7 +83,7 @@ If you **don't** set the environment variable, the pipeline will look into `spin
 ### Installed as package:
 
 1. Activate your venv
-2. Run `mriseg -h` to see the arguments
+2. Run `spineps -h` to see the arguments
 
 ### Installed as local clone:
 
@@ -118,7 +123,7 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 | -override_ctd, -oc  | Will override existing centroid files (default: False) |
 | -verbose, -v  | Prints much more stuff, may fully clutter your terminal (default: False) |
 
-There are a lot more arguments, do `spineps sample -h` to see them.
+There are a lot more arguments, run `spineps sample -h` to see them.
 
 
 ### Dataset
@@ -205,7 +210,7 @@ If you want to call the code snippets yourself, start by initializing your model
 
 Depending on whether you want to process a single sample or a whole dataset, go into `seg_run.py` and run either `process_img_nii()` or `process_dataset()`.
 
-
+If you want to perform even more detailed changes or code injections, see `process_img_nii()` as inspiration on how the underlaying functions work and behave. Treat with care!
 
 
 ## Authorship
