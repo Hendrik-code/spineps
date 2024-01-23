@@ -38,18 +38,19 @@ python -c "import torch; print(torch.cuda.is_available())"
 ```
 This should throw no errors and return True
 
-4. Install our BIDS toolbox: `cd` into the BIDS folder (the one with the `setup.py` in it) and call 
+4. Install our BIDS toolbox (You can get a sufficient copy of the toolbox here: https://syncandshare.lrz.de/getlink/fi16bYYmqpwPQZRGd1M4G6/): `cd` into the BIDS folder (the one with the `setup.py` in it) and call 
 ```bash
 pip install -e .
 ```
-You can get a sufficient copy of the toolbox here: https://syncandshare.lrz.de/getlink/fi16bYYmqpwPQZRGd1M4G6/
+
 
 
 ### Setup this package
-If you want to install this as package, then `cd` into the `spineps` folder and install it by running `pip install -e .` or using the `pyproject.toml` inside of the project folder.
 
-1. Download the model weights from https://syncandshare.lrz.de/getlink/fi16bYYmqpwPQZRGd1M4G6/
-2. Extract the downloaded modelweights folders into a folder of your choice (the "spineps/models" folders will be used as default), from now on referred to as your models folder.
+You have to install the package to use it, even if you just want to locally use the code.
+1. `cd` into the `spineps` folder and install it by running `pip install -e .` or using the `pyproject.toml` inside of the project folder.
+2. Download the model weights from https://syncandshare.lrz.de/getlink/fi16bYYmqpwPQZRGd1M4G6/
+3. Extract the downloaded modelweights folders into a folder of your choice (the "spineps/spineps/models" folders will be used as default), from now on referred to as your models folder.
 This specified folder should have the following structure:
 ```
 <models_folder>
@@ -75,7 +76,7 @@ echo ${spineps_segmentor_models}
 
 For Windows, this might help: https://phoenixnap.com/kb/windows-set-environment-variable
 
-If you **don't** set the environment variable, the pipeline will look into `spineps/models/` by default.
+If you **don't** set the environment variable, the pipeline will look into `spineps/spineps/models/` by default.
 
 
 ## Usage
