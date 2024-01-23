@@ -55,7 +55,7 @@ def predict_semantic_mask(
         if do_n4:
             n4_start = perf_counter()
             mri_nii_rdy, _ = n4_bias(mri_nii_rdy)  # PIR
-            logger.print(f"N4 Bias field correction done in {perf_counter() - n4_start} sec")
+            logger.print(f"N4 Bias field correction done in {perf_counter() - n4_start} sec", verbose=True)
 
         results = model.segment_scan(
             mri_nii_rdy,
