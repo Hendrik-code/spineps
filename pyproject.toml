@@ -27,7 +27,9 @@ pytorch-lightning = "^2.0.8"
 SciPy = "^1.11.2"
 torchmetrics = "^1.1.2"
 tqdm = "^4.66.1"
+einops= "^0.6.1"
 nnunetv2 = "2.2"
+
 
 [tool.poetry-dynamic-versioning]
 enable = true
