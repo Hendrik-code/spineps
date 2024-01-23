@@ -98,13 +98,13 @@ def predict_instance_mask(
             cutout_size=cutout_size,
             debug_data=debug_data,
             proc_largest_cc=proc_largest_cc,
-            fill_holes=fill_holes,
+            fill_holes=False,
             use_height_estimate=use_height_estimate,
             verbose=verbose,
         )
         if vert_predictions is None:
             return None, debug_data, ErrCode.UNKNOWN  # type:ignore
-        logger.print("Vertebra Predictions done!")
+        logger.print("Vertebra Predictions done!", verbose=verbose)
 
         # debug_data["vert_predictions"] = vert_predictions
         whole_vert_nii, debug_data, errcode = from_vert3_predictions_make_vert_mask(
