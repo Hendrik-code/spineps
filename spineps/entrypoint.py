@@ -1,14 +1,14 @@
-from pathlib import Path
-
-from BIDS import BIDS_FILE, No_Logger, Log_Type
-import os
-from spineps.seg_run import process_dataset, process_img_nii
-from spineps.models import modelid2folder_semantic, modelid2folder_instance, get_semantic_model, get_instance_model
 import argparse
-from argparse import Namespace
 import cProfile
+import os
+from argparse import Namespace
+from pathlib import Path
 from time import perf_counter
 
+from BIDS import BIDS_FILE, Log_Type, No_Logger
+
+from spineps.models import get_instance_model, get_segmentation_model, get_semantic_model, modelid2folder_instance, modelid2folder_semantic
+from spineps.seg_run import process_dataset, process_img_nii
 
 logger = No_Logger()
 logger.override_prefix = "Init"
@@ -32,6 +32,12 @@ def parser_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("-override_semantic", "-os", action="store_true", help="Will override existing seg-spine files")
     parser.add_argument(
         "-override_instance", "-oi", action="store_true", help="Will override existing seg-vert files (True if semantic mask changed)"
+    )
+    parser.add_argument(
+        "-override_postpair",
+        "-opp",
+        action="store_true",
+        help="Will override existing cleaned files (True if either semantic or instance mask changed)",
     )
     parser.add_argument(
         "-override_ctd", "-oc", action="store_true", help="Will override existing centroid files (True if the instance mask changed)"
@@ -67,13 +73,6 @@ def entry_point():
     ###########################
     ###########################
     main_parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    # main_parser.add_argument(
-    #    "-model_dir",
-    #    type=str,
-    #    default=None,
-    #    metavar="",
-    #    help="Set this if you want to use the models from this folder instead of the ones specified in the environment path",
-    # )
     cmdparsers = main_parser.add_subparsers(title="cmd", help="Possible subcommands", dest="cmd", required=True)
     parser_sample = cmdparsers.add_parser(
         "sample", help="Process a single image nifty", formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -87,22 +86,22 @@ def entry_point():
     parser_sample.add_argument(
         "-model_semantic",
         "-ms",
-        type=str.lower,
+        # type=str.lower,
         default=None,
         # required=True,
-        choices=modelids_semantic,
+        # choices=modelids_semantic,
         metavar="",
-        help=f"The model used for the semantic segmentation. Choices are {modelids_semantic}",
+        help=f"The model used for the semantic segmentation. Choices are {modelids_semantic} or a string absolute path the model folder",
     )
     parser_sample.add_argument(
         "-model_instance",
         "-mv",
-        type=str.lower,
+        # type=str.lower,
         default=None,
         # required=True,
-        choices=modelids_instance,
+        # choices=modelids_instance,
         metavar="",
-        help=f"The model used for the vertebra instance segmentation. Choices are {modelids_instance}",
+        help=f"The model used for the vertebra instance segmentation. Choices are {modelids_instance} or a string absolute path the model folder",
     )
     parser_sample = parser_arguments(parser_sample)
     #
@@ -119,20 +118,20 @@ def entry_point():
     parser_dataset.add_argument(
         "-model_semantic",
         "-ms",
-        type=str.lower,
+        # type=str.lower,
         default="auto",
-        choices=model_subreg_choices,
+        # choices=model_subreg_choices,
         metavar="",
-        help=f"The model used for the subregion segmentation. Choices are {model_subreg_choices}",
+        help=f"The model used for the subregion segmentation. Choices are {model_subreg_choices} or a string absolute path the model folder",
     )
     parser_dataset.add_argument(
         "-model_instance",
         "-mv",
-        type=str.lower,
+        # type=str.lower,
         default="auto",
-        choices=model_vert_choices,
+        # choices=model_vert_choices,
         metavar="",
-        help=f"The model used for the vertebra segmentation. Choices are {model_vert_choices}",
+        help=f"The model used for the vertebra segmentation. Choices are {model_vert_choices} or a string absolute path the model folder",
     )
     parser_dataset.add_argument(
         "-ignore_bids_filter",
@@ -178,8 +177,16 @@ def run_sample(opt: Namespace):
     if not input.endswith(".nii.gz"):
         input += ".nii.gz"
     assert os.path.isfile(input), f"-input does not exist or is not a file, got {input}"
-    model_semantic = get_semantic_model(opt.model_semantic).load()
-    model_instance = get_instance_model(opt.model_instance).load()
+
+    if "/" in str(opt.model_semantic):
+        # given path
+        model_semantic = get_segmentation_model(opt.model_semantic).load()
+    else:
+        model_semantic = get_semantic_model(opt.model_semantic).load()
+    if "/" in str(opt.model_instance):
+        model_instance = get_segmentation_model(opt.model_instance).load()
+    else:
+        model_instance = get_instance_model(opt.model_instance).load()
 
     bids_sample = BIDS_FILE(input, dataset=dataset, verbose=True)
 
@@ -196,17 +203,18 @@ def run_sample(opt: Namespace):
         #
         "override_semantic": opt.override_semantic,
         "override_instance": opt.override_instance,
+        "override_postpair": opt.override_postpair,
         "override_ctd": opt.override_ctd,
         #
-        "do_crop_semantic": opt.nocrop,
-        "proc_n4correction": opt.non4,
+        "do_crop_semantic": not opt.nocrop,
+        "proc_n4correction": not opt.non4,
         "ignore_compatibility_issues": opt.ignore_inference_compatibility,
         "verbose": opt.verbose,
     }
 
     start_time = perf_counter()
     if opt.run_cprofiler:
-        from BIDS.logger.log_file import get_time, format_time_short
+        from BIDS.logger.log_file import format_time_short, get_time
 
         timestamp = format_time_short(get_time())
         cprofile_out = bids_sample.get_changed_path(
@@ -231,12 +239,19 @@ def run_dataset(opt: Namespace):
     assert os.path.exists(input), f"-input does not exist, {input}"
     assert os.path.isdir(input), f"-input is not a directory, got {input}"
 
+    # Model semantic
     if opt.model_semantic == "auto":
         model_semantic = None
+    elif "/" in str(opt.model_semantic):
+        model_semantic = get_segmentation_model(opt.model_semantic).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic).load()
+
+    # Model Instance
     if opt.model_instance == "auto":
         model_instance = None
+    elif "/" in str(opt.model_instance):
+        model_instance = get_segmentation_model(opt.model_instance).load()
     else:
         model_instance = get_instance_model(opt.model_instance).load()
 
@@ -257,20 +272,21 @@ def run_dataset(opt: Namespace):
         #
         "override_semantic": opt.override_semantic,
         "override_instance": opt.override_instance,
+        "override_postpair": opt.override_postpair,
         "override_ctd": opt.override_ctd,
         #
         "ignore_model_compatibility": opt.ignore_model_compatibility,
         "ignore_inference_compatibility": opt.ignore_inference_compatibility,
         "ignore_bids_filter": opt.ignore_bids_filter,
         #
-        "do_crop_semantic": opt.nocrop,
-        "proc_n4correction": opt.non4,
+        "do_crop_semantic": not opt.nocrop,
+        "proc_n4correction": not opt.non4,
         "snapshot_copy_folder": opt.save_snaps_folder,
         "verbose": opt.verbose,
     }
 
     if opt.run_cprofiler:
-        from BIDS.logger.log_file import get_time, format_time_short
+        from BIDS.logger.log_file import format_time_short, get_time
 
         start_time = get_time()
         start_time_short = format_time_short(start_time)

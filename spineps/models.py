@@ -1,12 +1,12 @@
 import os
-from BIDS import No_Logger, Log_Type
-from spineps.seg_enums import Enum_Compare, Modality
-from spineps.utils.filepaths import search_path, get_mri_segmentor_models_dir, filepath_model
-
 from pathlib import Path
+
+from BIDS import Log_Type, No_Logger
+
+from spineps.seg_enums import Modality
 from spineps.seg_model import Segmentation_Model, modeltype2class
 from spineps.seg_modelconfig import load_inference_config
-
+from spineps.utils.filepaths import get_mri_segmentor_models_dir, search_path
 
 logger = No_Logger()
 logger.override_prefix = "Models"

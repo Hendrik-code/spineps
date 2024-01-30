@@ -1,23 +1,21 @@
+import os
+import shutil
 from pathlib import Path
-
-from spineps.seg_model import Segmentation_Model
-from spineps.seg_pipeline import predict_centroids_from_both, logger
-from spineps.phase_semantic import predict_semantic_mask
-from spineps.phase_instance import predict_instance_mask
-from spineps.seg_utils import (
-    check_input_model_compatibility,
-    find_best_matching_model,
-    Modality_Pair,
-    check_model_modality_acquisition,
-)
-from spineps.seg_enums import Modality, Acquisition, ErrCode
-from BIDS import BIDS_Global_info, NII, Logger, Centroids, Log_Type, BIDS_FILE, VertebraCentroids, Location, POI
-from BIDS.snapshot2D.snapshot_templates import mri_snapshot
-import os, shutil
 from time import perf_counter
+from typing import Callable
+
 import nibabel as nib
 import numpy as np
-from typing import Callable
+from BIDS import BIDS_FILE, NII, BIDS_Global_info, Centroids, Location, Log_Type, Logger
+from BIDS.snapshot2D.snapshot_templates import mri_snapshot
+
+from spineps.phase_instance import predict_instance_mask
+from spineps.phase_post import phase_postprocess_combined
+from spineps.phase_semantic import predict_semantic_mask
+from spineps.seg_enums import Acquisition, ErrCode, Modality
+from spineps.seg_model import Segmentation_Model
+from spineps.seg_pipeline import logger, predict_centroids_from_both
+from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition, find_best_matching_model
 
 
 def process_dataset(
@@ -36,6 +34,7 @@ def process_dataset(
     #
     override_semantic: bool = False,
     override_instance: bool = False,
+    override_postpair: bool = False,
     override_ctd: bool = False,
     snapshot_copy_folder: Path | None | bool = None,
     #
@@ -172,6 +171,7 @@ def process_dataset(
                     #
                     override_semantic=override_semantic,
                     override_instance=override_instance,
+                    override_postpair=override_postpair,
                     override_ctd=override_ctd,
                     #
                     do_crop_semantic=do_crop_semantic,
@@ -227,6 +227,7 @@ def process_img_nii(
     #
     override_semantic: bool = False,
     override_instance: bool = False,
+    override_postpair: bool = False,
     override_ctd: bool = False,
     #
     do_crop_semantic: bool = True,
@@ -285,14 +286,19 @@ def process_img_nii(
     Returns:
         ErrCode: Error code depicting whether the operation was successful or not
     """
-    output_paths = output_paths_from_input(img_ref, derivative_name, snapshot_copy_folder)
+    input_format = img_ref.format
+
+    output_paths = output_paths_from_input(img_ref, derivative_name, snapshot_copy_folder, input_format=input_format)
     out_spine = output_paths["out_spine"]
+    out_spine_raw = output_paths["out_spine_raw"]
     out_vert = output_paths["out_vert"]
+    out_vert_raw = output_paths["out_vert_raw"]
     out_unc = output_paths["out_unc"]
     out_logits = output_paths["out_logits"]
     out_snap = output_paths["out_snap"]
     out_ctd = output_paths["out_ctd"]
     out_snap2 = output_paths["out_snap2"]
+    out_raw = output_paths["out_raw"]
 
     if isinstance(snapshot_copy_folder, Path):
         snapshot_copy_folder.mkdir(parents=True, exist_ok=True)
@@ -304,12 +310,16 @@ def process_img_nii(
         and os.path.exists(out_ctd)
         and not override_semantic
         and not override_instance
+        and not override_postpair
         and not override_ctd
         and (snapshot_copy_folder is None or os.path.exists(out_snap2))
     ):
         logger.print("Outputs are all already created and no override set, will skip")
         return output_paths, ErrCode.ALL_DONE
+
+    out_raw.mkdir(parents=True, exist_ok=True)
     done_something = False
+    debug_data_run = None
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     if not compatible:
@@ -320,7 +330,7 @@ def process_img_nii(
 
     start_time = perf_counter()
     file_dir = img_ref.file["nii.gz"]
-    input_format = img_ref.format
+
     logger.print("Processing", file_dir.name)
     with logger:
         img_nii = img_ref.open_nii()
@@ -361,9 +371,9 @@ def process_img_nii(
                 seg_nii_back = lambda_semantic(seg_nii_back)
 
             seg_nii_back.nii = nib.nifti1.Nifti1Image(seg_nii_back.get_seg_array(), affine=affine, header=header)
-            seg_nii_back.save(out_spine, verbose=logger)
+            seg_nii_back.save(out_spine_raw, verbose=logger)
             if isinstance(seg_nii_modelres, NII) and save_modelres_mask:
-                seg_nii_modelres.save(str(out_spine).replace("seg-spine", "seg-spineModelRes"), verbose=logger)
+                seg_nii_modelres.save(str(out_spine_raw).replace("seg-spine", "seg-spineModelRes"), verbose=logger)
             if save_uncertainty_image:
                 if unc_nii is None:
                     logger.print("Uncertainty Map is None, something went wrong", Log_Type.STRANGE)
@@ -375,7 +385,7 @@ def process_img_nii(
             done_something = True
         else:
             logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
-            seg_nii = NII.load(out_spine, seg=True)
+            seg_nii = NII.load(out_spine_raw, seg=True)
             print("seg_nii", seg_nii.zoom, seg_nii.orientation, seg_nii.shape)
             if seg_nii.shape != img_nii.shape:
                 logger.print(f"Subregion mask shape mismatch, got {seg_nii.shape} and image {img_nii.shape}, skip this", Log_Type.FAIL)
@@ -396,47 +406,56 @@ def process_img_nii(
                 fill_holes=proc_fillholes,
                 proc_corpus_clean=proc_corpus_clean,
                 proc_cleanvert=proc_cleanvert,
-                proc_assign_missing_cc=proc_assign_missing_cc,
                 proc_largest_cc=proc_largest_cc,
             )
+            debug_data_run = debug_data
             if errcode != ErrCode.OK:
                 logger.print(f"Vert Mask creation failed with errcode {errcode}", Log_Type.FAIL)
                 return output_paths, errcode
             assert whole_vert_nii is not None, "whole_vert_nii is None"
-            vert_out = whole_vert_nii.copy()  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
-            logger.print("vert_out", vert_out.zoom, vert_out.orientation, vert_out.shape, verbose=verbose)
-            if vert_out.shape != img_nii.shape:
-                logger.print(f"Vert mask shape mismatch, got {vert_out.shape} and image {img_nii.shape}, skip this", Log_Type.FAIL)
-                return output_paths, ErrCode.SHAPE
-
-            # TODO make this better (instance mask gets to have same global coords)
-            vert_out.nii = nib.nifti1.Nifti1Image(vert_out.get_seg_array(), affine=affine, header=header)
-            #
-
-            vert_out.save(out_vert, verbose=logger)
-            done_something = True
-            if save_debug_data:
-                if debug_data is None:
-                    logger.print("Save_debug_data: no debug data found", Log_Type.WARNING)
-                else:
-                    out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
-                    out_debug.parent.mkdir(parents=True, exist_ok=True)
-                    for k, v in debug_data.items():
-                        v.reorient_(orientation).save(out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False)
-                    logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
-            whole_vert_nii = vert_out
-        else:
-            logger.print("Vert Mask already exists. Set -override_vert to create it anew")
-            whole_vert_nii = NII.load(out_vert, seg=True)
+            whole_vert_nii = whole_vert_nii.copy()  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
+            logger.print("vert_out", whole_vert_nii.zoom, whole_vert_nii.orientation, whole_vert_nii.shape, verbose=verbose)
             if whole_vert_nii.shape != img_nii.shape:
                 logger.print(f"Vert mask shape mismatch, got {whole_vert_nii.shape} and image {img_nii.shape}, skip this", Log_Type.FAIL)
                 return output_paths, ErrCode.SHAPE
+
+            # TODO make this better (instance mask gets to have same global coords)
+            whole_vert_nii.nii = nib.nifti1.Nifti1Image(whole_vert_nii.get_seg_array(), affine=affine, header=header)
+            #
+            whole_vert_nii.save(out_vert_raw, verbose=logger)
+            done_something = True
+        else:
+            logger.print("Vert Mask already exists. Set -override_vert to create it anew")
+            whole_vert_nii = NII.load(out_vert_raw, seg=True)
+            if whole_vert_nii.shape != img_nii.shape:
+                logger.print(f"Vert mask shape mismatch, got {whole_vert_nii.shape} and image {img_nii.shape}, skip this", Log_Type.FAIL)
+                return output_paths, ErrCode.SHAPE
+
+        # Cleanup Step
+        if not os.path.exists(out_spine) or not os.path.exists(out_vert) or done_something or override_postpair:
+            # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
+            seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
+                seg_nii=seg_nii,
+                vert_nii=whole_vert_nii,
+                debug_data=debug_data_run,
+                proc_assign_missing_cc=proc_assign_missing_cc,
+                verbose=verbose,
+            )
+            assert seg_nii_clean.shape == vert_nii_clean.shape, "shape mismatch after postprocess"
+            assert seg_nii_clean.zoom == zms, "zoom mismatch"
+            assert seg_nii_clean.orientation == orientation, "orientation mismatch"
+
+            seg_nii_clean.save(out_spine, verbose=logger)
+            vert_nii_clean.save(out_vert, verbose=logger)
+        else:
+            seg_nii_clean = NII.load(out_spine, seg=True)
+            vert_nii_clean = NII.load(out_vert, seg=True)
 
         # Centroid
         if not os.path.exists(out_ctd) or done_something or override_ctd:
             zms_PIR = img_nii.reorient().zoom
             ctd = predict_centroids_from_both(
-                whole_vert_nii,
+                vert_nii_clean,
                 seg_nii,
                 models=[model_semantic, model_instance],
                 input_zms_pir=zms_PIR,
@@ -446,6 +465,17 @@ def process_img_nii(
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
             ctd = Centroids.load(out_ctd)
+
+        # save debug
+        if save_debug_data:
+            if debug_data_run is None:
+                logger.print("Save_debug_data: no debug data found", Log_Type.WARNING)
+            else:
+                out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
+                out_debug.parent.mkdir(parents=True, exist_ok=True)
+                for k, v in debug_data_run.items():
+                    v.reorient_(orientation).save(out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False)
+                logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
 
         # Snapshot
         if not os.path.exists(out_snap) or done_something:
@@ -465,25 +495,42 @@ def process_img_nii(
     return output_paths, ErrCode.OK
 
 
-def output_paths_from_input(img_ref: BIDS_FILE, derivative_name: str, snapshot_copy_folder: Path | None):
+def output_paths_from_input(img_ref: BIDS_FILE, derivative_name: str, snapshot_copy_folder: Path | None, input_format: str):
     out_spine = img_ref.get_changed_path(format="msk", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
     out_vert = img_ref.get_changed_path(format="msk", parent=derivative_name, info={"seg": "vert", "mod": img_ref.format})
-    out_unc = img_ref.get_changed_path(format="uncertainty", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
-    out_logits = img_ref.get_changed_path(
-        file_type="npz", format="logit", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}
-    )
     out_snap = img_ref.get_changed_path(format="snp", file_type="png", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
     out_ctd = img_ref.get_changed_path(format="ctd", file_type="json", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
     out_snap2 = snapshot_copy_folder.joinpath(out_snap.name) if snapshot_copy_folder is not None else out_snap
-
+    #
+    out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
+    #
+    out_raw = out_vert.parent.joinpath(f"output_raw_{input_format}")
+    #
+    out_spine_raw = img_ref.get_changed_path(format="msk", parent=derivative_name, info={"seg": "spine-raw", "mod": img_ref.format})
+    out_spine_raw = out_raw.joinpath(out_spine_raw.name)
+    #
+    out_vert_raw = img_ref.get_changed_path(format="msk", parent=derivative_name, info={"seg": "vert-raw", "mod": img_ref.format})
+    out_vert_raw = out_raw.joinpath(out_vert_raw.name)
+    #
+    out_unc = img_ref.get_changed_path(format="uncertainty", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
+    out_unc = out_raw.joinpath(out_unc.name)
+    #
+    out_logits = img_ref.get_changed_path(
+        file_type="npz", format="logit", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}
+    )
+    out_logits = out_raw.joinpath(out_logits.name)
     return {
         "out_spine": out_spine,
+        "out_spine_raw": out_spine_raw,
         "out_vert": out_vert,
+        "out_vert_raw": out_vert_raw,
         "out_unc": out_unc,
         "out_logits": out_logits,
         "out_snap": out_snap,
         "out_ctd": out_ctd,
         "out_snap2": out_snap2,
+        "out_debug": out_debug,
+        "out_raw": out_raw,
     }
 
 
@@ -491,6 +538,30 @@ def save_nparray(arr: np.ndarray, out_path: Path):
     """Saves an numpy array to the disk
 
     Args:
+        arr (np.ndarray): numpy array to be saved
+        out_path (Path): output path
+    """
+    np.savez_compressed(out_path, arr)
+    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
+    """
+    np.savez_compressed(out_path, arr)
+    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
+        arr (np.ndarray): numpy array to be saved
+        out_path (Path): output path
+    """
+    np.savez_compressed(out_path, arr)
+    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
+    """
+    np.savez_compressed(out_path, arr)
+    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
+        arr (np.ndarray): numpy array to be saved
+        out_path (Path): output path
+    """
+    np.savez_compressed(out_path, arr)
+    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
+    """
+    np.savez_compressed(out_path, arr)
+    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
         arr (np.ndarray): numpy array to be saved
         out_path (Path): output path
     """
