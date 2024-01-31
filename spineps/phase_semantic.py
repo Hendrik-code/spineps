@@ -12,6 +12,7 @@ from spineps.seg_pipeline import logger, fill_holes_labels
 def predict_semantic_mask(
     mri_nii: NII,
     model: Segmentation_Model,
+    debug_data: dict,
     do_n4: bool = True,
     fill_holes: bool = True,
     clean_artifacts: bool = True,
@@ -37,6 +38,7 @@ def predict_semantic_mask(
         mri_nii = mri_nii.copy()
         uncropped_subregion_mask = np.zeros(mri_nii.shape)
         uncropped_unc_image = np.zeros(mri_nii.shape)
+        uncropped_input_image = np.zeros(mri_nii.shape)
         mri_nii_rdy = mri_nii
         # orientation = mri_nii.orientation
         # mri_nii_rdy = mri_nii.reorient(verbose=logger)
@@ -56,6 +58,14 @@ def predict_semantic_mask(
             n4_start = perf_counter()
             mri_nii_rdy, _ = n4_bias(mri_nii_rdy)  # PIR
             logger.print(f"N4 Bias field correction done in {perf_counter() - n4_start} sec", verbose=True)
+
+        # Normalize to [0,1500]
+        mri_nii_rdy += -mri_nii_rdy.min()  # min = 0
+        mri_dtype = mri_nii_rdy.dtype
+        max_value = mri_nii_rdy.max()
+        if max_value > 1500:
+            mri_nii_rdy *= 1500 / max_value
+            mri_nii_rdy.set_dtype_(mri_dtype)
 
         results = model.segment_scan(
             mri_nii_rdy,
@@ -100,6 +110,8 @@ def predict_semantic_mask(
 
         # Uncrop
         uncropped_subregion_mask[crop] = seg_nii.get_seg_array()
+        uncropped_input_image[crop] = mri_nii_rdy.get_array()
+        debug_data["a_input_preprocessed"] = mri_nii_rdy.set_array(uncropped_input_image)
         logger.print(f"Uncrop back from {seg_nii.shape} to {uncropped_subregion_mask.shape}", verbose=verbose)
         if isinstance(unc_nii, NII):
             uncropped_unc_image[crop] = unc_nii.get_array()

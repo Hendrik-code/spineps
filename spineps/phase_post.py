@@ -1,7 +1,7 @@
 # from utils.predictor import nnUNetPredictor
 import numpy as np
 from BIDS import NII, Location, Log_Type, v_idx2name, v_name2idx
-from BIDS.core.np_utils import np_bbox_nd, np_connected_components, np_dilate_msk, np_map_labels
+from BIDS.core.np_utils import np_bbox_nd, np_connected_components, np_dilate_msk, np_map_labels, np_approx_center_of_mass
 from scipy.ndimage import center_of_mass
 
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
@@ -11,6 +11,7 @@ def phase_postprocess_combined(
     seg_nii: NII,
     vert_nii: NII,
     debug_data: dict | None,
+    labeling_offset: int = 0,
     proc_assign_missing_cc: bool = True,
     n_vert_bodies: int | None = None,
     verbose: bool = False,
@@ -18,14 +19,18 @@ def phase_postprocess_combined(
     logger.print("Post process", Log_Type.STAGE)
     with logger:
         assert seg_nii.shape == vert_nii.shape, f"shape mismatch before cleaning, got {seg_nii.shape} and {vert_nii.shape}"
-        seg_nii = seg_nii.copy()
+        # Post process semantic mask
+        ###################
+        seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
+        ###################
         vert_nii = vert_nii.copy()
         if n_vert_bodies is None:
             n_vert_bodies = len(vert_nii.unique())
         if debug_data is None:
             debug_data = {}
+            #
+        vert_nii.apply_mask(seg_nii, inplace=True)
         crop_slices = seg_nii.compute_crop_slice(dist=3)
-        #
         vert_uncropped_arr = np.zeros(vert_nii.shape)
         seg_uncropped_arr = np.zeros(vert_nii.shape)
 
@@ -33,7 +38,7 @@ def phase_postprocess_combined(
         vert_nii.apply_crop_slice_(crop_slices)
         seg_nii.apply_crop_slice_(crop_slices)
 
-        # Post processing
+        # Post processing both
         ###################
         whole_vert_nii_cleaned, seg_nii_cleaned = mask_cleaning_other(
             whole_vert_nii=vert_nii,
@@ -42,6 +47,13 @@ def phase_postprocess_combined(
             proc_assign_missing_cc=proc_assign_missing_cc,
             verbose=verbose,
         )
+
+        # Label vertebra top -> down
+        whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned)
+        if labeling_offset != 0:
+            whole_vert_nii_cleaned.map_labels_({i: i + 1 for i in vert_labels if i != 0}, verbose=verbose)
+        logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
+
         vert_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
         vert_arr_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
         ###############
@@ -271,3 +283,106 @@ def find_nearest_lower(seq, x):
     if len(values_lower) == 0:
         return min(seq)
     return max(values_lower)
+
+
+def semantic_bounding_box_clean(seg_nii: NII):
+    ori = seg_nii.orientation
+    seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
+    seg_bin_largest_k_cc_nii = seg_binary.get_largest_k_segmentation_connected_components(
+        k=20, labels=1, connectivity=3, return_original_labels=False
+    )
+    max_k = seg_bin_largest_k_cc_nii.max()
+    if max_k > 3:
+        logger.print(f"Found {max_k} unique connected components in semantic mask", Log_Type.STRANGE)
+    # PIR
+    largest_nii = seg_bin_largest_k_cc_nii.extract_label(1)
+    # width fixed, and heigh include all connected components within bounding box, then repeat
+    P_slice, I_slice, R_slice = largest_nii.compute_crop_slice(dist=5)
+    # PIR -> fixed, extendable, extendable
+    incorporated = [1]
+    changed = True
+    while changed:
+        changed = False
+        for k in [l for l in range(2, max_k + 1) if l not in incorporated]:
+            k_nii = seg_bin_largest_k_cc_nii.extract_label(k)
+            p, i, r = k_nii.compute_crop_slice(dist=3)
+            I_slice_compare = slice(
+                max(I_slice.start - 10, 0), I_slice.stop + 10
+            )  # more margin in inferior direction (allows for gaps in spine)
+            if overlap_slice(P_slice, p) and overlap_slice(I_slice_compare, i) and overlap_slice(R_slice, r):
+                # extend bbox
+                I_slice = slice(min(I_slice.start, i.start), max(I_slice.stop, i.stop))
+                R_slice = slice(min(R_slice.start, r.start), max(R_slice.stop, r.stop))
+                incorporated.append(k)
+                changed = True
+
+    seg_bin_arr = seg_binary.get_seg_array()
+    crop = (P_slice, I_slice, R_slice)
+    seg_bin_clean_arr = np.zeros(seg_bin_arr.shape)
+    seg_bin_clean_arr[crop] = 1
+
+    seg_arr = seg_nii.get_seg_array()
+    # logger.print(seg_nii.volumes())
+    seg_arr[seg_bin_clean_arr != 1] = 0
+    seg_nii.set_array_(seg_arr)
+    seg_nii.reorient_(ori)
+    cleaned_ks = [l for l in range(2, max_k + 1) if l not in incorporated]
+    if len(cleaned_ks) > 0:
+        logger.print("semantic_bounding_box_clean", f"got rid of connected components k={cleaned_ks}")
+    else:
+        logger.print("semantic_bounding_box_clean", "did not remove anything")
+    return seg_nii
+
+
+def label_instance_top_to_bottom(vert_nii: NII):
+    ori = vert_nii.orientation
+    vert_nii.reorient_()
+    present_labels = list(vert_nii.unique())
+    vert_arr = vert_nii.get_seg_array()
+    com_i = np_approx_center_of_mass(vert_arr, present_labels)
+    comb = {}
+    for i in present_labels:
+        arr_i = vert_arr.copy()
+        arr_i[arr_i != i] = 0
+        comb[i] = center_of_mass(arr_i)
+    comb_l = list(zip(com_i.keys(), com_i.values()))
+    comb_l.sort(key=lambda a: a[1][1])  # PIR
+    com_map = {comb_l[idx][0]: idx + 1 for idx in range(len(comb_l))}
+
+    vert_nii.map_labels_(com_map, verbose=False)
+    vert_nii.reorient_(ori)
+    return vert_nii, vert_nii.unique()
+
+
+def overlap_slice(slice1: slice, slice2: slice):
+    """checks if two ranges defined by slices overlapping (including border!)
+
+    Args:
+        slice1 (slice): _description_
+        slice2 (slice): _description_
+    """
+    slice1s = slice1.start
+    slice1e = slice1.stop
+
+    slice2s = slice2.start
+    slice2e = slice2.stop
+
+    if slice1s == slice2s or slice1s == slice2e or slice1e == slice2s or slice1e == slice2e:
+        return True
+
+    if slice2s > slice1s and slice2s <= slice1e:
+        return True
+
+    if slice2s < slice1s and slice2e >= slice1s:
+        return True
+    return False
+
+
+if __name__ == "__main__":
+    print(overlap_slice(slice(1, 10), slice(3, 8)))
+    print(overlap_slice(slice(1, 8), slice(8, 10)))
+    print(overlap_slice(slice(1, 7), slice(8, 10)))
+    #
+    print(overlap_slice(slice(3, 8), slice(1, 10)))
+    #
+    print(overlap_slice(slice(3, 8), slice(3, 10)))

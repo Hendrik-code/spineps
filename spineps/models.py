@@ -97,8 +97,8 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
         model_folder = cp.parent
         model_folder_name = model_folder.name.lower()
         try:
-            model = get_segmentation_model(in_config=cp, default_verbose=False)
-            if Modality.SEG in model.inference_config.modalities:
+            inference_config = load_inference_config(str(cp))
+            if Modality.SEG in inference_config.modalities:
                 _modelid2folder_instance[model_folder_name] = model_folder
             else:
                 _modelid2folder_semantic[model_folder_name] = model_folder

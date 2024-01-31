@@ -299,6 +299,7 @@ def process_img_nii(
     out_ctd = output_paths["out_ctd"]
     out_snap2 = output_paths["out_snap2"]
     out_raw = output_paths["out_raw"]
+    out_debug = output_paths["out_debug"]
 
     if isinstance(snapshot_copy_folder, Path):
         snapshot_copy_folder.mkdir(parents=True, exist_ok=True)
@@ -319,7 +320,7 @@ def process_img_nii(
 
     out_raw.mkdir(parents=True, exist_ok=True)
     done_something = False
-    debug_data_run = None
+    debug_data_run = {}
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     if not compatible:
@@ -346,6 +347,7 @@ def process_img_nii(
             seg_nii, seg_nii_modelres, unc_nii, softmax_logits, errcode = predict_semantic_mask(
                 img_nii,
                 model_semantic,
+                debug_data=debug_data_run,
                 verbose=verbose,
                 do_n4=proc_n4correction,
                 fill_holes=proc_fillholes,
@@ -396,10 +398,10 @@ def process_img_nii(
 
         # Second stage
         if not os.path.exists(out_vert) or override_instance:
-            whole_vert_nii, debug_data, errcode = predict_instance_mask(
+            whole_vert_nii, errcode = predict_instance_mask(
                 seg_nii.copy(),
                 model_instance,
-                labeling_offset=1,
+                debug_data=debug_data_run,
                 use_height_estimate=False,
                 resample_output_to_input_space=True,
                 verbose=verbose,
@@ -408,7 +410,6 @@ def process_img_nii(
                 proc_cleanvert=proc_cleanvert,
                 proc_largest_cc=proc_largest_cc,
             )
-            debug_data_run = debug_data
             if errcode != ErrCode.OK:
                 logger.print(f"Vert Mask creation failed with errcode {errcode}", Log_Type.FAIL)
                 return output_paths, errcode
@@ -438,6 +439,7 @@ def process_img_nii(
                 seg_nii=seg_nii,
                 vert_nii=whole_vert_nii,
                 debug_data=debug_data_run,
+                labeling_offset=1,
                 proc_assign_missing_cc=proc_assign_missing_cc,
                 verbose=verbose,
             )
@@ -447,6 +449,7 @@ def process_img_nii(
 
             seg_nii_clean.save(out_spine, verbose=logger)
             vert_nii_clean.save(out_vert, verbose=logger)
+            done_something = True
         else:
             seg_nii_clean = NII.load(out_spine, seg=True)
             vert_nii_clean = NII.load(out_vert, seg=True)
@@ -456,7 +459,7 @@ def process_img_nii(
             zms_PIR = img_nii.reorient().zoom
             ctd = predict_centroids_from_both(
                 vert_nii_clean,
-                seg_nii,
+                seg_nii_clean,
                 models=[model_semantic, model_instance],
                 input_zms_pir=zms_PIR,
             )
@@ -471,7 +474,6 @@ def process_img_nii(
             if debug_data_run is None:
                 logger.print("Save_debug_data: no debug data found", Log_Type.WARNING)
             else:
-                out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
                 out_debug.parent.mkdir(parents=True, exist_ok=True)
                 for k, v in debug_data_run.items():
                     v.reorient_(orientation).save(out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False)
@@ -483,7 +485,7 @@ def process_img_nii(
             if snapshot_copy_folder is not None:
                 out_snap = [out_snap, out_snap2]
             ctd = ctd.extract_subregion(Location.Vertebra_Corpus)
-            mri_snapshot(img_nii, whole_vert_nii, ctd, subreg_msk=seg_nii, out_path=out_snap)
+            mri_snapshot(img_nii, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
         elif not os.path.exists(out_snap2):
             logger.print(f"Copying snapshot into {str(snapshot_copy_folder)}")

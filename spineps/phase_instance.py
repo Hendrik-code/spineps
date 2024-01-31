@@ -14,15 +14,15 @@ from spineps.utils.proc_functions import clean_cc_artifacts
 def predict_instance_mask(
     seg_nii: NII,
     model: Segmentation_Model,
+    debug_data: dict,
     resample_output_to_input_space: bool = True,
     fill_holes: bool = True,
-    labeling_offset: int = 0,
     use_height_estimate: bool = False,
     proc_corpus_clean: bool = True,
     proc_cleanvert: bool = True,
     proc_largest_cc: int = 0,
     verbose: bool = False,
-) -> tuple[NII | None, dict, ErrCode]:
+) -> tuple[NII | None, ErrCode]:
     """Based on subregion segmentation, feeds individual arcus coms to a network to get the vertebra body segmentations
 
     Args:
@@ -30,7 +30,7 @@ def predict_instance_mask(
         cutout_size (tuple[int, int, int], optional): _description_. Defaults to (128, 88, 32).
 
     Returns:
-        tuple[NII | None, dict, ErrCode]: whole_vert_nii, debug_data,m errcode
+        tuple[NII | None, ErrCode]: whole_vert_nii, errcode
     """
     logger.print("Predict instance mask", Log_Type.STAGE)
     with logger:
@@ -39,7 +39,6 @@ def predict_instance_mask(
         corpus_size_cleaning = 100 * 2.42  # voxel threshold * nako resolution
         corpus_border_threshold = 10
         vert_size_threshold = 250 * 2.42
-        debug_data = {}
 
         logger.print("Vertebra input", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
         # Save values for resample back later
@@ -47,7 +46,7 @@ def predict_instance_mask(
         shp = seg_nii.shape
 
         seg_nii_rdy = seg_nii.reorient(verbose=logger)
-        debug_data["Subreg_nii_a_uncropped_PIR"] = seg_nii_rdy.copy()
+        debug_data["inst_uncropped_Subreg_nii_a_PIR"] = seg_nii_rdy.copy()
         zms = seg_nii_rdy.zoom
         logger.print("zms", zms, verbose=verbose)
         expected_zms = model.calc_recommended_resampling_zoom(seg_nii_rdy.zoom)
@@ -57,7 +56,7 @@ def predict_instance_mask(
         logger.print(
             "Vertebra seg_nii_uncropped", seg_nii_uncropped.zoom, seg_nii_uncropped.orientation, seg_nii_uncropped.shape, verbose=verbose
         )
-        debug_data["Subreg_nii_b_uncropped_zms"] = seg_nii_uncropped.copy()
+        debug_data["inst_uncropped_Subreg_nii_b_zms"] = seg_nii_uncropped.copy()
         uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
         #
@@ -67,7 +66,7 @@ def predict_instance_mask(
         logger.print(f"Crop down from {uncropped_vert_mask.shape} to {seg_nii_rdy.shape}", verbose=verbose)
         # arr[crop] = X, then set nifty to arr
         logger.print("Vertebra seg_nii_rdy", seg_nii_rdy.zoom, seg_nii_rdy.orientation, seg_nii_rdy.shape, verbose=verbose)
-        debug_data["Subreg_nii_b_cropped"] = seg_nii_rdy.copy()
+        debug_data["inst_cropped_Subreg_nii_b"] = seg_nii_rdy.copy()
         #
         # make threshold in actual mm
         corpus_border_threshold = int(corpus_border_threshold / expected_zms[1])
@@ -90,7 +89,7 @@ def predict_instance_mask(
             verbose=verbose,
         )
         if vert_predictions is None:
-            return None, debug_data, ErrCode.UNKNOWN  # type:ignore
+            return None, ErrCode.UNKNOWN  # type:ignore
         logger.print("Vertebra Predictions done!", verbose=verbose)
 
         # debug_data["vert_predictions"] = vert_predictions
@@ -104,7 +103,7 @@ def predict_instance_mask(
         )
         del vert_predictions, hierarchical_existing_predictions
         if errcode != ErrCode.OK:
-            return None, debug_data, errcode
+            return None, errcode
         logger.print("Merged predictions into vert mask")
 
         logger.print(
@@ -115,19 +114,15 @@ def predict_instance_mask(
 
         if fill_holes:
             whole_vert_nii.fill_holes_(verbose=logger)
-        if labeling_offset != 0:
-            whole_vert_nii.map_labels_({i: i + 1 for i in uniq_labels if i != 0}, verbose=verbose)
-        debug_data["vert_arr_crop_c_proc"] = whole_vert_nii.copy()
-        n_vert_bodies = len(whole_vert_nii.unique())
-        logger.print(f"Labeled {n_vert_bodies} vertebrae")
+        debug_data["inst_cropped_vert_arr_c_proc"] = whole_vert_nii.copy()
+        n_vert_bodies = len(uniq_labels)
+        logger.print(f"Predicted {n_vert_bodies} vertebrae")
         if n_vert_bodies < n_corpus_coms:
             logger.print(f"Number of vertebra {n_vert_bodies} smaller than number of corpus regions {n_corpus_coms}", Log_Type.WARNING)
 
-        if np.max(uniq_labels) - np.min(uniq_labels) + 1 != n_vert_bodies:
-            logger.print(
-                f"Vert Labels not continous, something went wrong, got vert labels {whole_vert_nii.unique()}",
-                Log_Type.FAIL,
-            )
+        # label continously
+        labelmap = {l: i + 1 for i, l in enumerate(uniq_labels)}
+        whole_vert_nii.map_labels_(labelmap, verbose=False)
 
         # clean vertebra mask with subreg mask
         logger.print(
@@ -137,16 +132,16 @@ def predict_instance_mask(
         uncropped_vert_mask[crop] = vert_nii_cleaned.get_seg_array()
         logger.print(f"Uncrop back from {vert_nii_cleaned.shape} to {uncropped_vert_mask.shape}", verbose=verbose)
         whole_vert_nii_uncropped = seg_nii_uncropped.set_array(uncropped_vert_mask)
-        debug_data["vert_arr_uncrop_a"] = whole_vert_nii_uncropped.copy()
+        debug_data["inst_uncropped_vert_arr_a"] = whole_vert_nii_uncropped.copy()
 
         if resample_output_to_input_space:
             whole_vert_nii_uncropped.rescale_(zms, verbose=verbose)
-            debug_data["vert_arr_uncrop_b_rescale"] = whole_vert_nii_uncropped.copy()
+            debug_data["inst_uncropped_vert_arr_b_rescale"] = whole_vert_nii_uncropped.copy()
             whole_vert_nii_uncropped.reorient_(orientation, verbose=verbose)
-            debug_data["vert_arr_uncrop_c_reorient"] = whole_vert_nii_uncropped.copy()
+            debug_data["inst_uncropped_vert_arr_c_reorient"] = whole_vert_nii_uncropped.copy()
             whole_vert_nii_uncropped.pad_to(shp, inplace=True)
 
-    return whole_vert_nii_uncropped, debug_data, ErrCode.OK
+    return whole_vert_nii_uncropped, ErrCode.OK
 
 
 def collect_vertebra_predictions(
@@ -260,7 +255,7 @@ def collect_vertebra_predictions(
         # Calc cutout
         arr_cut, cutout_coords, paddings = np_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size2)
         cut_nii = seg_nii_for_cut.set_array(arr_cut, verbose=False).reorient_()
-        debug_data[f"vert_nii_{com_idx}_cut"] = cut_nii
+        debug_data[f"inst_cutout_vert_nii_{com_idx}_cut"] = cut_nii
         # print("cut_nii", cut_nii.shape)
         results = model.segment_scan(
             cut_nii,
@@ -271,12 +266,12 @@ def collect_vertebra_predictions(
         vert_cut_nii = results[OutputType.seg_modelres].reorient_()
         # print("vert_cut_nii", vert_cut_nii.shape)
         # logger.print(f"Done {com_idx}")
-        debug_data[f"vert_nii_{com_idx}_pred"] = vert_cut_nii.copy()
+        debug_data[f"inst_cutout_vert_nii_{com_idx}_pred"] = vert_cut_nii.copy()
         vert_cut_nii = post_process_single_3vert_prediction(
             vert_cut_nii, None, fill_holes=fill_holes, largest_cc=proc_largest_cc  # type:ignore
         )
         vert_labels = vert_cut_nii.unique()  # 1,2,3
-        debug_data[f"vert_nii_{com_idx}_proc"] = vert_cut_nii.copy()
+        debug_data[f"inst_cutout_vert_nii_{com_idx}_proc"] = vert_cut_nii.copy()
 
         cutout_sizes = tuple(cutout_coords[i].stop - cutout_coords[i].start for i in range(0, len(cutout_coords)))
         pad_cutout = tuple(slice(paddings[i].start, paddings[i].start + cutout_sizes[i]) for i in range(0, len(paddings)))
@@ -498,7 +493,6 @@ def merge_coupled_predictions(
 ) -> tuple[NII, dict, ErrCode]:
     whole_vert_nii = seg_nii.copy()
     whole_vert_arr = np.zeros(whole_vert_nii.shape, dtype=np.uint16)  # this is fixed segmentations from vert
-    shape = whole_vert_arr.shape
 
     idx = 1
     for k, overall_agreement in coupled_predictions.items():
@@ -529,7 +523,7 @@ def merge_coupled_predictions(
         whole_vert_arr[whole_vert_arr == 0] = combine[whole_vert_arr == 0]
         idx += 1
 
-    debug_data["vert_arr_crop_a_raw"] = seg_nii.set_array(whole_vert_arr)
+    debug_data["inst_crop_vert_arr_a_raw"] = seg_nii.set_array(whole_vert_arr)
 
     if len(np.unique(whole_vert_arr)) == 1:
         logger.print("Vert mask empty, will skip", Log_Type.FAIL)
@@ -545,27 +539,10 @@ def merge_coupled_predictions(
             logger=logger,
             verbose=verbose,
         )
-
-    present_labels = list(np.unique(whole_vert_arr)[1:])
-    com_i = np_approx_center_of_mass(whole_vert_arr, present_labels)
-    logger.print("Center of masses", com_i, verbose=verbose)
-    comb = {}
-    for i in present_labels:
-        arr_i = whole_vert_arr.copy()
-        arr_i[arr_i != i] = 0
-        comb[i] = center_of_mass(arr_i)
-    comb_l = list(zip(com_i.keys(), com_i.values()))
-    comb_l.sort(key=lambda a: a[1][1])  # PIR
-    com_map = {comb_l[idx][0]: idx + 1 for idx in range(len(comb_l))}
-
     # print("whole_vert_arr", whole_vert_arr.shape)
     # print("seg_nii", seg_nii.shape)
-    whole_vert_arr_proc = seg_nii.set_array(whole_vert_arr)
+    whole_vert_nii_proc = seg_nii.set_array(whole_vert_arr)
     # print("whole_vert_arr_proc", whole_vert_arr_proc.shape)
-    mapped = whole_vert_arr_proc.map_labels(com_map, verbose=False)
-    # print("mapped", mapped.shape)
-    debug_data["vert_arr_crop_b_maplabels"] = mapped
-
     # debug_data["whole_vert_arr_proc"] = seg_nii.set_array(whole_vert_arr)
     # return seg_nii.set_array(whole_vert_arr, verbose=False).map_labels_(com_map, verbose=False), debug_data, ErrCode.OK
-    return mapped.copy(), debug_data, ErrCode.OK
+    return whole_vert_nii_proc, debug_data, ErrCode.OK
