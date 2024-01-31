@@ -340,6 +340,7 @@ def label_instance_top_to_bottom(vert_nii: NII):
     present_labels = list(vert_nii.unique())
     vert_arr = vert_nii.get_seg_array()
     com_i = np_approx_center_of_mass(vert_arr, present_labels)
+    # TODO
     comb = {}
     for i in present_labels:
         arr_i = vert_arr.copy()

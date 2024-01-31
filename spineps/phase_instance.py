@@ -260,6 +260,7 @@ def collect_vertebra_predictions(
         results = model.segment_scan(
             cut_nii,
             resample_to_recommended=False,
+            pad_size=0,
             # resample_output_to_input_space=False,
             verbose=False,
         )

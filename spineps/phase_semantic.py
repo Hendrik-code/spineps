@@ -69,6 +69,7 @@ def predict_semantic_mask(
 
         results = model.segment_scan(
             mri_nii_rdy,
+            pad_size=2,
             resample_to_recommended=True,
             verbose=verbose,
         )  # type:ignore

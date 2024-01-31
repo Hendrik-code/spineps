@@ -77,7 +77,6 @@ def load_inf_model(
 def run_inference(
     input: str | NII | list[NII],
     predictor: nnUNetPredictor,
-    # pad_size: int = 2,
     reorient_PIR: bool = False,
 ) -> tuple[NII, NII | None, np.ndarray]:
     """Runs nnUnet model inference on one input.

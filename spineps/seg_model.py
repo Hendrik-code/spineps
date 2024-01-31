@@ -90,7 +90,7 @@ class Segmentation_Model(ABC):
     def segment_scan(
         self,
         input: Image_Reference | dict[InputType, Image_Reference],
-        pad_size: int = 4,
+        pad_size: int = 2,
         step_size: float | None = 0.5,
         resample_to_recommended: bool = True,
         verbose: bool = False,
@@ -124,19 +124,27 @@ class Segmentation_Model(ABC):
         # Check if all required inputs are there
         if not set(list(inputdict.keys())).issuperset(self.inference_config.expected_inputs):
             self.print(f"expected {self.inference_config.expected_inputs}, but only got {list(inputdict.keys())}")
-
-        # Convert input to nifty
-        first_nii = to_nii(
-            inputdict[self.inference_config.expected_inputs[0]], seg=self.inference_config.expected_inputs[0] == InputType.seg
-        )
-        orig_shape = first_nii.shape
-        orientation = first_nii.orientation
-        zms = first_nii.zoom
+        #
+        orig_shape = None
+        orientation = None
+        zms = None
         #
         input_niftys_in_order = []
         zms_pir: Zooms = None
         for idx, id in enumerate(self.inference_config.expected_inputs):
             nii = to_nii(inputdict[id], seg=id == InputType.seg)
+
+            if pad_size > 0:
+                arr = nii.get_array()
+                arr = np.pad(arr, 2, mode="edge")
+                nii.set_array_(arr)
+            input_niftys_in_order.append(nii)
+
+            if orig_shape is None:
+                orig_shape = nii.shape
+                orientation = nii.orientation
+                zms = nii.zoom
+
             assert (
                 nii.shape == orig_shape and nii.orientation == orientation and nii.zoom == zms
             ), "All inputs need to be of same shape, orientation and zoom, got at least two different."
@@ -144,7 +152,6 @@ class Segmentation_Model(ABC):
             zms_pir = nii.zoom
             if resample_to_recommended:
                 nii.rescale_(self.calc_recommended_resampling_zoom(zms_pir), verbose=self.logger)
-            input_niftys_in_order.append(nii)
 
         if not resample_to_recommended:
             self.print("resample_to_recommended set to False, segmentation might not work. Proceed at own risk", Log_Type.WARNING)
@@ -158,7 +165,6 @@ class Segmentation_Model(ABC):
         self.print("Run Segmentation")
         result = self.run(
             input=input_niftys_in_order,
-            pad_size=pad_size,
             verbose=verbose,
         )
         assert OutputType.seg in result and isinstance(result[OutputType.seg], NII), "No seg output in segmentation result"
@@ -173,6 +179,11 @@ class Segmentation_Model(ABC):
                 v.pad_to(orig_shape, inplace=True)
                 if k == OutputType.seg:
                     v.map_labels_(self.inference_config.segmentation_labels, verbose=self.logger)
+                if pad_size > 0:
+                    arr = v.get_array()
+                    arr = arr[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size]
+                    v.set_array_(arr)
+
                 self.print(f"out_seg {k}", v.zoom, v.orientation, v.shape, verbose=verbose)
         self.print("Segmenting done!")
         return result
@@ -197,7 +208,6 @@ class Segmentation_Model(ABC):
     def run(
         self,
         input: list[NII],
-        pad_size: int = 2,
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
         pass
@@ -273,14 +283,12 @@ class Segmentation_Model_NNunet(Segmentation_Model):
     def run(
         self,
         input: list[NII],
-        pad_size: int = 2,
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
         self.print("Segmenting...")
         seg_nii, unc_nii, softmax_logits = run_inference(
             input,
             self.predictor,
-            # pad_size=pad_size,
         )
         self.print("Segmentation done!")
         self.print("out_inf", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
@@ -314,7 +322,6 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
     def run(
         self,
         input: list[NII],
-        pad_size: int = 2,  # TODO not implemented yet
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
         assert len(input) == 1, "Unet3D does not support more than one input"
