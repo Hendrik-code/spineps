@@ -202,14 +202,18 @@ def process_dataset(
 
     logger.print()
     logger.print(f"Processed {processed_seen_counter} scans with {modalities}", Log_Type.BOLD)
-    logger.print(
-        f"Scans that were skipped because all derivatives were present: {processed_alldone_counter}"
-    ) if processed_alldone_counter > 0 else None
+    (
+        logger.print(f"Scans that were skipped because all derivatives were present: {processed_alldone_counter}")
+        if processed_alldone_counter > 0
+        else None
+    )
     not_processed_ok = processed_seen_counter - processed_alldone_counter - processed_counter
     if not_processed_ok > 0:
         logger.print(f"Scans that were not properly processed: {not_processed_ok}")
-        logger.print("Consult the log file for more info!") if save_log_data else logger.print(
-            "Set save_log_data=True to get a detailed log. Here are the scans in question:"
+        (
+            logger.print("Consult the log file for more info!")
+            if save_log_data
+            else logger.print("Set save_log_data=True to get a detailed log. Here are the scans in question:")
         )
         logger.print(not_properly_processed)
 
@@ -403,7 +407,6 @@ def process_img_nii(
                 model_instance,
                 debug_data=debug_data_run,
                 use_height_estimate=False,
-                resample_output_to_input_space=True,
                 verbose=verbose,
                 fill_holes=proc_fillholes,
                 proc_corpus_clean=proc_corpus_clean,

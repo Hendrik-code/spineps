@@ -15,7 +15,7 @@ def predict_instance_mask(
     seg_nii: NII,
     model: Segmentation_Model,
     debug_data: dict,
-    resample_output_to_input_space: bool = True,
+    pad_size: int = 2,
     fill_holes: bool = True,
     use_height_estimate: bool = False,
     proc_corpus_clean: bool = True,
@@ -47,6 +47,16 @@ def predict_instance_mask(
 
         seg_nii_rdy = seg_nii.reorient(verbose=logger)
         debug_data["inst_uncropped_Subreg_nii_a_PIR"] = seg_nii_rdy.copy()
+
+        # Padding?
+        if pad_size > 0:
+            # logger.print(seg_nii_rdy.shape)
+            arr = seg_nii_rdy.get_array()
+            arr = np.pad(arr, pad_size, mode="edge")
+            seg_nii_rdy.set_array_(arr)
+            # logger.print(seg_nii_rdy.shape)
+        #
+
         zms = seg_nii_rdy.zoom
         logger.print("zms", zms, verbose=verbose)
         expected_zms = model.calc_recommended_resampling_zoom(seg_nii_rdy.zoom)
@@ -61,7 +71,7 @@ def predict_instance_mask(
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
         #
         crop = seg_nii_rdy.compute_crop_slice(dist=5)
-        logger.print("Crop", crop, verbose=verbose)
+        # logger.print("Crop", crop, verbose=verbose)
         seg_nii_rdy.apply_crop_slice_(crop)
         logger.print(f"Crop down from {uncropped_vert_mask.shape} to {seg_nii_rdy.shape}", verbose=verbose)
         # arr[crop] = X, then set nifty to arr
@@ -134,12 +144,18 @@ def predict_instance_mask(
         whole_vert_nii_uncropped = seg_nii_uncropped.set_array(uncropped_vert_mask)
         debug_data["inst_uncropped_vert_arr_a"] = whole_vert_nii_uncropped.copy()
 
-        if resample_output_to_input_space:
-            whole_vert_nii_uncropped.rescale_(zms, verbose=verbose)
-            debug_data["inst_uncropped_vert_arr_b_rescale"] = whole_vert_nii_uncropped.copy()
-            whole_vert_nii_uncropped.reorient_(orientation, verbose=verbose)
-            debug_data["inst_uncropped_vert_arr_c_reorient"] = whole_vert_nii_uncropped.copy()
-            whole_vert_nii_uncropped.pad_to(shp, inplace=True)
+        # Resample back to input space
+        whole_vert_nii_uncropped.rescale_(zms, verbose=verbose)
+        debug_data["inst_uncropped_vert_arr_b_rescale"] = whole_vert_nii_uncropped.copy()
+        whole_vert_nii_uncropped.reorient_(orientation, verbose=verbose)
+        debug_data["inst_uncropped_vert_arr_c_reorient"] = whole_vert_nii_uncropped.copy()
+        if pad_size > 0:
+            # logger.print(whole_vert_nii_uncropped.shape)
+            arr = whole_vert_nii_uncropped.get_array()
+            arr = arr[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size]
+            whole_vert_nii_uncropped.set_array_(arr)
+            # logger.print(whole_vert_nii_uncropped.shape)
+        whole_vert_nii_uncropped.pad_to(shp, inplace=True)
 
     return whole_vert_nii_uncropped, ErrCode.OK
 
@@ -176,7 +192,9 @@ def collect_vertebra_predictions(
         logger.print("No 1 in corpus nifty, cannot make vertebra mask", Log_Type.FAIL)
         return None, [], 0
 
-    corpus_coms = corpus_nii.get_segmentation_connected_components_center_of_mass(label=1, sort_by_axis=1)
+    corpus_coms = corpus_nii.get_segmentation_connected_components_center_of_mass(
+        label=1, sort_by_axis=1
+    )  # TODO replace with approx_com by bbox
     corpus_coms.reverse()  # from bottom to top
     n_corpus_coms = len(corpus_coms)
 

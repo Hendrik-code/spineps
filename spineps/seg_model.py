@@ -132,22 +132,24 @@ class Segmentation_Model(ABC):
         input_niftys_in_order = []
         zms_pir: Zooms = None
         for idx, id in enumerate(self.inference_config.expected_inputs):
+            # Make nifty
             nii = to_nii(inputdict[id], seg=id == InputType.seg)
-
+            # Padding
             if pad_size > 0:
                 arr = nii.get_array()
-                arr = np.pad(arr, 2, mode="edge")
+                arr = np.pad(arr, pad_size, mode="edge")
                 nii.set_array_(arr)
             input_niftys_in_order.append(nii)
-
+            # Save first values for comparison
             if orig_shape is None:
                 orig_shape = nii.shape
                 orientation = nii.orientation
                 zms = nii.zoom
-
+            # Consistency check
             assert (
                 nii.shape == orig_shape and nii.orientation == orientation and nii.zoom == zms
             ), "All inputs need to be of same shape, orientation and zoom, got at least two different."
+            # Reorient and rescale
             nii.reorient_(self.inference_config.model_expected_orientation, verbose=self.logger)
             zms_pir = nii.zoom
             if resample_to_recommended:

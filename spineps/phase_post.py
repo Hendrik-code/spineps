@@ -87,8 +87,7 @@ def mask_cleaning_other(
     verbose: bool = False,
 ) -> tuple[NII, NII]:
     # make copy where both masks clean each other
-    vert_nii_cleaned = whole_vert_nii.copy()
-    vert_arr_cleaned = vert_nii_cleaned.get_seg_array()
+    vert_arr_cleaned = whole_vert_nii.get_seg_array()
     subreg_vert_nii = seg_nii.extract_label(vertebra_subreg_labels)
     subreg_vert_arr = subreg_vert_nii.get_seg_array()
     # if dilation_fill:
@@ -124,7 +123,7 @@ def mask_cleaning_other(
     elif n_vert_pixels_rel_diff > 0.5:
         logger.print(f"A volume of {n_vert_pixels_rel_diff} * avg_vertebra_volume in subreg not matched by vertebra mask", Log_Type.WARNING)
 
-    return vert_nii_cleaned.set_array_(vert_arr_cleaned), seg_nii.set_array(subreg_arr)
+    return whole_vert_nii.set_array(vert_arr_cleaned), seg_nii.set_array(subreg_arr)
 
 
 def assign_missing_cc(
@@ -144,12 +143,14 @@ def assign_missing_cc(
         logger.print("No CC had to be assigned", Log_Type.OK, verbose=verbose)
         return target_arr, reference_arr, deletion_map
     # subreg_arr_vert_rest is not hit pixels bei vertebra prediction
-    subreg_cc, _ = np_connected_components(subreg_arr_vert_rest, connectivity=1)
+    subreg_cc, _ = np_connected_components(subreg_arr_vert_rest, connectivity=2)
+    loop_counts = 0
     # for label, for each cc
     for label, subreg_cc_map in subreg_cc.items():
         if label == 0:
             continue
         cc_labels = np.unique(subreg_cc_map)[1:]
+        loop_counts += len(cc_labels)
         # print(cc_labels)
         for cc_l in cc_labels:
             cc_map = subreg_cc_map.copy()
@@ -181,6 +182,7 @@ def assign_missing_cc(
                 deletion_map[cc_bbox][cc_map_c == 1] = 1
             # print("vert_arr\n", vert_arr)
             # print()
+    logger.print(f"Assign missing cc: Processed {loop_counts} missed ccs")
 
     return target_arr, reference_arr, deletion_map
 
@@ -202,7 +204,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
         vert_l[subreg_arr != 49] = 0  # com of corpus region
         vert_l[vert_l != 0] = 1
         if np.count_nonzero(vert_l) > 0:
-            coms_vert_dict[l] = center_of_mass(vert_l)[1]
+            coms_vert_dict[l] = np_approx_center_of_mass(vert_l, label_ref=1)[1][1]  # center_of_mass(vert_l)[1]
         else:
             coms_vert_dict[l] = 0
 
@@ -223,7 +225,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
                 continue
             c_l = subreg_cc.copy()
             c_l[c_l != c] = 0
-            com_y = center_of_mass(c_l)[1]
+            com_y = np_approx_center_of_mass(c_l, label_ref=c)[c][1]  # center_of_mass(c_l)[1]
 
             if com_y < min(coms_vert_y):
                 label = min(coms_vert_labels) - 1
@@ -262,7 +264,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
                 continue
             c_l = ep_cc.copy()
             c_l[c_l != c] = 0
-            com_y = center_of_mass(c_l)[1]
+            com_y = np_approx_center_of_mass(c_l, label_ref=c)[c][1]  # center_of_mass(c_l)[1]
             nearest_lower = find_nearest_lower(coms_vert_y, com_y)
             label = [i for i in coms_vert_dict if coms_vert_dict[i] == nearest_lower][0]
             mapping_ep_cc_to_vert_label[c] = label
@@ -340,12 +342,12 @@ def label_instance_top_to_bottom(vert_nii: NII):
     present_labels = list(vert_nii.unique())
     vert_arr = vert_nii.get_seg_array()
     com_i = np_approx_center_of_mass(vert_arr, present_labels)
-    # TODO
-    comb = {}
-    for i in present_labels:
-        arr_i = vert_arr.copy()
-        arr_i[arr_i != i] = 0
-        comb[i] = center_of_mass(arr_i)
+    # Old, more precise version (but takes longer)
+    # comb = {}
+    # for i in present_labels:
+    #    arr_i = vert_arr.copy()
+    #    arr_i[arr_i != i] = 0
+    #    comb[i] = center_of_mass(arr_i)
     comb_l = list(zip(com_i.keys(), com_i.values()))
     comb_l.sort(key=lambda a: a[1][1])  # PIR
     com_map = {comb_l[idx][0]: idx + 1 for idx in range(len(comb_l))}
