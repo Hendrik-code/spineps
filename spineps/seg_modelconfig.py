@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from BIDS import Zooms, Location, v_name2idx, Ax_Codes, Logger_Interface, Log_Type
+from TPTBox import Zooms, Location, v_name2idx, Ax_Codes, Logger_Interface, Log_Type
 import json
 from spineps.seg_enums import Modality, Acquisition, ModelType, InputType
 

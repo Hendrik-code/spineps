@@ -1,5 +1,5 @@
 # from utils.predictor import nnUNetPredictor
-from BIDS import BIDS_FILE, Log_Type, Zooms
+from TPTBox import BIDS_FILE, Log_Type, Zooms
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger
 from spineps.seg_enums import Modality, Acquisition

@@ -1,7 +1,7 @@
 # from utils.predictor import nnUNetPredictor
 import numpy as np
-from BIDS import NII, Location, Log_Type, v_idx2name, v_name2idx
-from BIDS.core.np_utils import np_bbox_nd, np_connected_components, np_dilate_msk, np_map_labels, np_approx_center_of_mass
+from TPTBox import NII, Location, Log_Type, v_idx2name, v_name2idx
+from TPTBox.core.np_utils import np_bbox_nd, np_connected_components, np_dilate_msk, np_map_labels, np_approx_center_of_mass
 from scipy.ndimage import center_of_mass
 
 from spineps.seg_pipeline import logger, vertebra_subreg_labels

@@ -2,8 +2,8 @@ import os
 import os.path
 import torch
 from spineps.utils.predictor import nnUNetPredictor
-from BIDS import NII, No_Logger, Log_Type
-from BIDS.core import sitk_utils
+from TPTBox import NII, No_Logger, Log_Type
+from TPTBox.core import sitk_utils
 import nibabel as nib
 import numpy as np
 

@@ -5,7 +5,7 @@ file = Path(__file__).resolve()
 sys.path.append(str(file.parents[1]))
 sys.path.append(str(file.parents[2]))
 
-from BIDS import (
+from TPTBox import (
     BIDS_FILE,
 )
 from spineps.models import get_segmentation_model

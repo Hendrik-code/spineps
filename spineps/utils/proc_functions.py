@@ -1,5 +1,5 @@
 from ants.utils.convert_nibabel import from_nibabel
-from BIDS import Logger_Interface, NII, np_utils
+from TPTBox import Logger_Interface, NII, np_utils
 import numpy as np
 from scipy.ndimage import center_of_mass
 from tqdm import tqdm

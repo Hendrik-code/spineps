@@ -6,8 +6,8 @@ from typing import Callable
 
 import nibabel as nib
 import numpy as np
-from BIDS import BIDS_FILE, NII, BIDS_Global_info, Centroids, Location, Log_Type, Logger
-from BIDS.snapshot2D.snapshot_templates import mri_snapshot
+from TPTBox import BIDS_FILE, NII, BIDS_Global_info, Centroids, Location, Log_Type, Logger
+from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 
 from spineps.phase_instance import predict_instance_mask
 from spineps.phase_post import phase_postprocess_combined

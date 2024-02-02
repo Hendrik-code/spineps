@@ -1,7 +1,7 @@
 # from utils.predictor import nnUNetPredictor
-from BIDS import NII, Location, No_Logger, Zooms
-from BIDS.core import poi
-from BIDS.logger.log_file import get_time, format_time_short
+from TPTBox import NII, Location, No_Logger, Zooms
+from TPTBox.core import poi
+from TPTBox.logger.log_file import get_time, format_time_short
 from spineps.seg_model import Segmentation_Model
 import subprocess
 
