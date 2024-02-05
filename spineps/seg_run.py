@@ -346,7 +346,7 @@ def process_img_nii(
         logger.print("Input image", zms, orientation, img_nii.shape, verbose=verbose)
 
         # First stage
-        if not os.path.exists(out_spine) or override_semantic:
+        if not os.path.exists(out_spine_raw) or override_semantic:
             # make subreg mask
             seg_nii, seg_nii_modelres, unc_nii, softmax_logits, errcode = predict_semantic_mask(
                 img_nii,
@@ -377,6 +377,7 @@ def process_img_nii(
                 seg_nii_back = lambda_semantic(seg_nii_back)
 
             seg_nii_back.nii = nib.nifti1.Nifti1Image(seg_nii_back.get_seg_array(), affine=affine, header=header)
+            seg_nii.assert_affine(other=img_nii)
             seg_nii_back.save(out_spine_raw, verbose=logger)
             if isinstance(seg_nii_modelres, NII) and save_modelres_mask:
                 seg_nii_modelres.save(str(out_spine_raw).replace("seg-spine", "seg-spineModelRes"), verbose=logger)
@@ -401,7 +402,7 @@ def process_img_nii(
                 return output_paths, ErrCode.SHAPE
 
         # Second stage
-        if not os.path.exists(out_vert) or override_instance:
+        if not os.path.exists(out_vert_raw) or override_instance:
             whole_vert_nii, errcode = predict_instance_mask(
                 seg_nii.copy(),
                 model_instance,
@@ -425,6 +426,7 @@ def process_img_nii(
 
             # TODO make this better (instance mask gets to have same global coords)
             whole_vert_nii.nii = nib.nifti1.Nifti1Image(whole_vert_nii.get_seg_array(), affine=affine, header=header)
+            whole_vert_nii.assert_affine(other=img_nii)
             #
             whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
@@ -446,9 +448,8 @@ def process_img_nii(
                 proc_assign_missing_cc=proc_assign_missing_cc,
                 verbose=verbose,
             )
-            assert seg_nii_clean.shape == vert_nii_clean.shape, "shape mismatch after postprocess"
-            assert seg_nii_clean.zoom == zms, "zoom mismatch"
-            assert seg_nii_clean.orientation == orientation, "orientation mismatch"
+
+            seg_nii_clean.assert_affine(other=vert_nii_clean, zoom=zms, orientation=orientation)
 
             seg_nii_clean.save(out_spine, verbose=logger)
             vert_nii_clean.save(out_vert, verbose=logger)

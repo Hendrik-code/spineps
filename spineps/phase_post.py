@@ -1,8 +1,8 @@
 # from utils.predictor import nnUNetPredictor
 import numpy as np
-from TPTBox import NII, Location, Log_Type, v_idx2name, v_name2idx
-from TPTBox.core.np_utils import np_bbox_nd, np_connected_components, np_dilate_msk, np_map_labels, np_approx_center_of_mass
 from scipy.ndimage import center_of_mass
+from TPTBox import NII, Location, Log_Type, v_idx2name, v_name2idx
+from TPTBox.core.np_utils import np_approx_center_of_mass, np_bbox_nd, np_connected_components, np_dilate_msk, np_map_labels
 
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
 
@@ -18,7 +18,7 @@ def phase_postprocess_combined(
 ) -> tuple[NII, NII]:
     logger.print("Post process", Log_Type.STAGE)
     with logger:
-        assert seg_nii.shape == vert_nii.shape, f"shape mismatch before cleaning, got {seg_nii.shape} and {vert_nii.shape}"
+        seg_nii.assert_affine(shape=vert_nii.shape)
         # Post process semantic mask
         ###################
         seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
@@ -31,8 +31,8 @@ def phase_postprocess_combined(
             #
         vert_nii.apply_mask(seg_nii, inplace=True)
         crop_slices = seg_nii.compute_crop_slice(dist=3)
-        vert_uncropped_arr = np.zeros(vert_nii.shape)
-        seg_uncropped_arr = np.zeros(vert_nii.shape)
+        vert_uncropped_arr = np.zeros(vert_nii.shape, dtype=seg_nii.dtype)
+        seg_uncropped_arr = np.zeros(vert_nii.shape, dtype=seg_nii.dtype)
 
         # Crop down
         vert_nii.apply_crop_slice_(crop_slices)
@@ -63,6 +63,7 @@ def phase_postprocess_combined(
         whole_vert_nii_cleaned.set_array_(vert_uncropped_arr, verbose=False)
         #
         seg_uncropped_arr[crop_slices] = seg_nii_cleaned.get_seg_array()
+
         seg_nii_cleaned.set_array_(seg_uncropped_arr, verbose=False)
         #
         debug_data["vert_arr_crop_e_addivd"] = whole_vert_nii_cleaned.copy()
