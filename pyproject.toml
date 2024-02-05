@@ -30,6 +30,7 @@ tqdm = "^4.66.1"
 einops= "^0.6.1"
 nnunetv2 = "2.2"
 tptbox = "*"
+antspyx = "*"
 
 
 [tool.poetry-dynamic-versioning]
