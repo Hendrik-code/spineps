@@ -235,7 +235,7 @@ def collect_vertebra_predictions(
     logger.print("Vertebra collect in", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
 
     # iterate over sorted coms and segment vertebra from subreg
-    for com_idx, com in enumerate(tqdm(corpus_coms, desc=logger.get_logger_prefix() + " Vertebra Body predictions")):
+    for com_idx, com in enumerate(tqdm(corpus_coms, desc=logger._get_logger_prefix() + " Vertebra Body predictions")):
         seg_arr_c = seg_nii_for_cut.get_seg_array()
         # Shift the com until there is a segmentation there (to account for mishaps in the com calculation)
         seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
