@@ -1,8 +1,7 @@
 # from utils.predictor import nnUNetPredictor
 import numpy as np
-from BIDS import NII, Location, Log_Type
-from BIDS.core.np_utils import np_approx_center_of_mass, np_calc_crop_around_centerpoint, np_dice
-from scipy.ndimage import center_of_mass
+from TPTBox import NII, Location, Log_Type
+from TPTBox.core.np_utils import np_calc_crop_around_centerpoint, np_dice
 from tqdm import tqdm
 
 from spineps.seg_enums import ErrCode, OutputType

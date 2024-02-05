@@ -4,7 +4,7 @@ build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry]
 name = "SPINEPS"
-version = "0.0.0"
+version = "1.0.0"
 description = "Framework for out-of-the box whole spine MRI segmentation."
 authors = ["Hendrik Möller <hendrik.moeller@tum.de>"]
 repository = "https://github.com/Hendrik-code/spineps"
@@ -29,6 +29,8 @@ torchmetrics = "^1.1.2"
 tqdm = "^4.66.1"
 einops= "^0.6.1"
 nnunetv2 = "2.2"
+tptbox = "*"
+antspyx = "*"
 
 
 [tool.poetry-dynamic-versioning]

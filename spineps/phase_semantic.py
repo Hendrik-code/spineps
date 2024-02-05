@@ -1,5 +1,5 @@
 # from utils.predictor import nnUNetPredictor
-from BIDS import NII, Location, Log_Type
+from TPTBox import NII, Location, Log_Type
 import numpy as np
 from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
 from spineps.seg_model import Segmentation_Model

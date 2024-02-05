@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from BIDS import Log_Type, No_Logger
+from TPTBox import Log_Type, No_Logger
 
 from spineps.seg_enums import Modality
 from spineps.seg_model import Segmentation_Model, modeltype2class

@@ -5,7 +5,7 @@ from argparse import Namespace
 from pathlib import Path
 from time import perf_counter
 
-from BIDS import BIDS_FILE, Log_Type, No_Logger
+from TPTBox import BIDS_FILE, Log_Type, No_Logger
 
 from spineps.models import get_instance_model, get_segmentation_model, get_semantic_model, modelid2folder_instance, modelid2folder_semantic
 from spineps.seg_run import process_dataset, process_img_nii
@@ -214,7 +214,7 @@ def run_sample(opt: Namespace):
 
     start_time = perf_counter()
     if opt.run_cprofiler:
-        from BIDS.logger.log_file import format_time_short, get_time
+        from TPTBox.logger.log_file import format_time_short, get_time
 
         timestamp = format_time_short(get_time())
         cprofile_out = bids_sample.get_changed_path(
@@ -286,7 +286,7 @@ def run_dataset(opt: Namespace):
     }
 
     if opt.run_cprofiler:
-        from BIDS.logger.log_file import format_time_short, get_time
+        from TPTBox.logger.log_file import format_time_short, get_time
 
         start_time = get_time()
         start_time_short = format_time_short(start_time)

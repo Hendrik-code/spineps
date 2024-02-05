@@ -1,7 +1,7 @@
 from pathlib import Path
 import os
 
-from BIDS import Image_Reference, NII, to_nii, Logger, No_Logger, Zooms, Log_Type
+from TPTBox import Image_Reference, NII, to_nii, Logger, No_Logger, Zooms, Log_Type
 from spineps.utils.filepaths import search_path
 import torch
 from torch import from_numpy

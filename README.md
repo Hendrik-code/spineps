@@ -38,12 +38,6 @@ python -c "import torch; print(torch.cuda.is_available())"
 ```
 This should throw no errors and return True
 
-4. Install our BIDS toolbox (You can get a sufficient copy of the toolbox here: https://syncandshare.lrz.de/getlink/fi16bYYmqpwPQZRGd1M4G6/): `cd` into the BIDS folder (the one with the `setup.py` in it) and call 
-```bash
-pip install -e .
-```
-
-
 
 ### Setup this package
 
@@ -131,7 +125,7 @@ There are a lot more arguments, run `spineps sample -h` to see them.
 
 `spineps dataset <args>`:
 
-Processes all "suitable" niftys it finds in the specified dataset folder.
+Processes all "suitable" niftys it finds in the specified dataset folder. 
 
 A dataset folder must have the following structure:
 ```
@@ -156,6 +150,8 @@ sub-awesomedataset_sequ-HWS_part-inphase_T2w.nii.gz
 ```
 Anything that follows the BIDS-nomenclature is also supported (see https://bids-specification.readthedocs.io/en/stable/)
 Meaning you can have some key-value pairs (like `sub-<id>`) in the name. Those key-value pairs are always separated by `_` and combined with `-` (see second example above). Those will be used in creating the filename of the created segmentations.
+
+To that end, we are using TPTBox (see https://github.com/Hendrik-code/TPTBox)
 
 It supports the same arguments as in sample mode (see table above), and additionally:
 | argument | explanation |
