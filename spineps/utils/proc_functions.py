@@ -1,9 +1,9 @@
-from ants.utils.convert_nibabel import from_nibabel
-from TPTBox import Logger_Interface, NII, np_utils
-import numpy as np
-from scipy.ndimage import center_of_mass
-from tqdm import tqdm
 import cc3d
+import numpy as np
+from ants.utils.convert_nibabel import from_nibabel
+from scipy.ndimage import center_of_mass
+from TPTBox import NII, Logger_Interface, np_utils
+from tqdm import tqdm
 
 
 def n4_bias(
@@ -100,7 +100,7 @@ def clean_cc_artifacts(
     subreg_cc, subreg_cc_stats = connected_components_3d(result_arr, connectivity=1)
 
     cc_to_clean = {}
-    for lidx, label in enumerate(tqdm(labels, desc=f"{logger.get_logger_prefix()} cleaning...", disable=not verbose)):
+    for lidx, label in enumerate(tqdm(labels, desc=f"{logger._get_logger_prefix()} cleaning...", disable=not verbose)):
         # print(l, subreg_cc_stats[l]["voxel_counts"])
         idx = [i for i, v in enumerate(subreg_cc_stats[label]["voxel_counts"]) if v < cc_size_threshold[lidx]]
         if len(idx) > 0:
