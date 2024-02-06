@@ -1,8 +1,8 @@
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
-from typing import Callable
 
 import nibabel as nib
 import numpy as np
