@@ -69,9 +69,9 @@ def predict_instance_mask(
         uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
         #
-        crop = seg_nii_rdy.compute_crop_slice(dist=5)
+        crop = seg_nii_rdy.compute_crop(dist=5)
         # logger.print("Crop", crop, verbose=verbose)
-        seg_nii_rdy.apply_crop_slice_(crop)
+        seg_nii_rdy.apply_crop_(crop)
         logger.print(f"Crop down from {uncropped_vert_mask.shape} to {seg_nii_rdy.shape}", verbose=verbose)
         # arr[crop] = X, then set nifty to arr
         logger.print("Vertebra seg_nii_rdy", seg_nii_rdy.zoom, seg_nii_rdy.orientation, seg_nii_rdy.shape, verbose=verbose)
@@ -286,7 +286,10 @@ def collect_vertebra_predictions(
         # logger.print(f"Done {com_idx}")
         debug_data[f"inst_cutout_vert_nii_{com_idx}_pred"] = vert_cut_nii.copy()
         vert_cut_nii = post_process_single_3vert_prediction(
-            vert_cut_nii, None, fill_holes=fill_holes, largest_cc=proc_largest_cc  # type:ignore
+            vert_cut_nii,
+            None,
+            fill_holes=fill_holes,
+            largest_cc=proc_largest_cc,  # type:ignore
         )
         vert_labels = vert_cut_nii.unique()  # 1,2,3
         debug_data[f"inst_cutout_vert_nii_{com_idx}_proc"] = vert_cut_nii.copy()
