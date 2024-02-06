@@ -1,12 +1,13 @@
 # from utils.predictor import nnUNetPredictor
-from TPTBox import NII, Location, Log_Type
-import numpy as np
-from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
-from spineps.seg_model import Segmentation_Model
-from spineps.seg_enums import ErrCode, OutputType
 from time import perf_counter
 
-from spineps.seg_pipeline import logger, fill_holes_labels
+import numpy as np
+from TPTBox import NII, Location, Log_Type
+
+from spineps.seg_enums import ErrCode, OutputType
+from spineps.seg_model import Segmentation_Model
+from spineps.seg_pipeline import fill_holes_labels, logger
+from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
 
 
 def predict_semantic_mask(
@@ -47,11 +48,11 @@ def predict_semantic_mask(
         # uncropped_subregion_mask = np.zeros(mri_nii_rdy.shape)
         # uncropped_unc_image = np.zeros(mri_nii_rdy.shape)
         try:
-            crop = mri_nii_rdy.compute_crop_slice(dist=5) if do_crop else (slice(None, None), slice(None, None), slice(None, None))
+            crop = mri_nii_rdy.compute_crop(dist=5) if do_crop else (slice(None, None), slice(None, None), slice(None, None))
         except ValueError as e:
             logger.print("Image Nifty is empty, skip this", Log_Type.FAIL)
             return None, None, None, None, ErrCode.EMPTY
-        mri_nii_rdy.apply_crop_slice_(crop)
+        mri_nii_rdy.apply_crop_(crop)
         logger.print(f"Crop down from {uncropped_subregion_mask.shape} to {mri_nii_rdy.shape}", verbose=verbose)
 
         if do_n4:
