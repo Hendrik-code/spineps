@@ -1,17 +1,18 @@
-from pathlib import Path
 import os
+from abc import ABC, abstractmethod
+from pathlib import Path
 
-from TPTBox import Image_Reference, NII, to_nii, Logger, No_Logger, Zooms, Log_Type
-from spineps.utils.filepaths import search_path
+import numpy as np
 import torch
 from torch import from_numpy
-import numpy as np
-from abc import ABC, abstractmethod
-from spineps.utils.inference_api import load_inf_model, run_inference
-from spineps.seg_modelconfig import Segmentation_Inference_Config, load_inference_config
-from spineps.seg_enums import Modality, Acquisition, ModelType, InputType, OutputType
-from spineps.Unet3D.pl_unet import PLNet
+from TPTBox import NII, Image_Reference, Log_Type, Logger, No_Logger, Zooms, to_nii
 from typing_extensions import Self
+
+from spineps.seg_enums import Acquisition, InputType, Modality, ModelType, OutputType
+from spineps.seg_modelconfig import Segmentation_Inference_Config, load_inference_config
+from spineps.Unet3D.pl_unet import PLNet
+from spineps.utils.filepaths import search_path
+from spineps.utils.inference_api import load_inf_model, run_inference
 
 threads_started = False
 
@@ -39,7 +40,7 @@ class Segmentation_Model(ABC):
             default_allow_tqdm (bool, optional): If true, will showcase a progress bar while segmenting. Defaults to True.
         """
         self.name: str = ""
-        assert os.path.exists(str(model_folder)), f"model_folder doesnt exist, got {model_folder}"
+        assert os.path.exists(str(model_folder)), f"model_folder doesnt exist, got {model_folder}"  # noqa: PTH110
 
         self.logger = No_Logger()
 
@@ -87,9 +88,15 @@ class Segmentation_Model(ABC):
         )
         return output_zoom
 
+    def same_modelzoom_as_model(self, model: Self, input_zoom: Zooms) -> bool:
+        self_zms = self.calc_recommended_resampling_zoom(input_zoom=input_zoom)
+        model_zms = model.calc_recommended_resampling_zoom(input_zoom=self_zms)
+        match: bool = bool(np.all([self_zms[i] - model_zms[i] < 1e-4 for i in range(3)]))
+        return match
+
     def segment_scan(
         self,
-        input: Image_Reference | dict[InputType, Image_Reference],
+        input_image: Image_Reference | dict[InputType, Image_Reference],
         pad_size: int = 2,
         step_size: float | None = 0.5,
         resample_to_recommended: bool = True,
@@ -112,17 +119,17 @@ class Segmentation_Model(ABC):
             assert self.predictor is not None, "self.predictor == None after load(). Error!"
 
         # Check if input matches expectation
-        if not isinstance(input, dict):
+        if not isinstance(input_image, dict):
             if len(self.inference_config.expected_inputs) >= 2:
                 self.print(
                     "input is one Image_Reference but model expected more, if not already stacked correctly, this will fail!",
                     Log_Type.WARNING,
                 )
-            inputdict = {self.inference_config.expected_inputs[0]: input}
+            inputdict = {self.inference_config.expected_inputs[0]: input_image}
         else:
-            inputdict: dict[InputType, Image_Reference] = input
+            inputdict: dict[InputType, Image_Reference] = input_image
         # Check if all required inputs are there
-        if not set(list(inputdict.keys())).issuperset(self.inference_config.expected_inputs):
+        if not set(inputdict.keys()).issuperset(self.inference_config.expected_inputs):
             self.print(f"expected {self.inference_config.expected_inputs}, but only got {list(inputdict.keys())}")
         #
         orig_shape = None
@@ -130,8 +137,8 @@ class Segmentation_Model(ABC):
         zms = None
         #
         input_niftys_in_order = []
-        zms_pir: Zooms = None
-        for idx, id in enumerate(self.inference_config.expected_inputs):
+        zms_pir: Zooms = None  # type: ignore
+        for id in self.inference_config.expected_inputs:  # noqa: A001
             # Make nifty
             nii = to_nii(inputdict[id], seg=id == InputType.seg)
             # Padding
@@ -155,6 +162,7 @@ class Segmentation_Model(ABC):
             if resample_to_recommended:
                 nii.rescale_(self.calc_recommended_resampling_zoom(zms_pir), verbose=self.logger)
 
+        assert orig_shape is not None
         if not resample_to_recommended:
             self.print("resample_to_recommended set to False, segmentation might not work. Proceed at own risk", Log_Type.WARNING)
 
@@ -166,7 +174,7 @@ class Segmentation_Model(ABC):
         )
         self.print("Run Segmentation")
         result = self.run(
-            input=input_niftys_in_order,
+            input_nii=input_niftys_in_order,
             verbose=verbose,
         )
         assert OutputType.seg in result and isinstance(result[OutputType.seg], NII), "No seg output in segmentation result"
@@ -209,7 +217,7 @@ class Segmentation_Model(ABC):
     @abstractmethod
     def run(
         self,
-        input: list[NII],
+        input_nii: list[NII],
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
         pass
@@ -263,8 +271,8 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         super().__init__(model_folder, inference_config, default_verbose, default_allow_tqdm)
 
     def load(self, folds: tuple[str, ...] | None = None) -> Self:
-        global threads_started
-        if not os.path.exists(self.model_folder):
+        global threads_started  # noqa: PLW0603
+        if not os.path.exists(self.model_folder):  # noqa: PTH110
             self.print(f"Model weights not found in {self.model_folder}", Log_Type.FAIL)
         self.predictor = load_inf_model(
             model_folder=self.model_folder,
@@ -284,12 +292,12 @@ class Segmentation_Model_NNunet(Segmentation_Model):
 
     def run(
         self,
-        input: list[NII],
+        input_nii: list[NII],
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
         self.print("Segmenting...")
         seg_nii, unc_nii, softmax_logits = run_inference(
-            input,
+            input_nii,
             self.predictor,
         )
         self.print("Segmentation done!")
@@ -308,8 +316,8 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         super().__init__(model_folder, inference_config, default_verbose, default_allow_tqdm)
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
 
-    def load(self, folds: tuple[str, ...] | None = None) -> Self:
-        assert os.path.exists(self.model_folder)
+    def load(self, folds: tuple[str, ...] | None = None) -> Self:  # noqa: ARG002
+        assert os.path.exists(self.model_folder)  # noqa: PTH110
 
         chktpath = search_path(self.model_folder, "**/*weights*.ckpt")
         assert len(chktpath) == 1
@@ -323,11 +331,11 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
 
     def run(
         self,
-        input: list[NII],
+        input_nii: list[NII],
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
-        assert len(input) == 1, "Unet3D does not support more than one input"
-        input_nii = input[0]
+        assert len(input_nii) == 1, "Unet3D does not support more than one input"
+        input_nii = input_nii[0]
 
         arr = input_nii.get_seg_array().astype(np.int16)
         target = from_numpy(arr).to(torch.float32)
@@ -345,7 +353,7 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         return {OutputType.seg: seg_nii}
 
 
-def modeltype2class(type: ModelType):
+def modeltype2class(modeltype: ModelType):
     """Maps ModelType to actual Segmentation_Model Subclass
 
     Args:
@@ -357,9 +365,9 @@ def modeltype2class(type: ModelType):
     Returns:
         _type_: _description_
     """
-    if type == ModelType.nnunet:
+    if modeltype == ModelType.nnunet:
         return Segmentation_Model_NNunet
-    elif type == ModelType.unet:
+    elif modeltype == ModelType.unet:
         return Segmentation_Model_Unet3D
     else:
-        raise NotImplementedError(type)
+        raise NotImplementedError(modeltype)
