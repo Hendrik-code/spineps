@@ -14,7 +14,7 @@ def predict_instance_mask(
     seg_nii: NII,
     model: Segmentation_Model,
     debug_data: dict,
-    pad_size: int = 2,
+    pad_size: int = 0,
     fill_holes: bool = True,
     use_height_estimate: bool = False,
     proc_corpus_clean: bool = True,
@@ -59,7 +59,8 @@ def predict_instance_mask(
         zms = seg_nii_rdy.zoom
         logger.print("zms", zms, verbose=verbose)
         expected_zms = model.calc_recommended_resampling_zoom(seg_nii_rdy.zoom)
-        seg_nii_rdy.rescale_(expected_zms, verbose=logger)  # in PIR
+        if not seg_nii_rdy.assert_affine(zoom=expected_zms, raise_error=False):
+            seg_nii_rdy.rescale_(expected_zms, verbose=logger)  # in PIR
         #
         seg_nii_uncropped = seg_nii_rdy.copy()
         logger.print(
@@ -83,7 +84,9 @@ def predict_instance_mask(
         vert_size_threshold = max(int(vert_size_threshold / (expected_zms[0] * expected_zms[1] * expected_zms[2])), 40)
 
         seg_labels = seg_nii.unique()
-        assert 49 in seg_labels, f"no corpus ({Location.Vertebra_Corpus_border.value}) labels in this segmentation, cannot proceed"
+        if 49 not in seg_labels:
+            logger.print(f"no corpus ({Location.Vertebra_Corpus_border.value}) labels in this segmentation, cannot proceed", Log_Type.FAIL)
+            return None, ErrCode.EMPTY
 
         # get all the 3vert predictions
         vert_predictions, hierarchical_existing_predictions, n_corpus_coms = collect_vertebra_predictions(
@@ -144,17 +147,17 @@ def predict_instance_mask(
         debug_data["inst_uncropped_vert_arr_a"] = whole_vert_nii_uncropped.copy()
 
         # Resample back to input space
-        whole_vert_nii_uncropped.rescale_(zms, verbose=verbose)
-        debug_data["inst_uncropped_vert_arr_b_rescale"] = whole_vert_nii_uncropped.copy()
-        whole_vert_nii_uncropped.reorient_(orientation, verbose=verbose)
-        debug_data["inst_uncropped_vert_arr_c_reorient"] = whole_vert_nii_uncropped.copy()
+        # whole_vert_nii_uncropped.rescale_(zms, verbose=verbose)
+        # debug_data["inst_uncropped_vert_arr_b_rescale"] = whole_vert_nii_uncropped.copy()
+        # whole_vert_nii_uncropped.reorient_(orientation, verbose=verbose)
+        # debug_data["inst_uncropped_vert_arr_c_reorient"] = whole_vert_nii_uncropped.copy()
         if pad_size > 0:
             # logger.print(whole_vert_nii_uncropped.shape)
             arr = whole_vert_nii_uncropped.get_array()
             arr = arr[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size]
             whole_vert_nii_uncropped.set_array_(arr)
             # logger.print(whole_vert_nii_uncropped.shape)
-        whole_vert_nii_uncropped.pad_to(shp, inplace=True)
+        # whole_vert_nii_uncropped.pad_to(shp, inplace=True)
 
     return whole_vert_nii_uncropped, ErrCode.OK
 
@@ -196,6 +199,10 @@ def collect_vertebra_predictions(
     )  # TODO replace with approx_com by bbox
     corpus_coms.reverse()  # from bottom to top
     n_corpus_coms = len(corpus_coms)
+
+    if n_corpus_coms < 3:
+        logger.print(f"Too few vertebra semantically segmented ({n_corpus_coms})", Log_Type.FAIL)
+        return None, [], 0
 
     shp = (
         # n_corpus_coms,
@@ -248,26 +255,7 @@ def collect_vertebra_predictions(
                 break
             seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
 
-        if use_height_estimate:
-            com_above = 0 if com_idx < 2 else com_idx - 2
-            com_above = corpus_coms[com_above]  # (com, bbox)
-            com_below = n_corpus_coms - 1 if com_idx > n_corpus_coms - 3 else com_idx + 2
-            com_below = corpus_coms[com_below]
-            com_y = com[1]
-            height = min(
-                int(max(abs(com_above[1] - com_y), abs(com_below[1] - com_y)) * 2.5),  # type:ignore
-                cutout_size[1],
-            )
-            if len(corpus_coms) <= 3:
-                height = min(int(abs(com_above[1] - com_below[1]) * 2.5), cutout_size[1])
-            height = height + 1 if height % 2 != 0 else height
-            cutout_size2 = (
-                cutout_size[0],
-                height,
-                cutout_size[2],
-            )
-        else:
-            cutout_size2 = cutout_size
+        cutout_size2 = cutout_size
 
         # Calc cutout
         arr_cut, cutout_coords, paddings = np_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size2)
@@ -278,10 +266,10 @@ def collect_vertebra_predictions(
             cut_nii,
             resample_to_recommended=False,
             pad_size=0,
-            # resample_output_to_input_space=False,
+            resample_output_to_input_space=False,
             verbose=False,
         )
-        vert_cut_nii = results[OutputType.seg_modelres].reorient_()
+        vert_cut_nii = results[OutputType.seg].reorient_()
         # print("vert_cut_nii", vert_cut_nii.shape)
         # logger.print(f"Done {com_idx}")
         debug_data[f"inst_cutout_vert_nii_{com_idx}_pred"] = vert_cut_nii.copy()

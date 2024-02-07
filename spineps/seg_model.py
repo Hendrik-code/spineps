@@ -100,6 +100,7 @@ class Segmentation_Model(ABC):
         pad_size: int = 2,
         step_size: float | None = 0.5,
         resample_to_recommended: bool = True,
+        resample_output_to_input_space: bool = True,
         verbose: bool = False,
     ) -> dict[OutputType, NII]:
         """Segments a given input with this model
@@ -153,9 +154,8 @@ class Segmentation_Model(ABC):
                 orientation = nii.orientation
                 zms = nii.zoom
             # Consistency check
-            assert (
-                nii.shape == orig_shape and nii.orientation == orientation and nii.zoom == zms
-            ), "All inputs need to be of same shape, orientation and zoom, got at least two different."
+            nii.assert_affine(shape=orig_shape, orientation=orientation, zoom=zms)
+            # ), "All inputs need to be of same shape, orientation and zoom, got at least two different."
             # Reorient and rescale
             nii.reorient_(self.inference_config.model_expected_orientation, verbose=self.logger)
             zms_pir = nii.zoom
@@ -179,14 +179,13 @@ class Segmentation_Model(ABC):
         )
         assert OutputType.seg in result and isinstance(result[OutputType.seg], NII), "No seg output in segmentation result"
         #
-        result[OutputType.seg_modelres] = result[OutputType.seg].copy()  # type:ignore
-        assert isinstance(result[OutputType.seg_modelres], NII)
-        result[OutputType.seg_modelres].map_labels_(self.inference_config.segmentation_labels, verbose=False)  # type:ignore
         #
         for k, v in result.items():
-            if isinstance(v, NII) and k != OutputType.seg_modelres:
-                v.rescale_(zms_pir, verbose=self.logger).reorient_(orientation, verbose=self.logger)
-                v.pad_to(orig_shape, inplace=True)
+            if isinstance(v, NII):  # and k != OutputType.seg_modelres:
+
+                if resample_output_to_input_space:
+                    v.rescale_(zms_pir, verbose=self.logger).reorient_(orientation, verbose=self.logger)
+                    v.pad_to(orig_shape, inplace=True)
                 if k == OutputType.seg:
                     v.map_labels_(self.inference_config.segmentation_labels, verbose=self.logger)
                 if pad_size > 0:

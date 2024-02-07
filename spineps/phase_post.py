@@ -40,7 +40,7 @@ def phase_postprocess_combined(
             debug_data = {}
             #
         vert_nii.apply_mask(seg_nii, inplace=True)
-        crop_slices = seg_nii.compute_crop(dist=3)
+        crop_slices = seg_nii.compute_crop(dist=2)
         vert_uncropped_arr = np.zeros(vert_nii.shape, dtype=seg_nii.dtype)
         seg_uncropped_arr = np.zeros(vert_nii.shape, dtype=seg_nii.dtype)
 
