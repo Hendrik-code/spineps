@@ -2,7 +2,8 @@ import cc3d
 import numpy as np
 from ants.utils.convert_nibabel import from_nibabel
 from scipy.ndimage import center_of_mass
-from TPTBox import NII, Logger_Interface, np_utils
+from TPTBox import NII, Logger_Interface
+from TPTBox.core.np_utils import np_bbox_binary, np_count_nonzero, np_dilate_msk, np_unique
 from tqdm import tqdm
 
 
@@ -29,7 +30,7 @@ def n4_bias(
     mask = nii.get_array()
     mask[mask < threshold] = 0
     mask[mask != 0] = 1
-    slices = np_utils.np_bbox_nd(mask)
+    slices = np_bbox_binary(mask)
     mask[slices] = 1
     mask_nii = nii.set_array(mask)
     mask_nii.seg = True
@@ -72,7 +73,7 @@ def clean_cc_artifacts(
         mask_arr = mask.copy()
     result_arr = mask_arr.copy()
 
-    mask_labels = np.unique(result_arr)
+    mask_labels = np_unique(result_arr)
     if 0 not in mask_labels:
         logger.print("No zero in mask? Skip cleaning")
         return mask_arr
@@ -113,7 +114,7 @@ def clean_cc_artifacts(
             mask_cc_l[mask_cc_l != cc_idx] = 0
             log_string = ""
             if verbose:
-                cc_volume = np.count_nonzero(mask_cc_l)
+                cc_volume = np_count_nonzero(mask_cc_l)
                 cc_centroid = center_of_mass(mask_cc_l)
                 cc_centroid = [int(c) + 1 for c in cc_centroid]
                 log_string = f"Label {label}, cc{cc_idx}, at {cc_centroid}, volume {cc_volume}: "
@@ -123,13 +124,13 @@ def clean_cc_artifacts(
                 result_arr[mask_cc_l != 0] = 0
                 continue
             #
-            dilated_m = np_utils.np_dilate_msk(mask_cc_l, mm=1)
+            dilated_m = np_dilate_msk(mask_cc_l, mm=1)
             dilated_m[mask_cc_l != 0] = 0
-            neighbor_voxel_count = np.count_nonzero(dilated_m)
+            neighbor_voxel_count = np_count_nonzero(dilated_m)
             # print(subreg_cc_stats[label])
 
             mult = mask_arr * dilated_m
-            if np.count_nonzero(mult) <= int(neighbor_voxel_count * neighbor_factor_2_delete):
+            if np_count_nonzero(mult) <= int(neighbor_voxel_count * neighbor_factor_2_delete):
                 logger.print(log_string + "deleted") if verbose else None
                 # dilated mask nothing in original mask, just delete it
                 result_arr[mask_cc_l != 0] = 0
@@ -171,7 +172,7 @@ def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbo
 
     subreg_cc = {}
     subreg_cc_stats = {}
-    regions = np.unique(mask_image)[1:]
+    regions = np_unique(mask_image)[1:]
     for subreg in regions:
         img_subreg = mask_image.copy()
         img_subreg[img_subreg != subreg] = 0

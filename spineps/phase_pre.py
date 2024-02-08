@@ -24,7 +24,7 @@ def preprocess_input(
         uncropped_input = np.zeros(mri_nii.shape)
         try:
             # Enforce to range [0, 1500]
-            mri_nii.normalize_to_range_(min_value=0, max_value=1500, verbose=logger)
+            mri_nii.normalize_to_range_(min_value=0, max_value=9000, verbose=logger)
             crop = mri_nii.compute_crop(dist=0) if do_crop else (slice(None, None), slice(None, None), slice(None, None))
         except ValueError as e:
             logger.print("Image Nifty is empty, skip this", Log_Type.FAIL)

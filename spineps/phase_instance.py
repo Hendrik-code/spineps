@@ -1,7 +1,7 @@
 # from utils.predictor import nnUNetPredictor
 import numpy as np
 from TPTBox import NII, Location, Log_Type
-from TPTBox.core.np_utils import np_calc_crop_around_centerpoint, np_dice
+from TPTBox.core.np_utils import np_calc_crop_around_centerpoint, np_count_nonzero, np_dice, np_unique
 from tqdm import tqdm
 
 from spineps.seg_enums import ErrCode, OutputType
@@ -518,13 +518,13 @@ def merge_coupled_predictions(
         combine[combine < m] = 0
         combine[combine != 0] = idx
 
-        count_new = np.count_nonzero(combine)
+        count_new = np_count_nonzero(combine)
         if count_new == 0:
             logger.print("ZERO instance mask failure on vertebra instance creation", Log_Type.FAIL)
             return seg_nii, debug_data, ErrCode.EMPTY
         fixed_n = combine.copy()
         fixed_n[whole_vert_arr != 0] = 0
-        count_cut = np.count_nonzero(fixed_n)
+        count_cut = np_count_nonzero(fixed_n)
         relative_overlap = (count_new - count_cut) / count_new
         if relative_overlap > 0.6:
             logger.print(k, f" was skipped because it overlaps {round(relative_overlap, 4)} with established verts", verbose=verbose)
@@ -534,7 +534,7 @@ def merge_coupled_predictions(
 
     debug_data["inst_crop_vert_arr_a_raw"] = seg_nii.set_array(whole_vert_arr)
 
-    if len(np.unique(whole_vert_arr)) == 1:
+    if len(np_unique(whole_vert_arr)) == 1:
         logger.print("Vert mask empty, will skip", Log_Type.FAIL)
         return whole_vert_nii.set_array_(whole_vert_arr, verbose=False), debug_data, ErrCode.EMPTY
 
@@ -542,7 +542,7 @@ def merge_coupled_predictions(
     if proc_cleanvert:
         whole_vert_arr = clean_cc_artifacts(
             whole_vert_arr,
-            labels=np.unique(whole_vert_arr)[1:],  # type:ignore
+            labels=np_unique(whole_vert_arr)[1:],  # type:ignore
             cc_size_threshold=vert_size_threshold,
             only_delete=True,
             logger=logger,

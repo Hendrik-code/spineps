@@ -17,7 +17,7 @@ def predict_semantic_mask(
     fill_holes: bool = True,
     clean_artifacts: bool = True,
     verbose: bool = False,
-) -> tuple[NII | None, NII | None, NII | None, np.ndarray | None, ErrCode]:
+) -> tuple[NII | None, NII | None, np.ndarray | None, ErrCode]:
     """Predicts the semantic mask, takes care of rescaling, and back
 
     Args:
@@ -76,4 +76,79 @@ def predict_semantic_mask(
         if fill_holes:
             seg_nii = seg_nii.fill_holes_(fill_holes_labels, verbose=logger)
 
+    seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
+
     return seg_nii, unc_nii, softmax_logits, ErrCode.OK
+
+
+def semantic_bounding_box_clean(seg_nii: NII):
+    ori = seg_nii.orientation
+    seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
+    seg_bin_largest_k_cc_nii = seg_binary.get_largest_k_segmentation_connected_components(
+        k=20, labels=1, connectivity=3, return_original_labels=False
+    )
+    max_k = int(seg_bin_largest_k_cc_nii.max())
+    if max_k > 3:
+        logger.print(f"Found {max_k} unique connected components in semantic mask", Log_Type.STRANGE)
+    # PIR
+    largest_nii = seg_bin_largest_k_cc_nii.extract_label(1)
+    # width fixed, and heigh include all connected components within bounding box, then repeat
+    P_slice, I_slice, R_slice = largest_nii.compute_crop(dist=5)
+    # PIR -> fixed, extendable, extendable
+    incorporated = [1]
+    changed = True
+    while changed:
+        changed = False
+        for k in [l for l in range(2, max_k + 1) if l not in incorporated]:
+            k_nii = seg_bin_largest_k_cc_nii.extract_label(k)
+            p, i, r = k_nii.compute_crop(dist=3)
+            I_slice_compare = slice(
+                max(I_slice.start - 10, 0), I_slice.stop + 10
+            )  # more margin in inferior direction (allows for gaps in spine)
+            if overlap_slice(P_slice, p) and overlap_slice(I_slice_compare, i) and overlap_slice(R_slice, r):
+                # extend bbox
+                I_slice = slice(min(I_slice.start, i.start), max(I_slice.stop, i.stop))
+                R_slice = slice(min(R_slice.start, r.start), max(R_slice.stop, r.stop))
+                incorporated.append(k)
+                changed = True
+
+    seg_bin_arr = seg_binary.get_seg_array()
+    crop = (P_slice, I_slice, R_slice)
+    seg_bin_clean_arr = np.zeros(seg_bin_arr.shape)
+    seg_bin_clean_arr[crop] = 1
+
+    seg_arr = seg_nii.get_seg_array()
+    # logger.print(seg_nii.volumes())
+    seg_arr[seg_bin_clean_arr != 1] = 0
+    seg_nii.set_array_(seg_arr)
+    seg_nii.reorient_(ori)
+    cleaned_ks = [l for l in range(2, max_k + 1) if l not in incorporated]
+    if len(cleaned_ks) > 0:
+        logger.print("semantic_bounding_box_clean", f"got rid of connected components k={cleaned_ks}")
+    else:
+        logger.print("semantic_bounding_box_clean", "did not remove anything")
+    return seg_nii
+
+
+def overlap_slice(slice1: slice, slice2: slice):
+    """checks if two ranges defined by slices overlapping (including border!)
+
+    Args:
+        slice1 (slice): _description_
+        slice2 (slice): _description_
+    """
+    slice1s = slice1.start
+    slice1e = slice1.stop
+
+    slice2s = slice2.start
+    slice2e = slice2.stop
+
+    if slice1s in (slice2s, slice2e) or slice1e in (slice2s, slice2e):
+        return True
+
+    if slice2s > slice1s and slice2s <= slice1e:
+        return True
+
+    if slice2s < slice1s and slice2e >= slice1s:
+        return True
+    return False

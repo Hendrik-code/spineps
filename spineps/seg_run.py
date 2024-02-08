@@ -7,6 +7,7 @@ from time import perf_counter
 import nibabel as nib
 import numpy as np
 from TPTBox import BIDS_FILE, NII, BIDS_Global_info, Centroids, Location, Log_Type, Logger
+from TPTBox.core.np_utils import np_count_nonzero
 from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 
 from spineps.phase_instance import predict_instance_mask
@@ -381,7 +382,7 @@ def process_img_nii(  # noqa: C901
 
             assert isinstance(seg_nii_modelres, NII), "subregion segmentation is not a NII!"
             logger.print("seg_nii out", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape, verbose=verbose)
-            if np.count_nonzero(seg_nii_modelres.get_seg_array()) == 0:
+            if np_count_nonzero(seg_nii_modelres.get_seg_array()) == 0:
                 logger.print("Subregion mask is empty, skip this", Log_Type.FAIL)
                 return output_paths, ErrCode.EMPTY
             logger.print("Output seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape, verbose=verbose)
