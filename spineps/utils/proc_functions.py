@@ -3,7 +3,7 @@ import numpy as np
 from ants.utils.convert_nibabel import from_nibabel
 from scipy.ndimage import center_of_mass
 from TPTBox import NII, Logger_Interface
-from TPTBox.core.np_utils import np_bbox_binary, np_count_nonzero, np_dilate_msk, np_unique
+from TPTBox.core.np_utils import np_bbox_binary, np_count_nonzero, np_dilate_msk, np_unique, np_volume
 from tqdm import tqdm
 
 
@@ -138,10 +138,10 @@ def clean_cc_artifacts(
                 # majority voting
                 dilated_m[dilated_m != 0] = 1
                 mult = mask_arr * dilated_m
-                labels, count = np.unique(mult, return_counts=True)
-                labels = labels[1:]
-                count = count[1:]
-                newlabel = labels[np.argmax(count)]
+                volumes = np_volume(mult)
+                nlabels = volumes.keys()
+                volumes_values = volumes.values()
+                newlabel = nlabels[np.argmax(volumes_values)]
                 result_arr[mask_cc_l != 0] = newlabel
                 logger.print(log_string + f"labeled as {newlabel}") if verbose else None
                 # print(labels, count)
