@@ -1,21 +1,29 @@
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
-from typing import Callable
 
 import nibabel as nib
 import numpy as np
 from TPTBox import BIDS_FILE, NII, BIDS_Global_info, Centroids, Location, Log_Type, Logger
+from TPTBox.core.np_utils import np_count_nonzero
 from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 
 from spineps.phase_instance import predict_instance_mask
 from spineps.phase_post import phase_postprocess_combined
+from spineps.phase_pre import preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger, predict_centroids_from_both
-from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition, find_best_matching_model
+from spineps.seg_utils import (
+    InputPackage,
+    Modality_Pair,
+    check_input_model_compatibility,
+    check_model_modality_acquisition,
+    find_best_matching_model,
+)
 
 
 def process_dataset(
@@ -98,13 +106,13 @@ def process_dataset(
         modalities = [modalities]
     assert len(modalities) > 0, "you must specifiy the modalities to be segmented!"
 
-    if snapshot_copy_folder == True:
+    if snapshot_copy_folder is True:
         snapshot_copy_folder = dataset_path.joinpath("snaps_seg")
-    elif snapshot_copy_folder == False:
+    elif snapshot_copy_folder is False:
         snapshot_copy_folder = None
 
     if model_semantic is None:
-        model_semantic = list([find_best_matching_model(m, expected_resolution=None) for m in modalities])
+        model_semantic = [find_best_matching_model(m, expected_resolution=None) for m in modalities]
         logger.print("Found matching models:")
         for idx, m in enumerate(model_semantic):
             logger.print("-", str(modalities[idx]), ":", str(m.modelid()))
@@ -155,7 +163,7 @@ def process_dataset(
                 q.filter_dixon_only_inphase()
                 q.filter_non_existence("lesions", required=True)
                 q.filter_non_existence("label", required=True)
-                q.filter("acq", lambda x: x in allowed_acq, required=False)
+                q.filter("acq", lambda x: x in allowed_acq, required=False)  # noqa: B023
             scans = q.loop_list(sort=True)  # TODO make it family to allow for multi-inputs
             for s in scans:
                 errcode = process_img_nii(
@@ -218,7 +226,7 @@ def process_dataset(
         logger.print(not_properly_processed)
 
 
-def process_img_nii(
+def process_img_nii(  # noqa: C901
     img_ref: BIDS_FILE,
     model_semantic: Segmentation_Model,
     model_instance: Segmentation_Model,
@@ -324,7 +332,7 @@ def process_img_nii(
 
     out_raw.mkdir(parents=True, exist_ok=True)
     done_something = False
-    debug_data_run = {}
+    debug_data_run: dict[str, NII] = {}
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     if not compatible:
@@ -338,73 +346,70 @@ def process_img_nii(
 
     logger.print("Processing", file_dir.name)
     with logger:
-        img_nii = img_ref.open_nii()
-        zms = img_nii.zoom
-        affine = img_nii.affine
-        header = img_nii.header
-        orientation = img_nii.orientation
-        logger.print("Input image", zms, orientation, img_nii.shape, verbose=verbose)
+        input_nii = img_ref.open_nii()
+        input_package = InputPackage(
+            input_nii,
+            pad_size=4,
+        )
+
+        # TODO what to do with this info?
+        # modelres_compatible: bool = model_semantic.same_modelzoom_as_model(model_instance, input_package.zms_pir)
 
         # First stage
         if not os.path.exists(out_spine_raw) or override_semantic:
+            input_preprocessed, errcode = preprocess_input(
+                input_nii,
+                pad_size=input_package.pad_size,
+                debug_data=debug_data_run,
+                do_crop=do_crop_semantic,
+                do_n4=proc_n4correction,
+                verbose=verbose,
+            )
+            if errcode != ErrCode.OK:
+                logger.print("Got Error from preprocessing", Log_Type.FAIL)
+                return output_paths, errcode
             # make subreg mask
-            seg_nii, seg_nii_modelres, unc_nii, softmax_logits, errcode = predict_semantic_mask(
-                img_nii,
+            seg_nii_modelres, unc_nii, softmax_logits, errcode = predict_semantic_mask(
+                input_preprocessed,
                 model_semantic,
                 debug_data=debug_data_run,
                 verbose=verbose,
-                do_n4=proc_n4correction,
                 fill_holes=proc_fillholes,
                 clean_artifacts=proc_clean,
-                do_crop=do_crop_semantic,
             )
             if errcode != ErrCode.OK:
                 return output_paths, errcode
-            assert isinstance(seg_nii, NII), "subregion segmentation is not a NII!"
-            logger.print("seg_nii out", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
-            seg_nii_back = seg_nii
-            # seg_nii_back = seg_nii.reorient_(orientation, verbose=verbose).copy().rescale_(zms, verbose=verbose)
-            if np.count_nonzero(seg_nii_back.get_seg_array()) == 0:
+
+            assert isinstance(seg_nii_modelres, NII), "subregion segmentation is not a NII!"
+            logger.print("seg_nii out", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape, verbose=verbose)
+            if np_count_nonzero(seg_nii_modelres.get_seg_array()) == 0:
                 logger.print("Subregion mask is empty, skip this", Log_Type.FAIL)
                 return output_paths, ErrCode.EMPTY
-            if seg_nii_back.shape != img_nii.shape:
-                logger.print(f"Subregion mask shape mismatch, got {seg_nii_back.shape} and image {img_nii.shape}, skip this", Log_Type.FAIL)
-                return output_paths, ErrCode.SHAPE
-            logger.print("Output seg_nii", seg_nii_back.zoom, seg_nii_back.orientation, seg_nii_back.shape, verbose=verbose)
+            logger.print("Output seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape, verbose=verbose)
 
             # Lambda Injection
             if lambda_semantic is not None:
-                seg_nii_back = lambda_semantic(seg_nii_back)
+                seg_nii_modelres = lambda_semantic(seg_nii_modelres)
 
-            seg_nii_back.nii = nib.nifti1.Nifti1Image(seg_nii_back.get_seg_array(), affine=affine, header=header)
-            seg_nii.assert_affine(other=img_nii)
-            seg_nii_back.save(out_spine_raw, verbose=logger)
-            if isinstance(seg_nii_modelres, NII) and save_modelres_mask:
-                seg_nii_modelres.save(str(out_spine_raw).replace("seg-spine", "seg-spineModelRes"), verbose=logger)
+            seg_nii_modelres.save(out_spine_raw, verbose=logger)
             if save_uncertainty_image:
                 if unc_nii is None:
                     logger.print("Uncertainty Map is None, something went wrong", Log_Type.STRANGE)
                 else:
-                    unc_nii = unc_nii.reorient_(orientation).rescale_(zms)
+                    unc_nii = input_package.sample_to_this(unc_nii)
                     unc_nii.save(out_unc, verbose=logger)
             if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
                 save_nparray(softmax_logits, out_logits)
             done_something = True
         else:
             logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
-            seg_nii = NII.load(out_spine_raw, seg=True)
-            print("seg_nii", seg_nii.zoom, seg_nii.orientation, seg_nii.shape)
-            if seg_nii.shape != img_nii.shape:
-                logger.print(f"Subregion mask shape mismatch, got {seg_nii.shape} and image {img_nii.shape}, skip this", Log_Type.FAIL)
-                return output_paths, ErrCode.SHAPE
-            if seg_nii.zoom != img_nii.zoom:
-                logger.print(f"Subregion mask zoom mismatch, got {seg_nii.zoom} and image {img_nii.zoom}, skip this", Log_Type.FAIL)
-                return output_paths, ErrCode.SHAPE
+            seg_nii_modelres = NII.load(out_spine_raw, seg=True)
+            print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
 
         # Second stage
         if not os.path.exists(out_vert_raw) or override_instance:
             whole_vert_nii, errcode = predict_instance_mask(
-                seg_nii.copy(),
+                seg_nii_modelres.copy(),
                 model_instance,
                 debug_data=debug_data_run,
                 use_height_estimate=False,
@@ -420,28 +425,22 @@ def process_img_nii(
             assert whole_vert_nii is not None, "whole_vert_nii is None"
             whole_vert_nii = whole_vert_nii.copy()  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
             logger.print("vert_out", whole_vert_nii.zoom, whole_vert_nii.orientation, whole_vert_nii.shape, verbose=verbose)
-            if whole_vert_nii.shape != img_nii.shape:
-                logger.print(f"Vert mask shape mismatch, got {whole_vert_nii.shape} and image {img_nii.shape}, skip this", Log_Type.FAIL)
-                return output_paths, ErrCode.SHAPE
-
-            # TODO make this better (instance mask gets to have same global coords)
-            whole_vert_nii.nii = nib.nifti1.Nifti1Image(whole_vert_nii.get_seg_array(), affine=affine, header=header)
-            whole_vert_nii.assert_affine(other=img_nii)
             #
             whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
         else:
             logger.print("Vert Mask already exists. Set -override_vert to create it anew")
             whole_vert_nii = NII.load(out_vert_raw, seg=True)
-            if whole_vert_nii.shape != img_nii.shape:
-                logger.print(f"Vert mask shape mismatch, got {whole_vert_nii.shape} and image {img_nii.shape}, skip this", Log_Type.FAIL)
-                return output_paths, ErrCode.SHAPE
 
         # Cleanup Step
         if not os.path.exists(out_spine) or not os.path.exists(out_vert) or done_something or override_postpair:
+            # back to input space
+            if not save_modelres_mask:
+                seg_nii_modelres = input_package.sample_to_this(seg_nii_modelres)
+                whole_vert_nii = input_package.sample_to_this(whole_vert_nii)
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
-                seg_nii=seg_nii,
+                seg_nii=seg_nii_modelres,
                 vert_nii=whole_vert_nii,
                 debug_data=debug_data_run,
                 labeling_offset=1,
@@ -449,7 +448,9 @@ def process_img_nii(
                 verbose=verbose,
             )
 
-            seg_nii_clean.assert_affine(other=vert_nii_clean, zoom=zms, orientation=orientation)
+            seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
+            input_package.make_nii_from_this(seg_nii_clean)
+            input_package.make_nii_from_this(vert_nii_clean)
 
             seg_nii_clean.save(out_spine, verbose=logger)
             vert_nii_clean.save(out_vert, verbose=logger)
@@ -460,14 +461,13 @@ def process_img_nii(
 
         # Centroid
         if not os.path.exists(out_ctd) or done_something or override_ctd:
-            zms_PIR = img_nii.reorient().zoom
             ctd = predict_centroids_from_both(
                 vert_nii_clean,
                 seg_nii_clean,
                 models=[model_semantic, model_instance],
-                input_zms_pir=zms_PIR,
+                input_zms_pir=input_package.zms_pir,
             )
-            ctd.rescale(zms, verbose=logger).reorient(orientation).save(out_ctd, verbose=logger)
+            ctd.rescale(input_package._zms, verbose=logger).reorient(input_package._orientation).save(out_ctd, verbose=logger)
             done_something = True
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
@@ -480,7 +480,9 @@ def process_img_nii(
             else:
                 out_debug.parent.mkdir(parents=True, exist_ok=True)
                 for k, v in debug_data_run.items():
-                    v.reorient_(orientation).save(out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False)
+                    v.reorient_(input_package._orientation).save(
+                        out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False
+                    )
                 logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
 
         # Snapshot
@@ -489,7 +491,7 @@ def process_img_nii(
             if snapshot_copy_folder is not None:
                 out_snap = [out_snap, out_snap2]
             ctd = ctd.extract_subregion(Location.Vertebra_Corpus)
-            mri_snapshot(img_nii, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
+            mri_snapshot(input_nii, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
         elif not os.path.exists(out_snap2):
             logger.print(f"Copying snapshot into {str(snapshot_copy_folder)}")
@@ -544,30 +546,6 @@ def save_nparray(arr: np.ndarray, out_path: Path):
     """Saves an numpy array to the disk
 
     Args:
-        arr (np.ndarray): numpy array to be saved
-        out_path (Path): output path
-    """
-    np.savez_compressed(out_path, arr)
-    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
-    """
-    np.savez_compressed(out_path, arr)
-    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
-        arr (np.ndarray): numpy array to be saved
-        out_path (Path): output path
-    """
-    np.savez_compressed(out_path, arr)
-    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
-    """
-    np.savez_compressed(out_path, arr)
-    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
-        arr (np.ndarray): numpy array to be saved
-        out_path (Path): output path
-    """
-    np.savez_compressed(out_path, arr)
-    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
-    """
-    np.savez_compressed(out_path, arr)
-    logger.print(f"Array of shape {arr.shape} saved: {out_path}", Log_Type.SAVE)
         arr (np.ndarray): numpy array to be saved
         out_path (Path): output path
     """

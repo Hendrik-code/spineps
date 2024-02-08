@@ -1,11 +1,43 @@
 # from utils.predictor import nnUNetPredictor
-from TPTBox import BIDS_FILE, Log_Type, Zooms
+import nibabel as nib
+from TPTBox import BIDS_FILE, NII, Log_Type, Zooms
+
+from spineps.seg_enums import Acquisition, Modality
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger
-from spineps.seg_enums import Modality, Acquisition
-
 
 Modality_Pair = tuple[list[Modality] | Modality, Acquisition]
+
+
+class InputPackage:
+    def __init__(self, mri_nii: NII, pad_size: int = 4) -> None:
+        self._zms = mri_nii.zoom
+        self._affine = mri_nii.affine
+        self._header = mri_nii.header
+        self._orientation = mri_nii.orientation
+        self._shape = mri_nii.shape
+        self.zms_pir = mri_nii.reorient().zoom
+        self.pad_size = pad_size
+
+    def sample_to_this(self, other_nii: NII) -> NII:
+        other_nii.assert_affine(orientation=("P", "I", "R"))
+        other_nii.rescale_(voxel_spacing=self.zms_pir, verbose=logger).reorient_(self._orientation, verbose=logger)
+        if self.pad_size > 0:
+            arr = other_nii.get_array()
+            arr = arr[self.pad_size : -self.pad_size, self.pad_size : -self.pad_size, self.pad_size : -self.pad_size]
+            other_nii.set_array_(arr)
+        other_nii.pad_to(self._shape, inplace=True)
+        assert_True = other_nii.assert_affine(zoom=self._zms, orientation=self._orientation, shape=self._shape, raise_error=False)
+        assert assert_True, "sampled back to input did not meet affine criteria"
+        return other_nii
+
+    def make_nii_from_this(self, other_nii: NII) -> NII:
+        other_nii.assert_affine(shape=self._shape, orientation=self._orientation, zoom=self._zms)
+        other_nii.nii = nib.nifti1.Nifti1Image(other_nii.get_seg_array(), affine=self._affine, header=self._header)
+        return other_nii
+
+    def __str__(self) -> str:
+        return f"Input image, {self._zms}, {self._orientation}, {self._shape}"
 
 
 def find_best_matching_model(
@@ -93,7 +125,7 @@ def check_input_model_compatibility(
     model_modalities = model.modalities()
     model_acquisition = model.acquisition()
     allowed_format = Modality.format_keys(model_modalities)
-    allowed_acq = Acquisition.format_keys(model_acquisition) + ["iso"]
+    allowed_acq = [*Acquisition.format_keys(model_acquisition), "iso"]
 
     file_dir = img_ref.file["nii.gz"]
     filename = file_dir.name
@@ -103,7 +135,7 @@ def check_input_model_compatibility(
     input_format = img_ref.format
     has_seg_key = "seg" in img_ref.info
     has_label_key = "label" in img_ref.info
-    input_acquisition = img_ref.info["acq"] if "acq" in img_ref.info else None
+    input_acquisition = img_ref.info.get("acq", None)
     is_debug = "debug" in file_dir.name or "debug" in file_dir.parent.name
 
     logger_texts = [f"{filename} input incompatible with model"]
@@ -131,7 +163,7 @@ def check_input_model_compatibility(
         compatible = False
 
     img_nii = img_ref.open_nii()
-    if img_nii.get_plane() not in ["iso"] + allowed_acq:
+    if img_nii.get_plane() not in ["iso", *allowed_acq]:
         logger_texts.append(f"- get_plane() is not 'iso' or expected {allowed_acq}, skip")
         compatible = False
 

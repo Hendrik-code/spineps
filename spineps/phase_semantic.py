@@ -1,24 +1,23 @@
 # from utils.predictor import nnUNetPredictor
-from TPTBox import NII, Location, Log_Type
-import numpy as np
-from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
-from spineps.seg_model import Segmentation_Model
-from spineps.seg_enums import ErrCode, OutputType
 from time import perf_counter
 
-from spineps.seg_pipeline import logger, fill_holes_labels
+import numpy as np
+from TPTBox import NII, Location, Log_Type
+
+from spineps.seg_enums import ErrCode, OutputType
+from spineps.seg_model import Segmentation_Model
+from spineps.seg_pipeline import fill_holes_labels, logger
+from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
 
 
 def predict_semantic_mask(
     mri_nii: NII,
     model: Segmentation_Model,
     debug_data: dict,
-    do_n4: bool = True,
     fill_holes: bool = True,
     clean_artifacts: bool = True,
-    do_crop: bool = True,
     verbose: bool = False,
-) -> tuple[NII | None, NII | None, NII | None, np.ndarray | None, ErrCode]:
+) -> tuple[NII | None, NII | None, np.ndarray | None, ErrCode]:
     """Predicts the semantic mask, takes care of rescaling, and back
 
     Args:
@@ -35,52 +34,20 @@ def predict_semantic_mask(
     """
     logger.print("Predict Semantic Mask", Log_Type.STAGE)
     with logger:
-        mri_nii = mri_nii.copy()
-        uncropped_subregion_mask = np.zeros(mri_nii.shape)
-        uncropped_unc_image = np.zeros(mri_nii.shape)
-        uncropped_input_image = np.zeros(mri_nii.shape)
-        mri_nii_rdy = mri_nii
-        # orientation = mri_nii.orientation
-        # mri_nii_rdy = mri_nii.reorient(verbose=logger)
-        # shp = mri_nii_rdy.shape
-        # zms = mri_nii_rdy.zoom
-        # uncropped_subregion_mask = np.zeros(mri_nii_rdy.shape)
-        # uncropped_unc_image = np.zeros(mri_nii_rdy.shape)
-        try:
-            crop = mri_nii_rdy.compute_crop_slice(dist=5) if do_crop else (slice(None, None), slice(None, None), slice(None, None))
-        except ValueError as e:
-            logger.print("Image Nifty is empty, skip this", Log_Type.FAIL)
-            return None, None, None, None, ErrCode.EMPTY
-        mri_nii_rdy.apply_crop_slice_(crop)
-        logger.print(f"Crop down from {uncropped_subregion_mask.shape} to {mri_nii_rdy.shape}", verbose=verbose)
-
-        if do_n4:
-            n4_start = perf_counter()
-            mri_nii_rdy, _ = n4_bias(mri_nii_rdy)  # PIR
-            logger.print(f"N4 Bias field correction done in {perf_counter() - n4_start} sec", verbose=True)
-
-        # Normalize to [0,1500]
-        mri_nii_rdy += -mri_nii_rdy.min()  # min = 0
-        mri_dtype = mri_nii_rdy.dtype
-        max_value = mri_nii_rdy.max()
-        if max_value > 1500:
-            mri_nii_rdy *= 1500 / max_value
-            mri_nii_rdy.set_dtype_(mri_dtype)
-
         results = model.segment_scan(
-            mri_nii_rdy,
-            pad_size=2,
+            mri_nii,
+            pad_size=0,
             resample_to_recommended=True,
+            resample_output_to_input_space=False,
             verbose=verbose,
         )  # type:ignore
         seg_nii = results[OutputType.seg]
         unc_nii = results[OutputType.unc] if OutputType.unc in results else None
-        seg_nii_modelres = results[OutputType.seg_modelres]
         softmax_logits = results[OutputType.softmax_logits]
 
         if len(seg_nii.unique()) == 0:
             logger.print("Subregion mask is empty, skip this", Log_Type.FAIL)
-            return seg_nii, seg_nii_modelres, unc_nii, softmax_logits, ErrCode.EMPTY
+            return seg_nii, unc_nii, softmax_logits, ErrCode.EMPTY
         if clean_artifacts:
             seg_nii.set_array_(
                 clean_cc_artifacts(
@@ -109,14 +76,79 @@ def predict_semantic_mask(
         if fill_holes:
             seg_nii = seg_nii.fill_holes_(fill_holes_labels, verbose=logger)
 
-        # Uncrop
-        uncropped_subregion_mask[crop] = seg_nii.get_seg_array()
-        uncropped_input_image[crop] = mri_nii_rdy.get_array()
-        debug_data["a_input_preprocessed"] = mri_nii_rdy.set_array(uncropped_input_image)
-        logger.print(f"Uncrop back from {seg_nii.shape} to {uncropped_subregion_mask.shape}", verbose=verbose)
-        if isinstance(unc_nii, NII):
-            uncropped_unc_image[crop] = unc_nii.get_array()
-            unc_nii.set_array_(uncropped_unc_image)
-        seg_nii.set_array_(uncropped_subregion_mask)
+    seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
 
-    return seg_nii, seg_nii_modelres, unc_nii, softmax_logits, ErrCode.OK
+    return seg_nii, unc_nii, softmax_logits, ErrCode.OK
+
+
+def semantic_bounding_box_clean(seg_nii: NII):
+    ori = seg_nii.orientation
+    seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
+    seg_bin_largest_k_cc_nii = seg_binary.get_largest_k_segmentation_connected_components(
+        k=20, labels=1, connectivity=3, return_original_labels=False
+    )
+    max_k = int(seg_bin_largest_k_cc_nii.max())
+    if max_k > 3:
+        logger.print(f"Found {max_k} unique connected components in semantic mask", Log_Type.STRANGE)
+    # PIR
+    largest_nii = seg_bin_largest_k_cc_nii.extract_label(1)
+    # width fixed, and heigh include all connected components within bounding box, then repeat
+    P_slice, I_slice, R_slice = largest_nii.compute_crop(dist=5)
+    # PIR -> fixed, extendable, extendable
+    incorporated = [1]
+    changed = True
+    while changed:
+        changed = False
+        for k in [l for l in range(2, max_k + 1) if l not in incorporated]:
+            k_nii = seg_bin_largest_k_cc_nii.extract_label(k)
+            p, i, r = k_nii.compute_crop(dist=3)
+            I_slice_compare = slice(
+                max(I_slice.start - 10, 0), I_slice.stop + 10
+            )  # more margin in inferior direction (allows for gaps in spine)
+            if overlap_slice(P_slice, p) and overlap_slice(I_slice_compare, i) and overlap_slice(R_slice, r):
+                # extend bbox
+                I_slice = slice(min(I_slice.start, i.start), max(I_slice.stop, i.stop))
+                R_slice = slice(min(R_slice.start, r.start), max(R_slice.stop, r.stop))
+                incorporated.append(k)
+                changed = True
+
+    seg_bin_arr = seg_binary.get_seg_array()
+    crop = (P_slice, I_slice, R_slice)
+    seg_bin_clean_arr = np.zeros(seg_bin_arr.shape)
+    seg_bin_clean_arr[crop] = 1
+
+    seg_arr = seg_nii.get_seg_array()
+    # logger.print(seg_nii.volumes())
+    seg_arr[seg_bin_clean_arr != 1] = 0
+    seg_nii.set_array_(seg_arr)
+    seg_nii.reorient_(ori)
+    cleaned_ks = [l for l in range(2, max_k + 1) if l not in incorporated]
+    if len(cleaned_ks) > 0:
+        logger.print("semantic_bounding_box_clean", f"got rid of connected components k={cleaned_ks}")
+    else:
+        logger.print("semantic_bounding_box_clean", "did not remove anything")
+    return seg_nii
+
+
+def overlap_slice(slice1: slice, slice2: slice):
+    """checks if two ranges defined by slices overlapping (including border!)
+
+    Args:
+        slice1 (slice): _description_
+        slice2 (slice): _description_
+    """
+    slice1s = slice1.start
+    slice1e = slice1.stop
+
+    slice2s = slice2.start
+    slice2e = slice2.stop
+
+    if slice1s in (slice2s, slice2e) or slice1e in (slice2s, slice2e):
+        return True
+
+    if slice2s > slice1s and slice2s <= slice1e:
+        return True
+
+    if slice2s < slice1s and slice2e >= slice1s:
+        return True
+    return False

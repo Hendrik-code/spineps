@@ -1,8 +1,20 @@
 # from utils.predictor import nnUNetPredictor
+import heapq
+
 import numpy as np
 from scipy.ndimage import center_of_mass
 from TPTBox import NII, Location, Log_Type, v_idx2name, v_name2idx
-from TPTBox.core.np_utils import np_approx_center_of_mass, np_bbox_nd, np_connected_components, np_dilate_msk, np_map_labels
+from TPTBox.core.np_utils import (
+    np_bbox_binary,
+    np_center_of_mass,
+    np_connected_components,
+    np_count_nonzero,
+    np_dilate_msk,
+    np_extract_label,
+    np_map_labels,
+    np_unique,
+    np_volume,
+)
 
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
 
@@ -21,8 +33,6 @@ def phase_postprocess_combined(
         seg_nii.assert_affine(shape=vert_nii.shape)
         # Post process semantic mask
         ###################
-        seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
-        ###################
         vert_nii = vert_nii.copy()
         if n_vert_bodies is None:
             n_vert_bodies = len(vert_nii.unique())
@@ -30,13 +40,13 @@ def phase_postprocess_combined(
             debug_data = {}
             #
         vert_nii.apply_mask(seg_nii, inplace=True)
-        crop_slices = seg_nii.compute_crop_slice(dist=3)
+        crop_slices = seg_nii.compute_crop(dist=2)
         vert_uncropped_arr = np.zeros(vert_nii.shape, dtype=seg_nii.dtype)
         seg_uncropped_arr = np.zeros(vert_nii.shape, dtype=seg_nii.dtype)
 
         # Crop down
-        vert_nii.apply_crop_slice_(crop_slices)
-        seg_nii.apply_crop_slice_(crop_slices)
+        vert_nii.apply_crop_(crop_slices)
+        seg_nii.apply_crop_(crop_slices)
 
         # Post processing both
         ###################
@@ -47,6 +57,9 @@ def phase_postprocess_combined(
             proc_assign_missing_cc=proc_assign_missing_cc,
             verbose=verbose,
         )
+
+        # Assigns superior/inferior based on instance label overlap
+        assign_vertebra_inconsistency(seg_nii_cleaned, whole_vert_nii_cleaned)
 
         # Label vertebra top -> down
         whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned)
@@ -105,7 +118,7 @@ def mask_cleaning_other(
         vert_arr_cleaned[subreg_vert_arr == 0] = 0
         subreg_arr[deletion_map == 1] = 0
 
-    n_vert_pixels = np.count_nonzero(vert_arr_cleaned)
+    n_vert_pixels = np_count_nonzero(vert_arr_cleaned)
     n_subreg_vert_pixels = subreg_vert_nii.volumes()[1]
     n_vert_pixel_per_vertebra = n_subreg_vert_pixels / n_vert_bodies
     n_difference_pixels = n_subreg_vert_pixels - n_vert_pixels
@@ -139,7 +152,7 @@ def assign_missing_cc(
     subreg_arr_vert_rest[target_arr != 0] = 0
     deletion_map = np.zeros(reference_arr.shape)
 
-    label_rest = np.unique(subreg_arr_vert_rest)
+    label_rest = np_unique(subreg_arr_vert_rest)
     if len(label_rest) == 1 and label_rest[0] == 0:
         logger.print("No CC had to be assigned", Log_Type.OK, verbose=verbose)
         return target_arr, reference_arr, deletion_map
@@ -150,13 +163,13 @@ def assign_missing_cc(
     for label, subreg_cc_map in subreg_cc.items():
         if label == 0:
             continue
-        cc_labels = np.unique(subreg_cc_map)[1:]
+        cc_labels = np_unique(subreg_cc_map)[1:]
         loop_counts += len(cc_labels)
         # print(cc_labels)
         for cc_l in cc_labels:
             cc_map = subreg_cc_map.copy()
             cc_map[cc_map != cc_l] = 0
-            cc_bbox = np_bbox_nd(cc_map, px_dist=2)
+            cc_bbox = np_bbox_binary(cc_map, px_dist=2)
             vert_arr_c = target_arr.copy()[cc_bbox]
             cc_map_c = cc_map[cc_bbox]
             cc_map_c[cc_map_c != 0] = 1
@@ -166,9 +179,7 @@ def assign_missing_cc(
             # cc_map_dilated[vert_arr_c == 0] = 0
             # print("cc_map_dilated\n", cc_map_dilated)
             # majority voting
-            # print("vert_arr_c", np.unique(vert_arr_c))
             mult = vert_arr_c * cc_map_dilated
-            # print("mult", np.unique(mult), "\n", mult)
             labels, count = np.unique(mult, return_counts=True)
             labels = labels[1:]
             count = count[1:]
@@ -204,9 +215,9 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
         vert_l[vert_l != l] = 0
         vert_l[subreg_arr != 49] = 0  # com of corpus region
         vert_l[vert_l != 0] = 1
-        if np.count_nonzero(vert_l) > 0:
-            coms_vert_dict[l] = np_approx_center_of_mass(vert_l, label_ref=1)[1][1]  # center_of_mass(vert_l)[1]
-        else:
+        try:
+            coms_vert_dict[l] = np_center_of_mass(vert_l)[1][1]  # center_of_mass(vert_l)[1]
+        except Exception:
             coms_vert_dict[l] = 0
 
     coms_vert_y = list(coms_vert_dict.values())
@@ -215,9 +226,9 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
     n_ivds = 0
     if Location.Vertebra_Disc.value in seg_t.unique():
         # Map IVDS
-        subreg_cc, _ = seg_t.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
+        subreg_cc, subreg_cc_N = seg_t.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
         subreg_cc = subreg_cc[Location.Vertebra_Disc.value]
-        cc_labelset = np.unique(subreg_cc)
+        cc_labelset = list(range(1, subreg_cc_N[Location.Vertebra_Disc.value] + 1))
         mapping_cc_to_vert_label = {}
 
         coms_ivd_dict = {}
@@ -226,7 +237,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
                 continue
             c_l = subreg_cc.copy()
             c_l[c_l != c] = 0
-            com_y = np_approx_center_of_mass(c_l, label_ref=c)[c][1]  # center_of_mass(c_l)[1]
+            com_y = np_center_of_mass(c_l)[c][1]  # center_of_mass(c_l)[1]
 
             if com_y < min(coms_vert_y):
                 label = min(coms_vert_labels) - 1
@@ -255,9 +266,9 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
     n_eps = 0
     if Location.Endplate.value in seg_t.unique():
         # MAP Endplate
-        ep_cc, _ = seg_t.get_segmentation_connected_components(labels=Location.Endplate.value)
+        ep_cc, ep_cc_N = seg_t.get_segmentation_connected_components(labels=Location.Endplate.value)
         ep_cc = ep_cc[Location.Endplate.value]
-        cc_ep_labelset = np.unique(ep_cc)
+        cc_ep_labelset = list(range(1, ep_cc_N[Location.Endplate.value]))
         mapping_ep_cc_to_vert_label = {}
         coms_ivd_dict = {}
         for c in cc_ep_labelset:
@@ -265,7 +276,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
                 continue
             c_l = ep_cc.copy()
             c_l[c_l != c] = 0
-            com_y = np_approx_center_of_mass(c_l, label_ref=c)[c][1]  # center_of_mass(c_l)[1]
+            com_y = np_center_of_mass(c_l)[c][1]  # center_of_mass(c_l)[1]
             nearest_lower = find_nearest_lower(coms_vert_y, com_y)
             label = [i for i in coms_vert_dict if coms_vert_dict[i] == nearest_lower][0]
             mapping_ep_cc_to_vert_label[c] = label
@@ -288,61 +299,11 @@ def find_nearest_lower(seq, x):
     return max(values_lower)
 
 
-def semantic_bounding_box_clean(seg_nii: NII):
-    ori = seg_nii.orientation
-    seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
-    seg_bin_largest_k_cc_nii = seg_binary.get_largest_k_segmentation_connected_components(
-        k=20, labels=1, connectivity=3, return_original_labels=False
-    )
-    max_k = seg_bin_largest_k_cc_nii.max()
-    if max_k > 3:
-        logger.print(f"Found {max_k} unique connected components in semantic mask", Log_Type.STRANGE)
-    # PIR
-    largest_nii = seg_bin_largest_k_cc_nii.extract_label(1)
-    # width fixed, and heigh include all connected components within bounding box, then repeat
-    P_slice, I_slice, R_slice = largest_nii.compute_crop_slice(dist=5)
-    # PIR -> fixed, extendable, extendable
-    incorporated = [1]
-    changed = True
-    while changed:
-        changed = False
-        for k in [l for l in range(2, max_k + 1) if l not in incorporated]:
-            k_nii = seg_bin_largest_k_cc_nii.extract_label(k)
-            p, i, r = k_nii.compute_crop_slice(dist=3)
-            I_slice_compare = slice(
-                max(I_slice.start - 10, 0), I_slice.stop + 10
-            )  # more margin in inferior direction (allows for gaps in spine)
-            if overlap_slice(P_slice, p) and overlap_slice(I_slice_compare, i) and overlap_slice(R_slice, r):
-                # extend bbox
-                I_slice = slice(min(I_slice.start, i.start), max(I_slice.stop, i.stop))
-                R_slice = slice(min(R_slice.start, r.start), max(R_slice.stop, r.stop))
-                incorporated.append(k)
-                changed = True
-
-    seg_bin_arr = seg_binary.get_seg_array()
-    crop = (P_slice, I_slice, R_slice)
-    seg_bin_clean_arr = np.zeros(seg_bin_arr.shape)
-    seg_bin_clean_arr[crop] = 1
-
-    seg_arr = seg_nii.get_seg_array()
-    # logger.print(seg_nii.volumes())
-    seg_arr[seg_bin_clean_arr != 1] = 0
-    seg_nii.set_array_(seg_arr)
-    seg_nii.reorient_(ori)
-    cleaned_ks = [l for l in range(2, max_k + 1) if l not in incorporated]
-    if len(cleaned_ks) > 0:
-        logger.print("semantic_bounding_box_clean", f"got rid of connected components k={cleaned_ks}")
-    else:
-        logger.print("semantic_bounding_box_clean", "did not remove anything")
-    return seg_nii
-
-
 def label_instance_top_to_bottom(vert_nii: NII):
     ori = vert_nii.orientation
     vert_nii.reorient_()
-    present_labels = list(vert_nii.unique())
     vert_arr = vert_nii.get_seg_array()
-    com_i = np_approx_center_of_mass(vert_arr, present_labels)
+    com_i = np_center_of_mass(vert_arr)
     # Old, more precise version (but takes longer)
     # comb = {}
     # for i in present_labels:
@@ -358,35 +319,52 @@ def label_instance_top_to_bottom(vert_nii: NII):
     return vert_nii, vert_nii.unique()
 
 
-def overlap_slice(slice1: slice, slice2: slice):
-    """checks if two ranges defined by slices overlapping (including border!)
+def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII):
+    seg_nii.assert_affine(shape=vert_nii.shape)
+    seg_arr = seg_nii.get_seg_array()
+    vert_arr = vert_nii.get_seg_array()
 
-    Args:
-        slice1 (slice): _description_
-        slice2 (slice): _description_
-    """
-    slice1s = slice1.start
-    slice1e = slice1.stop
+    # assign inconsistent substructures
+    for loc in [
+        Location.Superior_Articular_Left,
+        Location.Superior_Articular_Right,
+        Location.Inferior_Articular_Left,
+        Location.Inferior_Articular_Right,
+    ]:
+        value = loc.value
 
-    slice2s = slice2.start
-    slice2e = slice2.stop
+        subreg_l = np_extract_label(seg_arr, value, inplace=False)  # type:ignore
+        try:
+            subreg_cc, _ = np_connected_components(subreg_l, label_ref=1)
+        except AssertionError as e:
+            print(f"Got error {e}, skip")
+            break
+        subreg_cc = subreg_cc[1]
+        cc_labels = np_unique(subreg_cc)
 
-    if slice1s == slice2s or slice1s == slice2e or slice1e == slice2s or slice1e == slice2e:
-        return True
+        for ccl in cc_labels:
+            if ccl == 0:
+                continue
+            cc_map = np_extract_label(subreg_cc, ccl, inplace=False)
+            vert_arr_cc = vert_arr.copy()
+            vert_arr_cc += 1
+            vert_arr_cc[cc_map == 0] = 0
+            gt_volume = np_volume(vert_arr_cc)
+            k_keys_sorted = heapq.nlargest(2, gt_volume, key=gt_volume.__getitem__)
 
-    if slice2s > slice1s and slice2s <= slice1e:
-        return True
+            if len(k_keys_sorted) == 1:
+                continue
+            biggest_volume = (k_keys_sorted[0], gt_volume[k_keys_sorted[0]])
+            second_volume = (k_keys_sorted[1], gt_volume[k_keys_sorted[1]])
 
-    if slice2s < slice1s and slice2e >= slice1s:
-        return True
-    return False
+            # print(biggest_volume, second_volume)
 
+            if biggest_volume[1] * 0.50 > second_volume[1]:
+                to_label = biggest_volume[0] - 1  # int(list(gt_volume.keys())[argmax] - 1)
 
-if __name__ == "__main__":
-    print(overlap_slice(slice(1, 10), slice(3, 8)))
-    print(overlap_slice(slice(1, 8), slice(8, 10)))
-    print(overlap_slice(slice(1, 7), slice(8, 10)))
-    #
-    print(overlap_slice(slice(3, 8), slice(1, 10)))
-    #
-    print(overlap_slice(slice(3, 8), slice(3, 10)))
+                vert_arr[cc_map == 1] = to_label
+                logger.print(
+                    f"set cc to {to_label}, with volume decision {gt_volume}, based on {biggest_volume}, {second_volume}", verbose=False
+                )
+
+        vert_nii.set_array_(vert_arr)

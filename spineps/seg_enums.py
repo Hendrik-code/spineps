@@ -107,7 +107,7 @@ class InputType(Enum_Compare):
 
 class OutputType(Enum_Compare):
     seg = auto()
-    seg_modelres = auto()
+    # seg_modelres = auto()
     softmax_logits = auto()
     unc = auto()
 
