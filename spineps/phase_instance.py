@@ -283,7 +283,7 @@ def collect_vertebra_predictions(
         debug_data[f"inst_cutout_vert_nii_{com_idx}_proc"] = vert_cut_nii.copy()
 
         cutout_sizes = tuple(cutout_coords[i].stop - cutout_coords[i].start for i in range(0, len(cutout_coords)))
-        pad_cutout = tuple(slice(paddings[i].start, paddings[i].start + cutout_sizes[i]) for i in range(0, len(paddings)))
+        pad_cutout = tuple(slice(paddings[i][0], paddings[i][0] + cutout_sizes[i]) for i in range(0, len(paddings)))
         # print("cutout_sizes", cutout_sizes)
         # print("pad_cutout", pad_cutout)
         arr = vert_cut_nii.get_seg_array()
