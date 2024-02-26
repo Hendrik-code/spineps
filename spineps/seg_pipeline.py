@@ -1,10 +1,12 @@
 # from utils.predictor import nnUNetPredictor
-from TPTBox import NII, Location, No_Logger, Zooms
-from TPTBox.core import poi
-from TPTBox.logger.log_file import get_time, format_time_short
-from spineps.seg_model import Segmentation_Model
 import subprocess
 
+from scipy.ndimage import center_of_mass
+from TPTBox import NII, Location, No_Logger, Zooms, v_name2idx
+from TPTBox.core import poi
+from TPTBox.logger.log_file import format_time_short, get_time
+
+from spineps.seg_model import Segmentation_Model
 
 logger = No_Logger()
 logger.override_prefix = "SPINEPS"
@@ -56,6 +58,10 @@ def predict_centroids_from_both(
 
     ctd = poi.calc_centroids_from_subreg_vert(vert_nii_4_centroids, seg_nii, verbose=logger)
 
+    if v_name2idx["S1"] in vert_nii_cleaned.unique():
+        s1_nii = vert_nii_cleaned.extract_label(26, inplace=False)
+        ctd[v_name2idx["S1"], 50] = center_of_mass(s1_nii.get_seg_array())
+
     models_repr = {}
     for idx, m in enumerate(models):
         models_repr[idx] = m.dict_representation(input_zms_pir)
@@ -76,7 +82,7 @@ def pipeline_version():
         label = str(label).replace("'", "")
         while not label[0].isdigit():
             label = label[1:]
-    except Exception as e:
+    except Exception:
         return "Version not found"
     return "v1." + str(label)
 
@@ -86,11 +92,11 @@ def pipeline_revision():
     rev = ""
     try:
         label = subprocess.check_output(["git", "describe", "--always"]).strip()
-    except Exception as e:
+    except Exception:
         pass
     try:
         rev = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("ascii").strip()
-    except Exception as e:
+    except Exception:
         pass
     return str(label) + "::" + str(rev)
 
