@@ -16,7 +16,6 @@ def predict_instance_mask(
     debug_data: dict,
     pad_size: int = 0,
     fill_holes: bool = True,
-    use_height_estimate: bool = False,
     proc_corpus_clean: bool = True,
     proc_cleanvert: bool = True,
     proc_largest_cc: int = 0,
@@ -41,8 +40,8 @@ def predict_instance_mask(
 
         logger.print("Vertebra input", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
         # Save values for resample back later
-        orientation = seg_nii.orientation
-        shp = seg_nii.shape
+        # orientation = seg_nii.orientation
+        # shp = seg_nii.shape
 
         seg_nii_rdy = seg_nii.reorient(verbose=logger)
         debug_data["inst_uncropped_Subreg_nii_a_PIR"] = seg_nii_rdy.copy()
@@ -97,7 +96,6 @@ def predict_instance_mask(
             debug_data=debug_data,
             proc_largest_cc=proc_largest_cc,
             fill_holes=False,
-            use_height_estimate=use_height_estimate,
             verbose=verbose,
         )
         if vert_predictions is None:
@@ -170,7 +168,6 @@ def collect_vertebra_predictions(
     debug_data: dict,
     proc_largest_cc: int = 0,
     fill_holes: bool = False,
-    use_height_estimate: bool = False,
     verbose: bool = False,
 ) -> tuple[np.ndarray | None, list[str], int]:
     # Extract Corpus region and try to find all coms naively (some skips shouldnt matter)
@@ -212,7 +209,7 @@ def collect_vertebra_predictions(
         seg_nii.shape[2],
     )
     hierarchical_existing_predictions = []
-    hierarchical_predictions = np.zeros((n_corpus_coms, 3) + shp)
+    hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp))
     # print("hierarchical_predictions", hierarchical_predictions.shape)
     vert_predict_template = np.zeros(shp, dtype=np.uint16)
     # print("vert_predict_template", vert_predict_template.shape)
@@ -248,10 +245,10 @@ def collect_vertebra_predictions(
         seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
         orig_com = (com[0], com[1], com[2])
         while not seg_at_com:
-            com = (com[0], com[1] + 5, com[2])
+            com = (com[0], com[1] + 5, com[2])  # noqa: PLW2901
             if com[1] >= shp[1]:
                 logger.print("Collect Vertebra Predictions: One Cutout at weird position", Log_Type.FAIL)
-                com = orig_com
+                com = orig_com  # noqa: PLW2901
                 break
             seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
 
@@ -282,8 +279,8 @@ def collect_vertebra_predictions(
         vert_labels = vert_cut_nii.unique()  # 1,2,3
         debug_data[f"inst_cutout_vert_nii_{com_idx}_proc"] = vert_cut_nii.copy()
 
-        cutout_sizes = tuple(cutout_coords[i].stop - cutout_coords[i].start for i in range(0, len(cutout_coords)))
-        pad_cutout = tuple(slice(paddings[i][0], paddings[i][0] + cutout_sizes[i]) for i in range(0, len(paddings)))
+        cutout_sizes = tuple(cutout_coords[i].stop - cutout_coords[i].start for i in range(len(cutout_coords)))
+        pad_cutout = tuple(slice(paddings[i][0], paddings[i][0] + cutout_sizes[i]) for i in range(len(paddings)))
         # print("cutout_sizes", cutout_sizes)
         # print("pad_cutout", pad_cutout)
         arr = vert_cut_nii.get_seg_array()
@@ -384,7 +381,7 @@ def create_prediction_couples(
 
     # TODO try to calculate list of candidates here, take the predictions and then parallelize the find_prediction_couple
 
-    for idx in range(0, n_predictions):
+    for idx in range(n_predictions):
         for pred in range(3):
             couple, agreement = find_prediction_couple(
                 idx, pred, hierarchical_predictions, hierarchical_existing_predictions, n_predictions, verbose
