@@ -24,8 +24,10 @@ from spineps.seg_utils import (
     check_model_modality_acquisition,
     find_best_matching_model,
 )
+from spineps.utils.citation_reminder import citation_reminder
 
 
+@citation_reminder
 def process_dataset(
     dataset_path: Path,
     model_instance: Segmentation_Model,
@@ -226,6 +228,7 @@ def process_dataset(
         logger.print(not_properly_processed)
 
 
+@citation_reminder
 def process_img_nii(  # noqa: C901
     img_ref: BIDS_FILE,
     model_semantic: Segmentation_Model,

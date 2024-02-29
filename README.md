@@ -12,8 +12,8 @@ This is a segmentation pipeline to automatically, and robustly, segment the whol
 If you are using SPINEPS, please cite the following:
 
 ```
-Hendrik M ̈oller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Matan Atad, Anjany
-Sekuboyina, Felix Streckenbach, Hanna Sch ̈on, Florian Kofler, Thomas Kroencke, Ste-
+Hendrik Möller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Matan Atad, Anjany
+Sekuboyina, Felix Streckenbach, Hanna Schon, Florian Kofler, Thomas Kroencke, Ste-
 fanie Bette, Stefan Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Ende-
 mann, Bjoern Menze, Daniel Rueckert, and Jan S. Kirschke. Spineps – automatic whole
 spine segmentation of t2-weighted mr images using a two-phase approach to multi-class
@@ -24,7 +24,7 @@ ArXiv link: <a href="https://arxiv.org/abs/2402.16368">https://arxiv.org/abs/240
 
 BibTeX citation:
 ```
-@article{moller2024,
+@article{moeller2024,
       title={SPINEPS -- Automatic Whole Spine Segmentation of T2-weighted MR images using a Two-Phase Approach to Multi-class Semantic and Instance Segmentation},
       author={Hendrik Möller and Robert Graf and Joachim Schmitt and Benjamin Keinert and Matan Atad and Anjany Sekuboyina and Felix Streckenbach and Hanna Schön and Florian Kofler and Thomas Kroencke and Stefanie Bette and Stefan Willich and Thomas Keil and Thoralf Niendorf and Tobias Pischon and Beate Endemann and Bjoern Menze and Daniel Rueckert and Jan S. Kirschke},
     journal={arXiv preprint arXiv:2402.16368},

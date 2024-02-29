@@ -11,6 +11,7 @@ from typing_extensions import Self
 from spineps.seg_enums import Acquisition, InputType, Modality, ModelType, OutputType
 from spineps.seg_modelconfig import Segmentation_Inference_Config, load_inference_config
 from spineps.Unet3D.pl_unet import PLNet
+from spineps.utils.citation_reminder import citation_reminder
 from spineps.utils.filepaths import search_path
 from spineps.utils.inference_api import load_inf_model, run_inference
 
@@ -94,6 +95,7 @@ class Segmentation_Model(ABC):
         match: bool = bool(np.all([self_zms[i] - model_zms[i] < 1e-4 for i in range(3)]))
         return match
 
+    @citation_reminder
     def segment_scan(
         self,
         input_image: Image_Reference | dict[InputType, Image_Reference],

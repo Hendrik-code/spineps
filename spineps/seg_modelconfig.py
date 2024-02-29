@@ -22,7 +22,7 @@ class Segmentation_Inference_Config:
         resolution_range: Zooms | tuple[Zooms, Zooms],
         default_step_size: float,
         labels: dict,
-        expected_inputs: list[InputType] = [InputType.img],  # noqa: B006
+        expected_inputs: list[InputType | str] = [InputType.img],  # noqa: B006
         **kwargs,
     ):
         if not isinstance(modality, list):
@@ -37,7 +37,7 @@ class Segmentation_Inference_Config:
         self.available_folds: int = int(available_folds)
         self.inference_augmentation: bool = inference_augmentation
         self.default_step_size = float(default_step_size)
-        self.expected_inputs = [InputType[i] for i in expected_inputs]  # type: ignore
+        self.expected_inputs = [InputType[i] if isinstance(i, str) else i for i in expected_inputs]  # type: ignore
         names = [member.name for member in Location]
         try:
             self.segmentation_labels = {

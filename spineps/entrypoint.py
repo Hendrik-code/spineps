@@ -9,6 +9,7 @@ from TPTBox import BIDS_FILE, Log_Type, No_Logger
 
 from spineps.models import get_instance_model, get_segmentation_model, get_semantic_model, modelid2folder_instance, modelid2folder_semantic
 from spineps.seg_run import process_dataset, process_img_nii
+from spineps.utils.citation_reminder import citation_reminder
 
 logger = No_Logger()
 logger.override_prefix = "Init"
@@ -159,6 +160,14 @@ def entry_point():
     ###########################
     opt = main_parser.parse_args()
 
+    # Print citation
+    print("###########################")
+    print("SPINEPS: please cite")
+    print(
+        "Hendrik Möller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Matan Atad, Anjany Sekuboyina, Felix Streckenbach, Hanna Sch ̈on, Florian Kofler, Thomas Kroencke, Stefanie Bette, Stefan Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Ende-mann, Bjoern Menze, Daniel Rueckert, and Jan S. Kirschke. Spineps - automatic whole spine segmentation of t2-weighted mr images using a two-phase approach to multi-class semantic and instance segmentation. arXiv preprint arXiv:2402.16368, 2024."
+    )
+    print("###########################")
+
     # print(opt)
     if opt.cmd == "sample":
         run_sample(opt)
@@ -168,6 +177,7 @@ def entry_point():
         raise NotImplementedError("cmd", opt.cmd)
 
 
+@citation_reminder
 def run_sample(opt: Namespace):
     input_path = Path(opt.input)
     dataset = str(input_path.parent)
@@ -234,6 +244,7 @@ def run_sample(opt: Namespace):
     return 1
 
 
+@citation_reminder
 def run_dataset(opt: Namespace):
     input_dir = Path(opt.directory)
     assert input_dir.exists(), f"-input does not exist, {input_dir}"
