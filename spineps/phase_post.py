@@ -112,7 +112,7 @@ def mask_cleaning_other(
         vert_arr_cleaned, subreg_vert_arr, deletion_map = assign_missing_cc(
             vert_arr_cleaned,
             subreg_vert_arr,
-            verbose=False,
+            verbose=verbose,
         )
         subreg_vert_nii.set_array_(subreg_vert_arr)
         vert_arr_cleaned[subreg_vert_arr == 0] = 0
@@ -226,9 +226,9 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
     n_ivds = 0
     if Location.Vertebra_Disc.value in seg_t.unique():
         # Map IVDS
-        subreg_cc, subreg_cc_N = seg_t.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
+        subreg_cc, subreg_cc_n = seg_t.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
         subreg_cc = subreg_cc[Location.Vertebra_Disc.value]
-        cc_labelset = list(range(1, subreg_cc_N[Location.Vertebra_Disc.value] + 1))
+        cc_labelset = list(range(1, subreg_cc_n[Location.Vertebra_Disc.value] + 1))
         mapping_cc_to_vert_label = {}
 
         coms_ivd_dict = {}
@@ -243,7 +243,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
                 label = min(coms_vert_labels) - 1
             else:
                 nearest_lower = find_nearest_lower(coms_vert_y, com_y)
-                label = [i for i in coms_vert_dict if coms_vert_dict[i] == nearest_lower][0]
+                label = next(i for i in coms_vert_dict if coms_vert_dict[i] == nearest_lower)
             coms_ivd_dict[label] = com_y
             mapping_cc_to_vert_label[c] = label
             n_ivds += 1
@@ -266,9 +266,9 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
     n_eps = 0
     if Location.Endplate.value in seg_t.unique():
         # MAP Endplate
-        ep_cc, ep_cc_N = seg_t.get_segmentation_connected_components(labels=Location.Endplate.value)
+        ep_cc, ep_cc_n = seg_t.get_segmentation_connected_components(labels=Location.Endplate.value)
         ep_cc = ep_cc[Location.Endplate.value]
-        cc_ep_labelset = list(range(1, ep_cc_N[Location.Endplate.value]))
+        cc_ep_labelset = list(range(1, ep_cc_n[Location.Endplate.value]))
         mapping_ep_cc_to_vert_label = {}
         coms_ivd_dict = {}
         for c in cc_ep_labelset:
@@ -278,7 +278,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
             c_l[c_l != c] = 0
             com_y = np_center_of_mass(c_l)[c][1]  # center_of_mass(c_l)[1]
             nearest_lower = find_nearest_lower(coms_vert_y, com_y)
-            label = [i for i in coms_vert_dict if coms_vert_dict[i] == nearest_lower][0]
+            label = next(i for i in coms_vert_dict if coms_vert_dict[i] == nearest_lower)
             mapping_ep_cc_to_vert_label[c] = label
             n_eps += 1
 
@@ -310,7 +310,7 @@ def label_instance_top_to_bottom(vert_nii: NII):
     #    arr_i = vert_arr.copy()
     #    arr_i[arr_i != i] = 0
     #    comb[i] = center_of_mass(arr_i)
-    comb_l = list(zip(com_i.keys(), com_i.values()))
+    comb_l = list(zip(com_i.keys(), com_i.values(), strict=True))
     comb_l.sort(key=lambda a: a[1][1])  # PIR
     com_map = {comb_l[idx][0]: idx + 1 for idx in range(len(comb_l))}
 
