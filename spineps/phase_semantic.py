@@ -13,7 +13,7 @@ from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
 def predict_semantic_mask(
     mri_nii: NII,
     model: Segmentation_Model,
-    debug_data: dict,
+    debug_data: dict,  # noqa: ARG001
     fill_holes: bool = True,
     clean_artifacts: bool = True,
     verbose: bool = False,
@@ -42,7 +42,7 @@ def predict_semantic_mask(
             verbose=verbose,
         )  # type:ignore
         seg_nii = results[OutputType.seg]
-        unc_nii = results[OutputType.unc] if OutputType.unc in results else None
+        unc_nii = results.get(OutputType.unc, None)
         softmax_logits = results[OutputType.softmax_logits]
 
         if len(seg_nii.unique()) == 0:
@@ -93,7 +93,7 @@ def semantic_bounding_box_clean(seg_nii: NII):
     # PIR
     largest_nii = seg_bin_largest_k_cc_nii.extract_label(1)
     # width fixed, and heigh include all connected components within bounding box, then repeat
-    P_slice, I_slice, R_slice = largest_nii.compute_crop(dist=5)
+    p_slice, i_slice, r_slice = largest_nii.compute_crop(dist=5)
     # PIR -> fixed, extendable, extendable
     incorporated = [1]
     changed = True
@@ -102,18 +102,18 @@ def semantic_bounding_box_clean(seg_nii: NII):
         for k in [l for l in range(2, max_k + 1) if l not in incorporated]:
             k_nii = seg_bin_largest_k_cc_nii.extract_label(k)
             p, i, r = k_nii.compute_crop(dist=3)
-            I_slice_compare = slice(
-                max(I_slice.start - 10, 0), I_slice.stop + 10
+            i_slice_compare = slice(
+                max(i_slice.start - 10, 0), i_slice.stop + 10
             )  # more margin in inferior direction (allows for gaps in spine)
-            if overlap_slice(P_slice, p) and overlap_slice(I_slice_compare, i) and overlap_slice(R_slice, r):
+            if overlap_slice(p_slice, p) and overlap_slice(i_slice_compare, i) and overlap_slice(r_slice, r):
                 # extend bbox
-                I_slice = slice(min(I_slice.start, i.start), max(I_slice.stop, i.stop))
-                R_slice = slice(min(R_slice.start, r.start), max(R_slice.stop, r.stop))
+                i_slice = slice(min(i_slice.start, i.start), max(i_slice.stop, i.stop))
+                r_slice = slice(min(r_slice.start, r.start), max(r_slice.stop, r.stop))
                 incorporated.append(k)
                 changed = True
 
     seg_bin_arr = seg_binary.get_seg_array()
-    crop = (P_slice, I_slice, R_slice)
+    crop = (p_slice, i_slice, r_slice)
     seg_bin_clean_arr = np.zeros(seg_bin_arr.shape)
     seg_bin_clean_arr[crop] = 1
 
