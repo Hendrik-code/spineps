@@ -1,9 +1,10 @@
-# Call 'python -m unittest' on this folder
+# Call 'python -m unittest' on this folder  # noqa: INP001
 # coverage run -m unittest
 # coverage report
 # coverage html
-import unittest
 import os
+import unittest
+
 from spineps.seg_enums import ErrCode
 
 
