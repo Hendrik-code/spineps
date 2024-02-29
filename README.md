@@ -11,7 +11,29 @@ This is a segmentation pipeline to automatically, and robustly, segment the whol
 
 If you are using SPINEPS, please cite the following:
 
-`arXiv Citation`
+```
+Hendrik M ̈oller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Matan Atad, Anjany
+Sekuboyina, Felix Streckenbach, Hanna Sch ̈on, Florian Kofler, Thomas Kroencke, Ste-
+fanie Bette, Stefan Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Ende-
+mann, Bjoern Menze, Daniel Rueckert, and Jan S. Kirschke. Spineps – automatic whole
+spine segmentation of t2-weighted mr images using a two-phase approach to multi-class
+semantic and instance segmentation. arXiv preprint arXiv:2402.16368, 2024.
+```
+
+ArXiv link: <a href="https://arxiv.org/abs/2402.16368">https://arxiv.org/abs/2402.16368</a>
+
+BibTeX citation:
+```
+@article{moller2024,
+      title={SPINEPS -- Automatic Whole Spine Segmentation of T2-weighted MR images using a Two-Phase Approach to Multi-class Semantic and Instance Segmentation},
+      author={Hendrik Möller and Robert Graf and Joachim Schmitt and Benjamin Keinert and Matan Atad and Anjany Sekuboyina and Felix Streckenbach and Hanna Schön and Florian Kofler and Thomas Kroencke and Stefanie Bette and Stefan Willich and Thomas Keil and Thoralf Niendorf and Tobias Pischon and Beate Endemann and Bjoern Menze and Daniel Rueckert and Jan S. Kirschke},
+    journal={arXiv preprint arXiv:2402.16368},
+    year={2024},
+    eprint={2402.16368},
+    archivePrefix={arXiv},
+    primaryClass={eess.IV},
+}
+```
 
 ## Installation (Ubuntu)
 
@@ -59,13 +81,13 @@ This specified folder should have the following structure:
 
 3. You need to specify this models folder as argument when running. If you want to set it permanently, set the according environment variable in your `.bashrc` or `.zshrc` (whatever you are using).
 ```bash
-export spineps_segmentor_models=<PATH-to-your-folder>
+export SPINEPS_SEGMENTOR_MODELS=<PATH-to-your-folder>
 ```
 You can also execute the above line whenever you run this segmentation pipeline.
 
 To check that you set the environment variable correctly, call:
 ```bash
-echo ${spineps_segmentor_models}
+echo ${SPINEPS_SEGMENTOR_MODELS}
 ```
 
 For Windows, this might help: https://phoenixnap.com/kb/windows-set-environment-variable
@@ -125,7 +147,7 @@ There are a lot more arguments, run `spineps sample -h` to see them.
 
 `spineps dataset <args>`:
 
-Processes all "suitable" niftys it finds in the specified dataset folder. 
+Processes all "suitable" niftys it finds in the specified dataset folder.
 
 A dataset folder must have the following structure:
 ```
