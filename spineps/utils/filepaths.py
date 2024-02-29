@@ -5,7 +5,9 @@ import warnings
 from itertools import chain
 from pathlib import Path
 
-spineps_environment_path_override = "/DATA/NAS/ongoing_projects/hendrik/mri_usage/models/"  # None  # You can put an absolute path to the model weights here instead of using environment variable
+spineps_environment_path_override = Path(
+    "/DATA/NAS/ongoing_projects/hendrik/mri_usage/models/"
+)  # None  # You can put an absolute path to the model weights here instead of using environment variable
 spineps_environment_path_backup = Path(__file__).parent.parent.joinpath("models")  # EDIT this to use this instead of environment variable
 
 
@@ -16,8 +18,8 @@ def get_mri_segmentor_models_dir() -> Path:
         Path: Path to the overall models folder
     """
     folder_path = (
-        os.environ.get("spineps_segmentor_models")
-        if spineps_environment_path_override is None or not os.path.exists(spineps_environment_path_override)
+        os.environ.get("SPINEPS_SEGMENTOR_MODELS")
+        if spineps_environment_path_override is None or not spineps_environment_path_override.exists()
         else spineps_environment_path_override
     )
     if folder_path is None and spineps_environment_path_backup is not None:
@@ -25,9 +27,9 @@ def get_mri_segmentor_models_dir() -> Path:
 
     assert (
         folder_path is not None
-    ), "Environment variable 'spineps_segmentor_models' is not defined. Setup the environment variable as stated in the readme or set the override in utils.filepaths.py"
+    ), "Environment variable 'SPINEPS_SEGMENTOR_MODELS' is not defined. Setup the environment variable as stated in the readme or set the override in utils.filepaths.py"
     folder_path = Path(folder_path)
-    assert folder_path.exists(), f"'spineps_segmentor_models' path {folder_path} does not exist"
+    assert folder_path.exists(), f"'SPINEPS_SEGMENTOR_MODELS' path {folder_path} does not exist"
     return folder_path
 
 
@@ -48,7 +50,7 @@ def filepath_model(model_folder_name: str, model_dir: str | Path | None = None) 
         model_dir = Path(model_dir)
 
     path = model_dir.joinpath(model_folder_name)
-    if not os.path.exists(path):
+    if not path.exists():
         paths = search_path(Path(model_dir), query=f"**/{model_folder_name}")
         if len(paths) == 1:
             return paths[0]
@@ -71,9 +73,9 @@ def search_path(basepath: str | Path, query: str, verbose: bool = False, suppres
     if not basepath.endswith("/"):
         basepath += "/"
     print(f"search_path: in {basepath}{query}") if verbose else None
-    paths = sorted(list(chain(list(Path(f"{basepath}").glob(f"{query}")))))
+    paths = sorted(chain(list(Path(f"{basepath}").glob(f"{query}"))))
     if len(paths) == 0 and not suppress:
-        warnings.warn(f"did not find any paths in {basepath}{query}", UserWarning)
+        warnings.warn(f"did not find any paths in {basepath}{query}", UserWarning, stacklevel=1)
     return paths
 
 
