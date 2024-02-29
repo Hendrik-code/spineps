@@ -1,36 +1,34 @@
-import sys
+import sys  # noqa: INP001
 from pathlib import Path
 
 file = Path(__file__).resolve()
 sys.path.append(str(file.parents[1]))
 sys.path.append(str(file.parents[2]))
 
-from TPTBox import (
-    BIDS_Global_info,
-    BIDS_FILE,
-    No_Logger,
-    NII,
-    POI,
-)
-import time
-from spineps.seg_run import process_img_nii, ErrCode
-from spineps.models import get_semantic_model, get_instance_model
-import numpy as np
+import time  # noqa: E402
+
+import numpy as np  # noqa: E402
+from TPTBox import BIDS_FILE, NII, POI, BIDS_Global_info, No_Logger  # noqa: E402
+
+from spineps.models import get_instance_model, get_semantic_model  # noqa: E402
+from spineps.seg_run import ErrCode, process_img_nii  # noqa: E402
 
 # INPUT
-in_ds = Path("DATASET_PATH")
-raw = "rawdata"  # TODO
-der = "derivatives"  # TODO
+in_ds = Path("DATASET_PATH")  # TODO change this to the path to your dataset folder
+raw = "rawdata"  # TODO change this to your rawdata directory name
+der = "derivatives"  # TODO change this to your derivatives directory name
 
-head_logger = No_Logger()  # (in_ds, log_filename="source-convert-to-unet-train", default_verbose=True)
+head_logger = (
+    No_Logger()
+)  # (in_ds, log_filename="source-run-spineps", default_verbose=True) # TODO uncomment this to save a logger across the files
 
 
-block = ""  # put i.e. 101 in here for block
+block = ""  # TODO put i.e. 101 in here if your dataset is split into blocks and you want to specify one
 parent_raw = str(Path(raw).joinpath(str(block)))
 parent_der = str(Path(der).joinpath(str(block)))
 
-model_semantic = get_semantic_model("Model_name")
-model_instance = get_instance_model("Model_name")
+model_semantic = get_semantic_model("Model_name")  # TODO put the modelname here
+model_instance = get_instance_model("Model_name")  # TODO put the modelname here
 
 bids_ds = BIDS_Global_info(datasets=[in_ds], parents=[parent_raw, parent_der], verbose=False)
 
@@ -38,7 +36,7 @@ execution_times = []
 
 
 def injection_function(seg_nii: NII):
-    # do something with semantic mask
+    # TODO do something with semantic mask
     return seg_nii
 
 
@@ -78,6 +76,7 @@ for name, subject in bids_ds.enumerate_subjects(sort=True):
             save_debug_data=False,
             verbose=False,
         )
+        # TODO measures time for each sample
         end_time = time.perf_counter()
         execution_time = end_time - start_time
         logger.print(f"Inference time is: {execution_time}")
@@ -87,6 +86,7 @@ for name, subject in bids_ds.enumerate_subjects(sort=True):
             logger.print(f"{fid}: Pipeline threw errorcode {errcode}")
             # TODO continue? assert?
 
+        # TODO if you want to do something directly with the outputs again, you can load them like this
         # Load Outputs
         img_nii = ref.open_nii()
         seg_nii = NII.load(output_paths["out_spine"], seg=True)  # semantic mask
