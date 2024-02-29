@@ -12,7 +12,7 @@ from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
 
 def preprocess_input(
     mri_nii: NII,
-    debug_data: dict,
+    debug_data: dict,  # noqa: ARG001
     pad_size: int = 4,
     do_n4: bool = True,
     do_crop: bool = True,
@@ -26,7 +26,7 @@ def preprocess_input(
             # Enforce to range [0, 1500]
             mri_nii.normalize_to_range_(min_value=0, max_value=9000, verbose=logger)
             crop = mri_nii.compute_crop(dist=0) if do_crop else (slice(None, None), slice(None, None), slice(None, None))
-        except ValueError as e:
+        except ValueError:
             logger.print("Image Nifty is empty, skip this", Log_Type.FAIL)
             return None, ErrCode.EMPTY
 
