@@ -45,7 +45,7 @@ def n4_bias(
 def clean_cc_artifacts(
     mask: NII | np.ndarray,
     logger: Logger_Interface,
-    labels: list[int] = [1, 2, 3],
+    labels: list[int] = [1, 2, 3],  # noqa: B006
     cc_size_threshold: int | list[int] = 100,
     neighbor_factor_2_delete: float = 0.1,
     verbose: bool = True,
@@ -67,10 +67,7 @@ def clean_cc_artifacts(
     Returns:
         np.ndarray: _description_
     """
-    if isinstance(mask, NII):
-        mask_arr = mask.get_seg_array()
-    else:
-        mask_arr = mask.copy()
+    mask_arr = mask.get_seg_array() if isinstance(mask, NII) else mask.copy()
     result_arr = mask_arr.copy()
 
     mask_labels = np_unique(result_arr)
@@ -116,7 +113,7 @@ def clean_cc_artifacts(
             if verbose:
                 cc_volume = np_count_nonzero(mask_cc_l)
                 cc_centroid = center_of_mass(mask_cc_l)
-                cc_centroid = [int(c) + 1 for c in cc_centroid]
+                cc_centroid = [int(c) + 1 for c in cc_centroid]  # type: ignore
                 log_string = f"Label {label}, cc{cc_idx}, at {cc_centroid}, volume {cc_volume}: "
             if only_delete:
                 logger.print(log_string + "deleted") if verbose else None
@@ -141,7 +138,7 @@ def clean_cc_artifacts(
                 volumes = np_volume(mult)
                 nlabels = volumes.keys()
                 volumes_values = volumes.values()
-                newlabel = nlabels[np.argmax(volumes_values)]
+                newlabel = nlabels[np.argmax(volumes_values)]  # type: ignore
                 result_arr[mask_cc_l != 0] = newlabel
                 logger.print(log_string + f"labeled as {newlabel}") if verbose else None
                 # print(labels, count)
@@ -165,7 +162,7 @@ def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbo
     """
     assert 2 <= mask_image.ndim <= 3, f"expected 2D or 3D, but got {mask_image.ndim}"
     assert 1 <= connectivity <= 3, f"expected connectivity in [1,3], but got {connectivity}"
-    if mask_image.ndim == 2:
+    if mask_image.ndim == 2:  # noqa: SIM108
         connectivity = min(connectivity * 2, 8)  # 1:4, 2:8, 3:8
     else:
         connectivity = 6 if connectivity == 1 else 18 if connectivity == 2 else 26
@@ -177,10 +174,10 @@ def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbo
         img_subreg = mask_image.copy()
         img_subreg[img_subreg != subreg] = 0
         # labels_out = cc3d.dust(img_subreg, threshold=400, in_place=False)
-        labels_out, N = cc3d.connected_components(img_subreg, connectivity=connectivity, return_N=True)
+        labels_out, n = cc3d.connected_components(img_subreg, connectivity=connectivity, return_N=True)
         # labels_out, N = cc3d.largest_k(img_subreg, k=10, return_N=True)
         subreg_cc[subreg] = labels_out
         subreg_cc_stats[subreg] = cc3d.statistics(labels_out)
-        if (N) != 1:  # zero is a label
-            print(f"subreg {subreg} does not have one CC (not counting zeros), got {N}") if verbose else None
+        if (n) != 1:  # zero is a label
+            print(f"subreg {subreg} does not have one CC (not counting zeros), got {n}") if verbose else None
     return subreg_cc, subreg_cc_stats
