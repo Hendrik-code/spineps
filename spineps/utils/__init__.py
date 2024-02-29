@@ -1,1 +1,1 @@
-from spineps.utils.filepaths import filepath_model  # noqa: F401
+from spineps.utils.filepaths import filepath_model
