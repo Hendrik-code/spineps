@@ -97,7 +97,7 @@ class Segmentation_Model(ABC):
     def segment_scan(
         self,
         input_image: Image_Reference | dict[InputType, Image_Reference],
-        pad_size: int = 2,
+        pad_size: int = 0,
         step_size: float | None = 0.5,
         resample_to_recommended: bool = True,
         resample_output_to_input_space: bool = True,
@@ -182,7 +182,6 @@ class Segmentation_Model(ABC):
         #
         for k, v in result.items():
             if isinstance(v, NII):  # and k != OutputType.seg_modelres:
-
                 if resample_output_to_input_space:
                     v.rescale_(zms_pir, verbose=self.logger).reorient_(orientation, verbose=self.logger)
                     v.pad_to(orig_shape, inplace=True)

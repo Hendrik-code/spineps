@@ -6,7 +6,7 @@ from time import perf_counter
 
 import nibabel as nib
 import numpy as np
-from TPTBox import BIDS_FILE, NII, BIDS_Global_info, Centroids, Location, Log_Type, Logger
+from TPTBox import BIDS_FILE, NII, POI, BIDS_Global_info, Location, Log_Type, Logger
 from TPTBox.core.np_utils import np_count_nonzero
 from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 
@@ -32,7 +32,7 @@ def process_dataset(
     model_semantic: list[Segmentation_Model] | Segmentation_Model | None = None,
     rawdata_name: str = "rawdata",
     derivative_name: str = "derivatives_seg",
-    modalities: list[Modality_Pair] | Modality_Pair = [(Modality.T2w, Acquisition.sag)],
+    modalities: list[Modality_Pair] | Modality_Pair = [(Modality.T2w, Acquisition.sag)],  # noqa: B006
     #
     save_debug_data: bool = False,
     save_uncertainty_image: bool = False,
@@ -99,7 +99,7 @@ def process_dataset(
         log_inference_time (bool, optional): If true, will log the inference time for each subject. Defaults to True.
         verbose (bool, optional): If true, will spam your terminal with info. Defaults to False.
     """
-    global logger
+    global logger  # noqa: PLW0603
     logger.print(f"Initialize setup for dataset in {dataset_path}", Log_Type.BOLD)
     # INITIALIZATION
     if not isinstance(modalities, list):
@@ -317,15 +317,15 @@ def process_img_nii(  # noqa: C901
         snapshot_copy_folder.mkdir(parents=True, exist_ok=True)
 
     if (
-        os.path.exists(out_spine)
-        and os.path.exists(out_vert)
-        and os.path.exists(out_snap)
-        and os.path.exists(out_ctd)
+        out_spine.exists()
+        and out_vert.exists()
+        and out_snap.exists()
+        and out_ctd.exists()
         and not override_semantic
         and not override_instance
         and not override_postpair
         and not override_ctd
-        and (snapshot_copy_folder is None or os.path.exists(out_snap2))
+        and (snapshot_copy_folder is None or out_snap2.exists())
     ):
         logger.print("Outputs are all already created and no override set, will skip")
         return output_paths, ErrCode.ALL_DONE
@@ -346,17 +346,20 @@ def process_img_nii(  # noqa: C901
 
     logger.print("Processing", file_dir.name)
     with logger:
+        if verbose:
+            model_semantic.logger.default_verbose = True
         input_nii = img_ref.open_nii()
         input_package = InputPackage(
             input_nii,
             pad_size=4,
         )
+        logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
 
         # TODO what to do with this info?
         # modelres_compatible: bool = model_semantic.same_modelzoom_as_model(model_instance, input_package.zms_pir)
 
         # First stage
-        if not os.path.exists(out_spine_raw) or override_semantic:
+        if not out_spine_raw.exists() or override_semantic:
             input_preprocessed, errcode = preprocess_input(
                 input_nii,
                 pad_size=input_package.pad_size,
@@ -407,12 +410,11 @@ def process_img_nii(  # noqa: C901
             print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
 
         # Second stage
-        if not os.path.exists(out_vert_raw) or override_instance:
+        if not out_vert_raw.exists() or override_instance:
             whole_vert_nii, errcode = predict_instance_mask(
                 seg_nii_modelres.copy(),
                 model_instance,
                 debug_data=debug_data_run,
-                use_height_estimate=False,
                 verbose=verbose,
                 fill_holes=proc_fillholes,
                 proc_corpus_clean=proc_corpus_clean,
@@ -433,14 +435,18 @@ def process_img_nii(  # noqa: C901
             whole_vert_nii = NII.load(out_vert_raw, seg=True)
 
         # Cleanup Step
-        if not os.path.exists(out_spine) or not os.path.exists(out_vert) or done_something or override_postpair:
+        if not out_spine.exists() or not out_vert.exists() or done_something or override_postpair:
             # back to input space
+            #
             if not save_modelres_mask:
-                seg_nii_modelres = input_package.sample_to_this(seg_nii_modelres)
-                whole_vert_nii = input_package.sample_to_this(whole_vert_nii)
+                seg_nii_back = input_package.sample_to_this(seg_nii_modelres)
+                whole_vert_nii = input_package.sample_to_this(whole_vert_nii, intermediate_nii=seg_nii_modelres)
+            else:
+                seg_nii_back = seg_nii_modelres
+
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
-                seg_nii=seg_nii_modelres,
+                seg_nii=seg_nii_back,
                 vert_nii=whole_vert_nii,
                 debug_data=debug_data_run,
                 labeling_offset=1,
@@ -460,7 +466,7 @@ def process_img_nii(  # noqa: C901
             vert_nii_clean = NII.load(out_vert, seg=True)
 
         # Centroid
-        if not os.path.exists(out_ctd) or done_something or override_ctd:
+        if not out_ctd.exists() or done_something or override_ctd:
             ctd = predict_centroids_from_both(
                 vert_nii_clean,
                 seg_nii_clean,
@@ -471,7 +477,7 @@ def process_img_nii(  # noqa: C901
             done_something = True
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
-            ctd = Centroids.load(out_ctd)
+            ctd = POI.load(out_ctd)
 
         # save debug
         if save_debug_data:
@@ -486,17 +492,16 @@ def process_img_nii(  # noqa: C901
                 logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
 
         # Snapshot
-        if not os.path.exists(out_snap) or done_something:
+        if not out_snap.exists() or done_something:
             # make only snapshot
             if snapshot_copy_folder is not None:
                 out_snap = [out_snap, out_snap2]
             ctd = ctd.extract_subregion(Location.Vertebra_Corpus)
             mri_snapshot(input_nii, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
-        elif not os.path.exists(out_snap2):
-            logger.print(f"Copying snapshot into {str(snapshot_copy_folder)}")
-            if not os.path.exists(out_snap2.parent):
-                os.mkdir(out_snap2.parent)
+        elif not out_snap2.exists():
+            logger.print(f"Copying snapshot into {snapshot_copy_folder!s}")
+            out_snap2.parent.mkdir(exist_ok=True)
             shutil.copy(out_snap, out_snap2)
 
     logger.print(f"Pipeline took: {perf_counter() - start_time}", Log_Type.OK, verbose=log_inference_time)
