@@ -5,9 +5,9 @@ import warnings
 from itertools import chain
 from pathlib import Path
 
-spineps_environment_path_override = Path(
-    "/DATA/NAS/ongoing_projects/hendrik/mri_usage/models/"
-)  # None  # You can put an absolute path to the model weights here instead of using environment variable
+spineps_environment_path_override = None  # Path(
+# "/DATA/NAS/ongoing_projects/hendrik/mri_usage/models/"
+# )  # None  # You can put an absolute path to the model weights here instead of using environment variable
 spineps_environment_path_backup = Path(__file__).parent.parent.joinpath("models")  # EDIT this to use this instead of environment variable
 
 
@@ -29,7 +29,7 @@ def get_mri_segmentor_models_dir() -> Path:
         folder_path is not None
     ), "Environment variable 'SPINEPS_SEGMENTOR_MODELS' is not defined. Setup the environment variable as stated in the readme or set the override in utils.filepaths.py"
     folder_path = Path(folder_path)
-    assert folder_path.exists(), f"'SPINEPS_SEGMENTOR_MODELS' path {folder_path} does not exist"
+    assert folder_path.exists(), f"Environment variable 'SPINEPS_SEGMENTOR_MODELS' = {folder_path} does not exist"
     return folder_path
 
 

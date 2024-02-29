@@ -55,7 +55,7 @@ def parser_arguments(parser: argparse.ArgumentParser):
         "-nocrop",
         "-nc",
         action="store_true",
-        help="Does not crop input before semantically segmenting",
+        help="Does not crop input before semantically segmenting. Can improve the segmentation a little but depending on size costs more computation time",
     )
     parser.add_argument(
         "-non4",
@@ -68,6 +68,7 @@ def parser_arguments(parser: argparse.ArgumentParser):
     return parser
 
 
+@citation_reminder
 def entry_point():
     modelids_semantic = list(modelid2folder_semantic().keys())
     modelids_instance = list(modelid2folder_instance().keys())
@@ -159,14 +160,6 @@ def entry_point():
     #
     ###########################
     opt = main_parser.parse_args()
-
-    # Print citation
-    print("###########################")
-    print("SPINEPS: please cite")
-    print(
-        "Hendrik Möller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Matan Atad, Anjany Sekuboyina, Felix Streckenbach, Hanna Sch ̈on, Florian Kofler, Thomas Kroencke, Stefanie Bette, Stefan Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Ende-mann, Bjoern Menze, Daniel Rueckert, and Jan S. Kirschke. Spineps - automatic whole spine segmentation of t2-weighted mr images using a two-phase approach to multi-class semantic and instance segmentation. arXiv preprint arXiv:2402.16368, 2024."
-    )
-    print("###########################")
 
     # print(opt)
     if opt.cmd == "sample":
