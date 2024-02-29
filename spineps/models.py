@@ -44,8 +44,8 @@ def get_instance_model(model_name: str) -> Segmentation_Model:
     return get_segmentation_model(_modelid2folder_vert[model_name])
 
 
-_modelid2folder_semantic: dict[str, Path] = None
-_modelid2folder_instance: dict[str, Path] = None
+_modelid2folder_semantic: dict[str, Path] | None = None
+_modelid2folder_instance: dict[str, Path] | None = None
 
 
 def modelid2folder_semantic() -> dict[str, Path]:
@@ -54,7 +54,6 @@ def modelid2folder_semantic() -> dict[str, Path]:
     Returns:
         _type_: _description_
     """
-    global _modelid2folder_semantic
     if _modelid2folder_semantic is not None:
         return _modelid2folder_semantic
     else:
@@ -67,7 +66,6 @@ def modelid2folder_instance() -> dict[str, Path]:
     Returns:
         _type_: _description_
     """
-    global _modelid2folder_instance
     if _modelid2folder_instance is not None:
         return _modelid2folder_instance
     else:
@@ -90,7 +88,7 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
     assert models_folder.exists(), f"models_folder {models_folder} does not exist"
 
     config_paths = search_path(models_folder, query="**/inference_config.json")
-    global _modelid2folder_semantic, _modelid2folder_instance
+    global _modelid2folder_semantic, _modelid2folder_instance  # noqa: PLW0603
     _modelid2folder_semantic = {}  # id to model_folder
     _modelid2folder_instance = {}  # id to model_folder
     for cp in config_paths:
@@ -103,12 +101,12 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
             else:
                 _modelid2folder_semantic[model_folder_name] = model_folder
         except Exception as e:
-            logger.print(f"Modelfolder '{model_folder_name}' ignored, caused by '{e}'", Log_Type.STRANGE, verbose=True)
+            logger.print(f"Modelfolder '{model_folder_name}' ignored, caused by '{e}'", Log_Type.STRANGE, verbose=verbose)
             # raise e  #
     return _modelid2folder_semantic, _modelid2folder_instance
 
 
-def get_segmentation_model(in_config: str | Path, *args, **kwargs) -> Segmentation_Model:
+def get_segmentation_model(in_config: str | Path, **kwargs) -> Segmentation_Model:
     """Creates the Model class from given path
 
     Args:
@@ -122,7 +120,7 @@ def get_segmentation_model(in_config: str | Path, *args, **kwargs) -> Segmentati
     # else:
     in_dir = in_config
 
-    if os.path.isdir(str(in_dir)):
+    if os.path.isdir(str(in_dir)):  # noqa: PTH112
         # search for config
         path_search = search_path(in_dir, "**/*inference_config.json")
         assert (
@@ -135,4 +133,4 @@ def get_segmentation_model(in_config: str | Path, *args, **kwargs) -> Segmentati
 
     inference_config = load_inference_config(str(in_dir))
     modeltype: type[Segmentation_Model] = modeltype2class(inference_config.modeltype)
-    return modeltype(model_folder=in_config, inference_config=inference_config, *args, **kwargs)
+    return modeltype(model_folder=in_config, inference_config=inference_config, **kwargs)
