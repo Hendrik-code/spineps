@@ -108,8 +108,8 @@ def entry_point():
 
     ###########################
     #
-    model_subreg_choices = ["auto"] + modelids_semantic
-    model_vert_choices = ["auto"] + modelids_instance
+    model_subreg_choices = ["auto", *modelids_semantic]
+    model_vert_choices = ["auto", *modelids_instance]
     #
     parser_dataset.add_argument(
         "-directory", "-i", "-d", required=True, type=str, help="path to the input directory, preferably a BIDS dataset"
@@ -169,14 +169,14 @@ def entry_point():
 
 
 def run_sample(opt: Namespace):
-    input = Path(opt.input)
-    dataset = str(input.parent)
-    assert os.path.exists(dataset), f"-input parent does not exist, got {dataset}"
-    assert dataset != "" and dataset != ".", f"-input you only gave a filename, not a direction to the file, got {input}"
-    input = str(input)
-    if not input.endswith(".nii.gz"):
-        input += ".nii.gz"
-    assert os.path.isfile(input), f"-input does not exist or is not a file, got {input}"
+    input_path = Path(opt.input)
+    dataset = str(input_path.parent)
+    assert os.path.exists(dataset), f"-input parent does not exist, got {dataset}"  # noqa: PTH110
+    assert dataset not in ("", "."), f"-input you only gave a filename, not a direction to the file, got {input_path}"
+    input_path = str(input_path)
+    if not input_path.endswith(".nii.gz"):
+        input_path += ".nii.gz"
+    assert os.path.isfile(input_path), f"-input does not exist or is not a file, got {input_path}"  # noqa: PTH113
 
     if "/" in str(opt.model_semantic):
         # given path
@@ -188,7 +188,7 @@ def run_sample(opt: Namespace):
     else:
         model_instance = get_instance_model(opt.model_instance).load()
 
-    bids_sample = BIDS_FILE(input, dataset=dataset, verbose=True)
+    bids_sample = BIDS_FILE(input_path, dataset=dataset, verbose=True)
 
     kwargs = {
         "img_ref": bids_sample,
@@ -235,9 +235,9 @@ def run_sample(opt: Namespace):
 
 
 def run_dataset(opt: Namespace):
-    input = Path(opt.directory)
-    assert os.path.exists(input), f"-input does not exist, {input}"
-    assert os.path.isdir(input), f"-input is not a directory, got {input}"
+    input_dir = Path(opt.directory)
+    assert input_dir.exists(), f"-input does not exist, {input_dir}"
+    assert input_dir.is_dir(), f"-input is not a directory, got {input_dir}"
 
     # Model semantic
     if opt.model_semantic == "auto":
@@ -258,7 +258,7 @@ def run_dataset(opt: Namespace):
     assert model_instance is not None, "-model_vert was None"
 
     kwargs = {
-        "dataset_path": input,
+        "dataset_path": input_dir,
         "model_semantic": model_semantic,
         "model_instance": model_instance,
         "rawdata_name": opt.rawdata_name,
@@ -290,7 +290,7 @@ def run_dataset(opt: Namespace):
 
         start_time = get_time()
         start_time_short = format_time_short(start_time)
-        cprofile_out = input.joinpath("logs")
+        cprofile_out = input_dir.joinpath("logs")
         cprofile_out.mkdir(parents=True, exist_ok=True)
         cprofile_out = cprofile_out.joinpath(f"spineps_dataset_{start_time_short}_cprofiler_log.log")
         with cProfile.Profile() as pr:
