@@ -61,6 +61,14 @@ exclude = [
     "dist",
     "node_modules",
     "venv",
+    "Unet3D",
+    "utils/data_iterators.py",
+    "utils/default_preprocessor.py",
+    "utils/export_prediction.py",
+    "utils/get_network_from_plans.py",
+    "utils/plans_handler.py",
+    "utils/predictor.py",
+    "utils/sliding_window_prediction.py",
     ".toml",
 ]
 line-length = 140
