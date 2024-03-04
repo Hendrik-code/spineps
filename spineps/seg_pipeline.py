@@ -56,7 +56,7 @@ def predict_centroids_from_both(
         labelmap[i] = 0
     vert_nii_4_centroids.map_labels_(labelmap, verbose=False)
 
-    ctd = poi.calc_centroids_from_subreg_vert(vert_nii_4_centroids, seg_nii, verbose=logger)
+    ctd = poi.calc_poi_from_subreg_vert(vert_nii_4_centroids, seg_nii, verbose=logger)
 
     if v_name2idx["S1"] in vert_nii_cleaned.unique():
         s1_nii = vert_nii_cleaned.extract_label(26, inplace=False)
