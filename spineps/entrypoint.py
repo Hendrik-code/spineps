@@ -265,7 +265,7 @@ def run_dataset(opt: Namespace):
         "dataset_path": input_dir,
         "model_semantic": model_semantic,
         "model_instance": model_instance,
-        "rawdata_name": opt.rawdata_name,
+        "rawdata_name": opt.raw_name,
         "derivative_name": opt.der_name,
         #
         "save_uncertainty_image": opt.save_unc_img,
