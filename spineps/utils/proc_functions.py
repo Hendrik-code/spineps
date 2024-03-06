@@ -136,8 +136,8 @@ def clean_cc_artifacts(
                 dilated_m[dilated_m != 0] = 1
                 mult = mask_arr * dilated_m
                 volumes = np_volume(mult)
-                nlabels = volumes.keys()
-                volumes_values = volumes.values()
+                nlabels = list(volumes.keys())
+                volumes_values = list(volumes.values())
                 newlabel = nlabels[np.argmax(volumes_values)]  # type: ignore
                 result_arr[mask_cc_l != 0] = newlabel
                 logger.print(log_string + f"labeled as {newlabel}") if verbose else None
