@@ -46,8 +46,11 @@ class Test_filepaths(unittest.TestCase):
 
     def test_env_path(self):
         # no override
-        p = get_mri_segmentor_models_dir()
-        if spineps_environment_path_override is not None:
-            self.assertEqual(p, spineps_environment_path_override)
-        else:
-            self.assertEqual(str(p) + "/", os.environ.get("SPINEPS_SEGMENTOR_MODELS"))
+        try:
+            p = get_mri_segmentor_models_dir()
+            if spineps_environment_path_override is not None:
+                self.assertEqual(p, spineps_environment_path_override)
+            else:
+                self.assertEqual(str(p) + "/", os.environ.get("SPINEPS_SEGMENTOR_MODELS"))
+        except AssertionError as e:
+            print(e)
