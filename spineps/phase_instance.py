@@ -144,18 +144,13 @@ def predict_instance_mask(
         whole_vert_nii_uncropped = seg_nii_uncropped.set_array(uncropped_vert_mask)
         debug_data["inst_uncropped_vert_arr_a"] = whole_vert_nii_uncropped.copy()
 
-        # Resample back to input space
-        # whole_vert_nii_uncropped.rescale_(zms, verbose=verbose)
-        # debug_data["inst_uncropped_vert_arr_b_rescale"] = whole_vert_nii_uncropped.copy()
-        # whole_vert_nii_uncropped.reorient_(orientation, verbose=verbose)
-        # debug_data["inst_uncropped_vert_arr_c_reorient"] = whole_vert_nii_uncropped.copy()
+        # Uncrop again
         if pad_size > 0:
             # logger.print(whole_vert_nii_uncropped.shape)
             arr = whole_vert_nii_uncropped.get_array()
             arr = arr[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size]
             whole_vert_nii_uncropped.set_array_(arr)
             # logger.print(whole_vert_nii_uncropped.shape)
-        # whole_vert_nii_uncropped.pad_to(shp, inplace=True)
 
     return whole_vert_nii_uncropped, ErrCode.OK
 

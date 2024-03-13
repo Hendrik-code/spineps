@@ -1,3 +1,4 @@
+[![arXiv](https://img.shields.io/badge/arXiv-2402.16368.svg)](https://arxiv.org/pdf/2402.16368.pdf)
 [![PyPI version spineps](https://badge.fury.io/py/spineps.svg)](https://pypi.python.org/pypi/spineps/)
 [![tests](https://github.com/BrainLesion/panoptica/actions/workflows/tests.yml/badge.svg)](https://github.com/BrainLesion/panoptica/actions/workflows/tests.yml)
 
