@@ -33,7 +33,9 @@ class InputPackage:
             arr = arr[self.pad_size : -self.pad_size, self.pad_size : -self.pad_size, self.pad_size : -self.pad_size]
             other_nii.set_array_(arr)
         other_nii.pad_to(self._shape, inplace=True)
-        assert_true = other_nii.assert_affine(zoom=self._zms, orientation=self._orientation, shape=self._shape, raise_error=False)
+        assert_true = other_nii.assert_affine(
+            zoom=self._zms, orientation=self._orientation, shape=self._shape, raise_error=False, verbose=logger
+        )
         assert assert_true, "sampled back to input did not meet affine criteria"
         return other_nii
 

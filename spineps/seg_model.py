@@ -169,7 +169,8 @@ class Segmentation_Model(ABC):
             self.print("resample_to_recommended set to False, segmentation might not work. Proceed at own risk", Log_Type.WARNING)
 
         # set step_size
-        self.predictor.tile_step_size = step_size if step_size is not None else self.inference_config.default_step_size
+        if hasattr(self.predictor, "tile_step_size"):
+            self.predictor.tile_step_size = step_size if step_size is not None else self.inference_config.default_step_size
 
         self.print(
             "input", input_niftys_in_order[0].zoom, input_niftys_in_order[0].orientation, input_niftys_in_order[0].shape, verbose=verbose
@@ -348,7 +349,7 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         del logits
         del pred_x
         pred_cls = pred_cls.detach().cpu().numpy()[0]
-        seg_nii = input_nii.set_array(pred_cls)
+        seg_nii: NII = input_nii.set_array(pred_cls)
         self.print("out", seg_nii.zoom, seg_nii.orientation, seg_nii.shape) if verbose else None
         return {OutputType.seg: seg_nii}
 
