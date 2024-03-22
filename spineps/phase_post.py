@@ -26,6 +26,7 @@ def phase_postprocess_combined(
     labeling_offset: int = 0,
     proc_assign_missing_cc: bool = True,
     n_vert_bodies: int | None = None,
+    process_vertebra_inconsistency: bool = True,
     verbose: bool = False,
 ) -> tuple[NII, NII]:
     logger.print("Post process", Log_Type.STAGE)
@@ -58,8 +59,9 @@ def phase_postprocess_combined(
             verbose=verbose,
         )
 
-        # Assigns superior/inferior based on instance label overlap
-        assign_vertebra_inconsistency(seg_nii_cleaned, whole_vert_nii_cleaned)
+        if process_vertebra_inconsistency:
+            # Assigns superior/inferior based on instance label overlap
+            assign_vertebra_inconsistency(seg_nii_cleaned, whole_vert_nii_cleaned)
 
         # Label vertebra top -> down
         whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned)
@@ -224,6 +226,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
     coms_vert_labels = list(coms_vert_dict.keys())
 
     n_ivds = 0
+    n_ivd_unique = 0
     if Location.Vertebra_Disc.value in seg_t.unique():
         # Map IVDS
         subreg_cc, subreg_cc_n = seg_t.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
@@ -258,17 +261,19 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
                 logger.print(f"Vertebra {v_idx2name[l]} got {count} IVD components assigned", Log_Type.STRANGE)
 
         subreg_ivd = subreg_cc.copy()
+        n_ivd_unique = len(np.unique(to_mapped_labels))
         subreg_ivd = np_map_labels(subreg_ivd, label_map=mapping_cc_to_vert_label)
         subreg_ivd += 100
         subreg_ivd[subreg_ivd == 100] = 0
         vert_arr[subreg_arr == Location.Vertebra_Disc.value] = subreg_ivd[subreg_arr == Location.Vertebra_Disc.value]
 
     n_eps = 0
+    n_eps_unique = 0
     if Location.Endplate.value in seg_t.unique():
         # MAP Endplate
         ep_cc, ep_cc_n = seg_t.get_segmentation_connected_components(labels=Location.Endplate.value)
         ep_cc = ep_cc[Location.Endplate.value]
-        cc_ep_labelset = list(range(1, ep_cc_n[Location.Endplate.value]))
+        cc_ep_labelset = list(range(1, ep_cc_n[Location.Endplate.value] + 1))
         mapping_ep_cc_to_vert_label = {}
         coms_ivd_dict = {}
         for c in cc_ep_labelset:
@@ -283,12 +288,13 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
             n_eps += 1
 
         subreg_ep = ep_cc.copy()
+        n_eps_unique = len(np.unique(list(mapping_ep_cc_to_vert_label.values())))
         subreg_ep = np_map_labels(subreg_ep, label_map=mapping_ep_cc_to_vert_label)
         subreg_ep += 200
         subreg_ep[subreg_ep == 200] = 0
         vert_arr[subreg_arr == Location.Endplate.value] = subreg_ep[subreg_arr == Location.Endplate.value]
 
-    logger.print(f"Labeled {n_ivds} IVDs, and {n_eps} Endplates")
+    logger.print(f"Labeled {n_ivds} IVDs ({n_ivd_unique} unique), and {n_eps} Endplates ({n_eps_unique} unique)")
     return vert_t.set_array_(vert_arr).reorient_(orientation).get_seg_array()
 
 
