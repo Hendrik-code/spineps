@@ -66,7 +66,7 @@ def predict_instance_mask(
             "Vertebra seg_nii_uncropped", seg_nii_uncropped.zoom, seg_nii_uncropped.orientation, seg_nii_uncropped.shape, verbose=verbose
         )
         debug_data["inst_uncropped_Subreg_nii_b_zms"] = seg_nii_uncropped.copy()
-        uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape)
+        uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape, dtype=seg_nii_uncropped.dtype)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
         #
         crop = seg_nii_rdy.compute_crop(dist=5)
@@ -204,7 +204,7 @@ def collect_vertebra_predictions(
         seg_nii.shape[2],
     )
     hierarchical_existing_predictions = []
-    hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp))
+    hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=corpus_nii.dtype)
     # print("hierarchical_predictions", hierarchical_predictions.shape)
     vert_predict_template = np.zeros(shp, dtype=np.uint16)
     # print("vert_predict_template", vert_predict_template.shape)
@@ -501,7 +501,7 @@ def merge_coupled_predictions(
         take_no_overlap = len(k) <= 2
         if overall_agreement < 0.3 + 0.15 * (4 - len(k)):
             take_no_overlap = True
-        combine = np.zeros(whole_vert_nii.shape)
+        combine = np.zeros(whole_vert_nii.shape, dtype=whole_vert_nii.dtype)
         for cid in k:
             combine += hierarchical_predictions[cid[0]][cid[1]]
         # print(combine.shape)
