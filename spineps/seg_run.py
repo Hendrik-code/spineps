@@ -152,6 +152,9 @@ def process_dataset(
         logger.print()
         logger.print(f"Processing {s_idx+1} / {n_subjects} subject: {name}", Log_Type.ITALICS)
         subject_scan_processed = 0
+        if name == "unsorted" and not ignore_bids_filter:
+            logger.print("Unsorted, will skip")
+            continue
         for idx, mod_pair in enumerate(modalities):
             model = model_semantic[idx]
             allowed_format = Modality.format_keys(mod_pair[0])
@@ -254,6 +257,7 @@ def process_img_nii(  # noqa: C901
     proc_cleanvert: bool = True,
     proc_assign_missing_cc: bool = True,
     proc_largest_cc: int = 0,
+    process_vertebra_inconsistency: bool = True,
     #
     lambda_semantic: Callable[[NII], NII] | None = None,
     snapshot_copy_folder: Path | None = None,
@@ -454,6 +458,7 @@ def process_img_nii(  # noqa: C901
                 debug_data=debug_data_run,
                 labeling_offset=1,
                 proc_assign_missing_cc=proc_assign_missing_cc,
+                process_vertebra_inconsistency=process_vertebra_inconsistency,
                 verbose=verbose,
             )
 
