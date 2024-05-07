@@ -14,8 +14,8 @@ def preprocess_input(
     mri_nii: NII,
     debug_data: dict,  # noqa: ARG001
     pad_size: int = 4,
-    do_n4: bool = True,
-    do_crop: bool = True,
+    proc_do_n4_bias_correction: bool = True,
+    proc_crop_input: bool = True,
     verbose: bool = False,
 ) -> tuple[NII | None, ErrCode]:
     logger.print("Prepare input image", Log_Type.STAGE)
@@ -25,7 +25,7 @@ def preprocess_input(
         try:
             # Enforce to range [0, 1500]
             mri_nii.normalize_to_range_(min_value=0, max_value=9000, verbose=logger)
-            crop = mri_nii.compute_crop(dist=0) if do_crop else (slice(None, None), slice(None, None), slice(None, None))
+            crop = mri_nii.compute_crop(dist=0) if proc_crop_input else (slice(None, None), slice(None, None), slice(None, None))
         except ValueError:
             logger.print("Image Nifty is empty, skip this", Log_Type.FAIL)
             return None, ErrCode.EMPTY
@@ -34,7 +34,7 @@ def preprocess_input(
         logger.print(f"Crop down from {mri_nii.shape} to {cropped_nii.shape}", verbose=verbose)
 
         # N4 Bias field correction
-        if do_n4:
+        if proc_do_n4_bias_correction:
             n4_start = perf_counter()
             cropped_nii, _ = n4_bias(cropped_nii)  # PIR
             logger.print(f"N4 Bias field correction done in {perf_counter() - n4_start} sec", verbose=True)

@@ -1,12 +1,21 @@
 # from utils.predictor import nnUNetPredictor
 import numpy as np
 from TPTBox import NII, Location, Log_Type
-from TPTBox.core.np_utils import np_calc_crop_around_centerpoint, np_count_nonzero, np_dice, np_unique
+from TPTBox.core.np_utils import (
+    np_calc_crop_around_centerpoint,
+    np_center_of_mass,
+    np_count_nonzero,
+    np_dice,
+    np_extract_label,
+    np_unique,
+    np_volume,
+)
 from tqdm import tqdm
 
 from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger
+from spineps.utils.mincutmaxflow import np_mincutmaxflow
 from spineps.utils.proc_functions import clean_cc_artifacts
 
 
@@ -15,10 +24,11 @@ def predict_instance_mask(
     model: Segmentation_Model,
     debug_data: dict,
     pad_size: int = 0,
-    fill_holes: bool = True,
+    proc_inst_fill_3d_holes: bool = True,
+    proc_detect_and_solve_merged_corpi: bool = True,
     proc_corpus_clean: bool = True,
-    proc_cleanvert: bool = True,
-    proc_largest_cc: int = 0,
+    proc_inst_clean_small_cc_artifacts: bool = True,
+    proc_inst_largest_k_cc: int = 0,
     verbose: bool = False,
 ) -> tuple[NII | None, ErrCode]:
     """Based on subregion segmentation, feeds individual arcus coms to a network to get the vertebra body segmentations
@@ -94,8 +104,9 @@ def predict_instance_mask(
             corpus_size_cleaning=corpus_size_cleaning if proc_corpus_clean else 0,
             cutout_size=cutout_size,
             debug_data=debug_data,
-            proc_largest_cc=proc_largest_cc,
-            fill_holes=False,
+            process_detect_and_solve_merged_corpi=proc_detect_and_solve_merged_corpi,
+            proc_inst_largest_k_cc=proc_inst_largest_k_cc,
+            proc_inst_fill_holes=False,
             verbose=verbose,
         )
         if vert_predictions is None:
@@ -109,7 +120,7 @@ def predict_instance_mask(
             hierarchical_existing_predictions,
             vert_size_threshold,
             debug_data=debug_data,
-            proc_cleanvert=proc_cleanvert,
+            proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
         )
         del vert_predictions, hierarchical_existing_predictions
         if errcode != ErrCode.OK:
@@ -122,7 +133,7 @@ def predict_instance_mask(
 
         uniq_labels = whole_vert_nii.unique()
 
-        if fill_holes:
+        if proc_inst_fill_3d_holes:
             whole_vert_nii.fill_holes_(verbose=logger)
         debug_data["inst_cropped_vert_arr_c_proc"] = whole_vert_nii.copy()
         n_vert_bodies = len(uniq_labels)
@@ -155,18 +166,16 @@ def predict_instance_mask(
     return whole_vert_nii_uncropped, ErrCode.OK
 
 
-def collect_vertebra_predictions(
+def get_corpus_coms(
     seg_nii: NII,
-    model: Segmentation_Model,
     corpus_size_cleaning: int,
-    cutout_size,
-    debug_data: dict,
-    proc_largest_cc: int = 0,
-    fill_holes: bool = False,
+    process_detect_and_solve_merged_corpi: bool = True,
     verbose: bool = False,
-) -> tuple[np.ndarray | None, list[str], int]:
+) -> list:
+    seg_nii.assert_affine(orientation=["P", "I", "R"])
+    #
     # Extract Corpus region and try to find all coms naively (some skips shouldnt matter)
-    corpus_nii = seg_nii.extract_label(49)
+    corpus_nii = seg_nii.extract_label(Location.Vertebra_Corpus_border.value)
     corpus_nii.erode_msk_(mm=2, connectivity=2, verbose=False)
     if 1 in corpus_nii.unique() and corpus_size_cleaning > 0:
         corpus_nii.set_array_(
@@ -184,12 +193,133 @@ def collect_vertebra_predictions(
 
     if 1 not in corpus_nii.unique():
         logger.print("No 1 in corpus nifty, cannot make vertebra mask", Log_Type.FAIL)
-        return None, [], 0
+        return None
 
-    corpus_coms = corpus_nii.get_segmentation_connected_components_center_of_mass(
-        label=1, sort_by_axis=1
-    )  # TODO replace with approx_com by bbox
+    if not process_detect_and_solve_merged_corpi:
+        corpus_coms = corpus_nii.get_segmentation_connected_components_center_of_mass(label=1, sort_by_axis=1)
+        corpus_coms.reverse()  # from bottom to top
+        return corpus_coms
+
+    ############
+    # Detect merged vertebra and use mincutmaxflow algo on it
+    ############
+
+    # Get corpus CCs
+    corpus_cc, corpus_cc_n = corpus_nii.get_segmentation_connected_components(labels=1)
+    corpus_cc = corpus_cc[1]
+    corpus_cc_n = corpus_cc_n[1]
+    logger.print(f"Found {corpus_cc_n} Corpus ccs", verbose=verbose)
+
+    # Check against ivd order
+    seg_sem = seg_nii.map_labels({Location.Endplate.value: Location.Vertebra_Disc.value}, verbose=False)
+    subreg_cc, subreg_cc_n = seg_sem.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
+    subreg_cc = subreg_cc[Location.Vertebra_Disc.value]
+    subreg_cc[subreg_cc > 0] += 100
+    subreg_cc_n = subreg_cc_n[Location.Vertebra_Disc.value]
+    logger.print(f"Found {subreg_cc_n} IVD ccs", verbose=verbose)
+    coms = np_center_of_mass(subreg_cc)
+    volumes = np_volume(subreg_cc)
+    stats = {i: (g[1], True, volumes[i]) for i, g in coms.items()}
+
+    vert_coms = np_center_of_mass(corpus_cc)
+    vert_volumes = np_volume(corpus_cc)
+
+    for i, g in vert_coms.items():
+        stats[i] = (g[1], False, vert_volumes[i])
+
+    stats_by_height = dict(sorted(stats.items(), key=lambda x: x[1][0]))
+    stats_by_height_keys = list(stats_by_height.keys())
+
+    for vl in stats_by_height_keys:
+        idx = stats_by_height_keys.index(vl)
+        statsvl = stats_by_height[vl]
+
+        is_ivd = statsvl[1]
+        selfheight = statsvl[0]
+
+        nidx = idx + 1
+        if nidx < 0 or nidx >= len(stats_by_height_keys):
+            continue
+
+        nkey = stats_by_height_keys[nidx]
+        if nkey in stats_by_height and stats_by_height[nkey][1] == is_ivd:
+            neighbor = stats_by_height[nkey]
+            neighborheight = neighbor[0]
+            logger.print(
+                f"Wrong ivd-vert alternation found in label {vl}, is_ivd = {is_ivd}, neighbor {nkey}",
+                Log_Type.STRANGE,
+                verbose=verbose,
+            )
+            # check if same heigh, then just merge ivd label
+            if abs(neighborheight - selfheight) < 10:
+                logger.print("Same height, just merge")
+                stats_by_height.pop(vl)
+                stats_by_height = dict(sorted(stats_by_height.items(), key=lambda x: x[1][0]))
+                stats_by_height_keys = list(stats_by_height.keys())
+                print(stats_by_height_keys)
+                continue
+
+            logger.print("Merged corpi, try to fix it", verbose=verbose)
+            neighbor_verts = {
+                stats_by_height_keys[idx + i]: stats_by_height[stats_by_height_keys[idx + i]]
+                for i in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
+                if (idx + i) in stats_by_height_keys and stats_by_height_keys[idx + i] < 99
+            }
+            #    stats_by_height_keys[idx + i]
+            #    for i in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
+            #    if (idx + i) in stats_by_height_keys and stats_by_height_keys[idx + i] < 99
+            # ]  # (+-3)
+            logger.print("neighbor_vert_labels", neighbor_verts, verbose=verbose)
+            if len(neighbor_verts) == 0:
+                logger.print("Got no neighbor vert labels to fix", Log_Type.FAIL)
+                continue
+            neighbor_volumes = [k[2] for nv, k in neighbor_verts.items()]
+            logger.print("neighbor_volumes", neighbor_volumes, verbose=verbose)
+            n_neighbors_without_target = len(neighbor_volumes) - 1
+            if n_neighbors_without_target > 2:
+                argmax = np.argmax(neighbor_volumes)
+                n_avg_volume = sum([neighbor_volumes[i] for i in range(len(neighbor_volumes)) if i != argmax]) / n_neighbors_without_target
+
+                diff_volume = neighbor_volumes[argmax] / n_avg_volume
+                if diff_volume > 1.5:
+                    logger.print(
+                        f"Volume difference detected in label {vl}, diff = {diff_volume}, volume = {neighbor_volumes[argmax]}, neighbor_avg = {n_avg_volume}",
+                        Log_Type.STRANGE,
+                    )
+
+                    target_vert_id = list(neighbor_verts.keys())[argmax]
+                    segvert = np_extract_label(corpus_cc, target_vert_id, inplace=False)
+                    try:
+                        split_vert = np_mincutmaxflow(segvert, None)
+                        corpus_cc[split_vert == 2] = corpus_cc.max() + 1
+                    except Exception as e:
+                        logger.print(f"MinCutMaxFlow failed with exception {e}")
+
+    corpus_coms = list(np_center_of_mass(corpus_cc).values())
+    corpus_coms.sort(key=lambda a: a[1])
     corpus_coms.reverse()  # from bottom to top
+    return corpus_coms
+
+
+def collect_vertebra_predictions(
+    seg_nii: NII,
+    model: Segmentation_Model,
+    corpus_size_cleaning: int,
+    cutout_size,
+    debug_data: dict,
+    proc_inst_largest_k_cc: int = 0,
+    process_detect_and_solve_merged_corpi: bool = True,
+    proc_inst_fill_holes: bool = False,
+    verbose: bool = False,
+) -> tuple[np.ndarray | None, list[str], int]:
+    corpus_coms = get_corpus_coms(
+        seg_nii,
+        corpus_size_cleaning=corpus_size_cleaning,
+        process_detect_and_solve_merged_corpi=process_detect_and_solve_merged_corpi,
+        verbose=verbose,
+    )
+    if corpus_coms is None:
+        return None, [], 0
     n_corpus_coms = len(corpus_coms)
 
     if n_corpus_coms < 3:
@@ -204,7 +334,7 @@ def collect_vertebra_predictions(
         seg_nii.shape[2],
     )
     hierarchical_existing_predictions = []
-    hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=corpus_nii.dtype)
+    hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=seg_nii.dtype)
     # print("hierarchical_predictions", hierarchical_predictions.shape)
     vert_predict_template = np.zeros(shp, dtype=np.uint16)
     # print("vert_predict_template", vert_predict_template.shape)
@@ -268,8 +398,8 @@ def collect_vertebra_predictions(
         vert_cut_nii = post_process_single_3vert_prediction(
             vert_cut_nii,
             None,
-            fill_holes=fill_holes,
-            largest_cc=proc_largest_cc,  # type:ignore
+            fill_holes=proc_inst_fill_holes,
+            largest_cc=proc_inst_largest_k_cc,  # type:ignore
         )
         vert_labels = vert_cut_nii.unique()  # 1,2,3
         debug_data[f"inst_cutout_vert_nii_{com_idx}_proc"] = vert_cut_nii.copy()
@@ -328,7 +458,7 @@ def from_vert3_predictions_make_vert_mask(
     vert_size_threshold: int,
     debug_data: dict,
     #
-    proc_cleanvert: bool = True,
+    proc_inst_clean_small_cc_artifacts: bool = True,
     verbose: bool = False,
 ) -> tuple[NII, dict, ErrCode]:
     # instance approach: each 1/2/3 pred finds it most agreeing partner in surrounding predictions (com idx -2 to +2 all three pred)
@@ -348,7 +478,7 @@ def from_vert3_predictions_make_vert_mask(
         coupled_predictions=coupled_predictions,
         hierarchical_predictions=hierarchical_predictions,
         debug_data=debug_data,
-        proc_cleanvert=proc_cleanvert,
+        proc_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
         vert_size_threshold=vert_size_threshold,
         verbose=verbose,
     )
@@ -488,7 +618,7 @@ def merge_coupled_predictions(
     coupled_predictions,
     hierarchical_predictions: np.ndarray,
     debug_data: dict,
-    proc_cleanvert: bool = True,
+    proc_clean_small_cc_artifacts: bool = True,
     vert_size_threshold: int = 0,
     verbose: bool = False,
 ) -> tuple[NII, dict, ErrCode]:
@@ -531,7 +661,7 @@ def merge_coupled_predictions(
         return whole_vert_nii.set_array_(whole_vert_arr, verbose=False), debug_data, ErrCode.EMPTY
 
     # Cleanup step
-    if proc_cleanvert:
+    if proc_clean_small_cc_artifacts:
         whole_vert_arr = clean_cc_artifacts(
             whole_vert_arr,
             labels=np_unique(whole_vert_arr)[1:],  # type:ignore

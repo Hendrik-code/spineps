@@ -209,8 +209,8 @@ def run_sample(opt: Namespace):
         "override_postpair": opt.override_postpair,
         "override_ctd": opt.override_ctd,
         #
-        "do_crop_semantic": not opt.nocrop,
-        "proc_n4correction": not opt.non4,
+        "proc_sem_crop_input": not opt.nocrop,
+        "proc_sem_n4_bias_correction": not opt.non4,
         "ignore_compatibility_issues": opt.ignore_inference_compatibility,
         "verbose": opt.verbose,
     }
@@ -283,8 +283,8 @@ def run_dataset(opt: Namespace):
         "ignore_inference_compatibility": opt.ignore_inference_compatibility,
         "ignore_bids_filter": opt.ignore_bids_filter,
         #
-        "do_crop_semantic": not opt.nocrop,
-        "proc_n4correction": not opt.non4,
+        "proc_sem_crop_input": not opt.nocrop,
+        "proc_sem_n4_bias_correction": not opt.non4,
         "snapshot_copy_folder": opt.save_snaps_folder,
         "verbose": opt.verbose,
     }
