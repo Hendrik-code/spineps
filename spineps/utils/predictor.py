@@ -56,6 +56,7 @@ class nnUNetPredictor(object):
         self.use_gaussian = use_gaussian
         self.use_mirroring = use_mirroring
         if device.type == "cuda":
+            torch.backends.cudnn.benchmark = True
             device = torch.device(type="cuda", index=0)  # set the desired GPU with CUDA_VISIBLE_DEVICES!
         if device.type != "cuda" and perform_everything_on_gpu:
             print("perform_everything_on_gpu=True is only supported for cuda devices! Setting this to False")
@@ -288,7 +289,7 @@ class nnUNetPredictor(object):
                         new_prediction = self.predict_sliding_window_return_logits(data, network=network)
                         prediction += new_prediction
                         prediction_stacked.append(new_prediction.to("cpu"))
-                        
+
                 if len(self.list_of_parameters) > 1:
                     prediction /= len(self.list_of_parameters)
 
@@ -436,18 +437,20 @@ class nnUNetPredictor(object):
 
                 slicers = self._internal_get_sliding_window_slicers(data.shape[1:])
 
+                precision = torch.half if self.perform_everything_on_gpu else torch.float32
+
                 # preallocate results and num_predictions
                 results_device = self.device if self.perform_everything_on_gpu else torch.device("cpu")
                 if self.verbose:
                     print("preallocating arrays")
                 try:
-                    data = data.to(self.device)
+                    data = data.to(self.device, dtype=precision)
                     predicted_logits = torch.zeros(
                         (self.label_manager.num_segmentation_heads, *data.shape[1:]),
-                        dtype=torch.half,
+                        dtype=precision,
                         device=results_device,
                     )
-                    n_predictions = torch.zeros(data.shape[1:], dtype=torch.half, device=results_device)
+                    n_predictions = torch.zeros(data.shape[1:], dtype=precision, device=results_device)
                     if self.use_gaussian:
                         gaussian = compute_gaussian(
                             tuple(self.configuration_manager.patch_size),
@@ -458,13 +461,13 @@ class nnUNetPredictor(object):
                 except RuntimeError:
                     # sometimes the stuff is too large for GPUs. In that case fall back to CPU
                     results_device = torch.device("cpu")
-                    data = data.to(results_device)
+                    data = data.to(results_device, dtype=precision)
                     predicted_logits = torch.zeros(
                         (self.label_manager.num_segmentation_heads, *data.shape[1:]),
-                        dtype=torch.half,
+                        dtype=precision,
                         device=results_device,
                     )
-                    n_predictions = torch.zeros(data.shape[1:], dtype=torch.half, device=results_device)
+                    n_predictions = torch.zeros(data.shape[1:], dtype=precision, device=results_device)
                     if self.use_gaussian:
                         gaussian = compute_gaussian(
                             tuple(self.configuration_manager.patch_size),

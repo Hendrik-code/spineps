@@ -63,6 +63,7 @@ def parser_arguments(parser: argparse.ArgumentParser):
         help="Does not apply n4 bias field correction",
     )
     #
+    parser.add_argument("-cpu", action="store_true", help="Use CPU instead of GPU (will take way longer)")
     parser.add_argument("-run_cprofiler", "-rcp", action="store_true", help="Runs a cprofiler over the entire action")
     parser.add_argument("-verbose", "-v", action="store_true", help="Prints much more stuff, may fully clutter your terminal")
     return parser
@@ -183,13 +184,13 @@ def run_sample(opt: Namespace):
 
     if "/" in str(opt.model_semantic):
         # given path
-        model_semantic = get_segmentation_model(opt.model_semantic).load()
+        model_semantic = get_segmentation_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
-        model_semantic = get_semantic_model(opt.model_semantic).load()
+        model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
     if "/" in str(opt.model_instance):
-        model_instance = get_segmentation_model(opt.model_instance).load()
+        model_instance = get_segmentation_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
-        model_instance = get_instance_model(opt.model_instance).load()
+        model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
 
     bids_sample = BIDS_FILE(input_path, dataset=dataset, verbose=True)
 
@@ -247,17 +248,17 @@ def run_dataset(opt: Namespace):
     if opt.model_semantic == "auto":
         model_semantic = None
     elif "/" in str(opt.model_semantic):
-        model_semantic = get_segmentation_model(opt.model_semantic).load()
+        model_semantic = get_segmentation_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
-        model_semantic = get_semantic_model(opt.model_semantic).load()
+        model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
 
     # Model Instance
     if opt.model_instance == "auto":
         model_instance = None
     elif "/" in str(opt.model_instance):
-        model_instance = get_segmentation_model(opt.model_instance).load()
+        model_instance = get_segmentation_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
-        model_instance = get_instance_model(opt.model_instance).load()
+        model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
 
     assert model_instance is not None, "-model_vert was None"
 

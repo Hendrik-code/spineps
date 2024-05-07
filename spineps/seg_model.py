@@ -29,6 +29,7 @@ class Segmentation_Model(ABC):
         self,
         model_folder: str | Path,
         inference_config: Segmentation_Inference_Config | None = None,  # type:ignore
+        use_cpu: bool = False,
         default_verbose: bool = False,
         default_allow_tqdm: bool = True,
     ):
@@ -44,6 +45,7 @@ class Segmentation_Model(ABC):
         assert os.path.exists(str(model_folder)), f"model_folder doesnt exist, got {model_folder}"  # noqa: PTH110
 
         self.logger = No_Logger()
+        self.use_cpu = use_cpu
 
         if inference_config is None:
             json_dir = Path(model_folder).joinpath("inference_config.json")
@@ -61,7 +63,10 @@ class Segmentation_Model(ABC):
         self.print("initialized with inference config", self.inference_config)
 
     @abstractmethod
-    def load(self, folds: tuple[str, ...] | None = None) -> Self:
+    def load(
+        self,
+        folds: tuple[str, ...] | None = None,
+    ) -> Self:
         """Loads the weights from disk
 
         Returns:
@@ -110,7 +115,7 @@ class Segmentation_Model(ABC):
         Args:
             input (Image_Reference | dict[InputType, Image_Reference]): input
             pad_size (int, optional): Padding in each dimension (times two more pixels in each dim). Defaults to 4.
-            step_size (float | None, optional): _description_. Defaults to 0.5.
+            step_size (float | None, optional): _description_. Defaults to None.
             resample_to_recommended (bool, optional): _description_. Defaults to True.
             verbose (bool, optional): _description_. Defaults to False.
 
@@ -266,10 +271,11 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         self,
         model_folder: str | Path,
         inference_config: Segmentation_Inference_Config | None = None,
+        use_cpu: bool = False,
         default_verbose: bool = False,
         default_allow_tqdm: bool = True,
     ):
-        super().__init__(model_folder, inference_config, default_verbose, default_allow_tqdm)
+        super().__init__(model_folder, inference_config, use_cpu, default_verbose, default_allow_tqdm)
 
     def load(self, folds: tuple[str, ...] | None = None) -> Self:
         global threads_started  # noqa: PLW0603
@@ -283,7 +289,7 @@ class Segmentation_Model_NNunet(Segmentation_Model):
             init_threads=not threads_started,
             allow_non_final=True,
             verbose=False,
-            ddevice="cuda",
+            ddevice="cuda" if not self.use_cpu else "cpu",
         )
         threads_started = True
         self.predictor.allow_tqdm = self.default_allow_tqdm
@@ -311,10 +317,11 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         self,
         model_folder: str | Path,
         inference_config: Segmentation_Inference_Config | None = None,
+        use_cpu: bool = False,
         default_verbose: bool = False,
         default_allow_tqdm: bool = True,
     ):
-        super().__init__(model_folder, inference_config, default_verbose, default_allow_tqdm)
+        super().__init__(model_folder, inference_config, use_cpu, default_verbose, default_allow_tqdm)
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
 
     def load(self, folds: tuple[str, ...] | None = None) -> Self:  # noqa: ARG002
@@ -324,7 +331,7 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         assert len(chktpath) == 1
         model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0])
         model.eval()
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() and not self.use_cpu else "cpu")
         model.to(self.device)
         self.predictor = model
         self.print("Model loaded from", self.model_folder, verbose=True)
