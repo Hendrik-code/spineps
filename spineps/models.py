@@ -12,7 +12,7 @@ logger = No_Logger()
 logger.override_prefix = "Models"
 
 
-def get_semantic_model(model_name: str) -> Segmentation_Model:
+def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
     """Finds and returns a semantic model by name
 
     Args:
@@ -33,10 +33,10 @@ def get_semantic_model(model_name: str) -> Segmentation_Model:
     if model_name not in possible_keys:
         logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
         raise KeyError(model_name)
-    return get_segmentation_model(_modelid2folder_subreg[model_name])
+    return get_segmentation_model(_modelid2folder_subreg[model_name], **kwargs)
 
 
-def get_instance_model(model_name: str) -> Segmentation_Model:
+def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
     """Finds and returns an instance model by name
 
     Args:
@@ -57,7 +57,7 @@ def get_instance_model(model_name: str) -> Segmentation_Model:
     if model_name not in possible_keys:
         logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
         raise KeyError(model_name)
-    return get_segmentation_model(_modelid2folder_vert[model_name])
+    return get_segmentation_model(_modelid2folder_vert[model_name], **kwargs)
 
 
 _modelid2folder_semantic: dict[str, Path] | None = None
