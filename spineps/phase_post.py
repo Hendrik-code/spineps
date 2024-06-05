@@ -18,6 +18,7 @@ from TPTBox.core.np_utils import (
 )
 
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
+from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 
 
 def phase_postprocess_combined(
@@ -30,6 +31,7 @@ def phase_postprocess_combined(
     n_vert_bodies: int | None = None,
     process_merge_vertebra: bool = True,
     proc_vertebra_inconsistency: bool = True,
+    proc_assign_posterior_instance_label: bool = True,
     verbose: bool = False,
 ) -> tuple[NII, NII]:
     logger.print("Post process", Log_Type.STAGE)
@@ -66,6 +68,9 @@ def phase_postprocess_combined(
 
         if process_merge_vertebra and Location.Vertebra_Disc.value in seg_nii_cleaned.unique():
             detect_and_solve_merged_vertebra(seg_nii_cleaned, whole_vert_nii_cleaned)
+
+        if proc_assign_posterior_instance_label:
+            whole_vert_nii_cleaned = fix_wrong_posterior_instance_label(seg_nii_cleaned, seg_inst=whole_vert_nii_cleaned, logger=logger)
 
         if proc_vertebra_inconsistency:
             # Assigns superior/inferior based on instance label overlap
