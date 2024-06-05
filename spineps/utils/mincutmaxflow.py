@@ -10,8 +10,10 @@ from TPTBox import NII
 def mincutmaxflow(
     vertebra_nii: NII,
     separator_ivd: NII,
+    connectivity: int = 1,
 ) -> NII:
-    connectivity = 6
+    assert 1 <= connectivity <= 3, f"expected connectivity in [1,3], but got {connectivity}"
+    connectivity = min(connectivity * 2, 8) if vertebra_nii.ndim == 2 else 6 if connectivity == 1 else 18 if connectivity == 2 else 26
     vol = vertebra_nii.get_seg_array()
     return vertebra_nii.set_array(
         split_cc(
@@ -20,6 +22,7 @@ def mincutmaxflow(
             connectivity=connectivity,
             structure=generate_binary_structure(vol.ndim, connectivity),
             min_vol=10,
+            voxel_dim=np.asarray(vertebra_nii.zoom),
         )
     )
 
@@ -27,14 +30,18 @@ def mincutmaxflow(
 def np_mincutmaxflow(
     vertebra_arr: np.ndarray,
     separator_ivd_arr: np.ndarray | None,
+    connectivity: int = 1,
+    zoom: np.ndarray | None = None,
 ) -> np.ndarray:
-    connectivity = 6
+    assert 1 <= connectivity <= 3, f"expected connectivity in [1,3], but got {connectivity}"
+    connectivity = min(connectivity * 2, 8) if vertebra_arr.ndim == 2 else 6 if connectivity == 1 else 18 if connectivity == 2 else 26
     return split_cc(
         vol=vertebra_arr,
         sep=separator_ivd_arr if separator_ivd_arr is not None else None,
         connectivity=connectivity,
         structure=generate_binary_structure(vertebra_arr.ndim, connectivity),
         min_vol=10,
+        voxel_dim=np.asarray(zoom) if zoom is not None else None,
     )
 
 
@@ -47,12 +54,12 @@ def split_cc(  # noqa: C901
     max_cut: int | None = None,
     max_ignore: int | None = 6,
     voxel_dim: np.ndarray | None = None,
-    add_2d_edges: bool = False,
+    add_2d_edges: bool = True,
 ) -> np.ndarray:
     """
 
     @param vol: volume which only contains values of one connected component
-    @param sep: if given, vol is will not be eroded, sep will be dilatgit ed.
+    @param sep: if given, vol is will not be eroded, sep will be dilated.
     @param connectivity: 6 (voxel faces), 18 (+edges), or 26 (+corners)
     @param structure: 3d numpy array of type true, with which the volume should be eroded
     @param min_vol: minimal size of the both eroded
@@ -138,6 +145,7 @@ def split_cc(  # noqa: C901
         xe, ye, ze = np.array(G_.shape) - vec
 
         def add_edges(points, diff1, diff2, cap):
+            # print(f"Add edge {points}, {diff1}, {diff2}, {cap}")
             """Add edge from point + diff1 to point + diff2 for each point in points. Must be tuples because
             numpy arrays are note hashable, and nodes in the graph have to be hashable."""
             G.add_edges_from([*zip(map(tuple, points + diff1), map(tuple, points + diff2), strict=False)], capacity=cap)
@@ -178,5 +186,5 @@ def split_cc(  # noqa: C901
     lost = np.abs((cc_erode > 0).sum() - vol.sum())
     if lost > max_errors:
         raise Exception(f"lost {lost} points while separating but only {max_errors} losts allowed")  # noqa: TRY002
-    return cc_erode
+    return cc_erode, (S, T, G_, S_dil, T_dil, G)
     # print(cc_erode[(a + b) // 2])
