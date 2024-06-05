@@ -4,9 +4,13 @@ from TPTBox import NII, Location, Log_Type
 from TPTBox.core.np_utils import (
     np_calc_crop_around_centerpoint,
     np_center_of_mass,
+    np_connected_components,
     np_count_nonzero,
     np_dice,
+    np_dilate_msk,
+    np_erode_msk,
     np_extract_label,
+    np_get_largest_k_connected_components,
     np_unique,
     np_volume,
 )
@@ -15,7 +19,6 @@ from tqdm import tqdm
 from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger
-from spineps.utils.mincutmaxflow import np_mincutmaxflow
 from spineps.utils.proc_functions import clean_cc_artifacts
 
 
@@ -201,14 +204,14 @@ def get_corpus_coms(
         return corpus_coms
 
     ############
-    # Detect merged vertebra and use mincutmaxflow algo on it
+    # Detect merged vertebra and use plane split algo on it
     ############
 
     # Get corpus CCs
     corpus_cc, corpus_cc_n = corpus_nii.get_segmentation_connected_components(labels=1)
     corpus_cc = corpus_cc[1]
     corpus_cc_n = corpus_cc_n[1]
-    logger.print(f"Found {corpus_cc_n} Corpus ccs", verbose=verbose)
+    logger.print(f"Found {corpus_cc_n} Corpus ccs (naively)", verbose=verbose)
 
     # Check against ivd order
     seg_sem = seg_nii.map_labels({Location.Endplate.value: Location.Vertebra_Disc.value}, verbose=False)
@@ -216,7 +219,7 @@ def get_corpus_coms(
     subreg_cc = subreg_cc[Location.Vertebra_Disc.value]
     subreg_cc[subreg_cc > 0] += 100
     subreg_cc_n = subreg_cc_n[Location.Vertebra_Disc.value]
-    logger.print(f"Found {subreg_cc_n} IVD ccs", verbose=verbose)
+    logger.print(f"Found {subreg_cc_n} IVD ccs (naively)", verbose=verbose)
     coms = np_center_of_mass(subreg_cc)
     volumes = np_volume(subreg_cc)
     stats = {i: (g[1], True, volumes[i]) for i, g in coms.items()}
@@ -290,15 +293,177 @@ def get_corpus_coms(
                     target_vert_id = list(neighbor_verts.keys())[argmax]
                     segvert = np_extract_label(corpus_cc, target_vert_id, inplace=False)
                     try:
-                        split_vert = np_mincutmaxflow(segvert, None)
+                        logger.print("get_separating_components to split vertebra", verbose=verbose)
+                        (spart, tpart, spart_dil, tpart_dil, stpart) = get_separating_components(
+                            segvert,
+                            connectivity=3,
+                        )
+
+                        logger.print("Splitting by plane")
+                        plane_split_nii = get_plane_split(segvert, corpus_nii, spart, tpart, spart_dil, tpart_dil)
+                        split_vert = split_by_plane(segvert, plane_split_nii)
                         corpus_cc[split_vert == 2] = corpus_cc.max() + 1
+
+                        seg_nii.set_array(corpus_cc).save(
+                            "/DATA/NAS/ongoing_projects/hendrik/mri_usage/nako_fixmerge_test/derivatives_seg/mincutmaxflow_array.nii.gz"
+                        )
                     except Exception as e:
-                        logger.print(f"MinCutMaxFlow failed with exception {e}")
+                        logger.print(f"Separating Corpi failed with exception {e}")
 
     corpus_coms = list(np_center_of_mass(corpus_cc).values())
     corpus_coms.sort(key=lambda a: a[1])
     corpus_coms.reverse()  # from bottom to top
+    logger.print(f"Found {len(corpus_coms)} final Corpus ccs", verbose=verbose)
     return corpus_coms
+
+
+def get_separating_components(
+    segvert: np.ndarray,
+    max_iter: int = 10,
+    connectivity: int = 3,
+):
+    check_connectivtiy = 3
+    vol = segvert.copy()
+    vol_old = vol.copy()
+    iterations = 0
+    while True:
+        vol_erode = np_erode_msk(vol, mm=1, connectivity=connectivity)
+        subreg_cc, subreg_cc_n = np_connected_components(vol_erode, connectivity=check_connectivtiy)
+        if 1 in subreg_cc_n and subreg_cc_n[1] > 1:
+            vol = subreg_cc[1]
+            break
+        elif 1 not in subreg_cc_n:
+            vol_dilated = np_dilate_msk(vol, mm=1, connectivity=connectivity, mask=vol.copy())
+            # use iteration before to get other CC
+            vol[vol_old != 0] = 2  # all possible voxels are 2
+            vol[vol_dilated == 1] = 1
+
+            if 2 not in np_volume(vol):
+                raise Exception(  # noqa: TRY002
+                    f"cannot split volume into two parts after {iterations} iterations, all values are 0 after erosion."
+                )
+            volume = np_volume(vol)
+            dil_iter = 0
+            while volume[1] / (volume[1] + volume[2]) < 0.5:
+                vol_dilated = np_dilate_msk(vol_dilated, mm=1, connectivity=connectivity, mask=vol.copy())
+                # inst_nii.set_array(vol_dilated).save(files_out + f"subreg_cc_vol_dilated{dil_iter}.nii.gz")
+                vol[vol_dilated == 1] = 1
+                # inst_nii.set_array(vol).save(files_out + f"subreg_cc_dilation{dil_iter}.nii.gz")
+                volume = np_volume(vol)
+                if 1 not in volume or 2 not in volume:
+                    raise Exception("Could not divide into two instance")  # noqa: TRY002
+                dil_iter += 1
+
+            vol_1 = np_get_largest_k_connected_components(vol == 1, k=1, connectivity=check_connectivtiy).astype(np.uint8)
+            vol_2 = np_get_largest_k_connected_components(vol == 2, k=1, connectivity=check_connectivtiy).astype(np.uint8)
+            vol_2 *= 2
+            vol[vol == 1] = vol_1[vol == 1]
+            vol[vol == 2] = vol_2[vol == 2]
+            break
+        vol_old = vol
+        vol = vol_erode
+        iterations += 1
+        if iterations > max_iter:
+            raise Exception(f"Could not divide into two instance after max iterations {max_iter}")  # noqa: TRY002
+    if len(np_volume(vol)) != 2:
+        logger.print("Get largest two components")
+        subreg_cc_2k = np_get_largest_k_connected_components(vol, k=2, connectivity=check_connectivtiy, return_original_labels=False)
+        spart = subreg_cc_2k == 1
+        tpart = subreg_cc_2k == 2
+    else:
+        spart = vol == 1
+        tpart = vol == 2
+
+    if spart.sum() == 0 or tpart.sum() == 0:
+        raise Exception("S or T are empty")  # noqa: TRY002
+
+    spart_dil = np_dilate_msk(spart, mm=1, connectivity=connectivity)
+    tpart_dil = np_dilate_msk(tpart, mm=1, connectivity=connectivity)
+    stpart = (spart_dil + (tpart_dil * 2)).astype(np.uint8)
+    while 3 not in np_volume(stpart):
+        spart_dil = np_dilate_msk(spart_dil, mm=1, connectivity=connectivity)
+        stpart = (spart_dil + (tpart_dil * 2)).astype(np.uint8)
+        if 3 in np_volume(stpart):
+            break
+        tpart_dil = np_dilate_msk(tpart_dil, mm=1, connectivity=connectivity)
+        stpart = (spart_dil + (tpart_dil * 2)).astype(np.uint8)
+    #
+    stpart = spart_dil + (tpart_dil * 2)
+    return spart, tpart, spart_dil, tpart_dil, stpart
+
+
+def get_plane_split(
+    segvert: np.ndarray,
+    compare_nii: NII,
+    spart: np.ndarray,
+    tpart: np.ndarray,
+    spart_dil: np.ndarray,
+    tpart_dil: np.ndarray,
+):
+    s_dilint = spart_dil.astype(np.uint8)
+    t_dilint = tpart_dil.astype(np.uint8)
+    #
+    collision_arr = s_dilint + t_dilint
+    if 2 not in collision_arr:
+        logger.print("S and T dilated do not touch each other error")
+        return compare_nii.set_array(np.zeros_like(segvert))
+    collision_arr[collision_arr != 2] = 0
+    collision_arr[collision_arr == 2] = 1
+    collision_point = np_center_of_mass(collision_arr)[1]
+    # TODO instead of COM, calc COM of S and T, make vector and use merge point along that vector as collision point? should be more accurate
+    #
+    normal_vector = np_center_of_mass(spart.astype(np.uint8))[1] - np_center_of_mass(tpart.astype(np.uint8))[1]
+    normalized_normal = normal_vector / np.linalg.norm(normal_vector)
+    #
+    axis = np.argmax(np.abs(normalized_normal))
+    dims = [0, 1, 2]
+    dims.remove(axis)
+    dim1, dim2 = dims
+    #
+    shift_total = -collision_point.dot(normal_vector)
+    xx, yy = np.meshgrid(range(collision_arr.shape[dim1]), range(collision_arr.shape[dim2]))
+    zz = (-normal_vector[dim1] * xx - normal_vector[dim2] * yy - shift_total) * 1.0 / normal_vector[axis]
+    z_max = collision_arr.shape[axis] - 1
+    zz[zz < 0] = 0
+    zz[zz > z_max] = z_max
+    # make cords to array again
+    plane_coords = np.zeros([xx.shape[0], xx.shape[1], 3], dtype=int)
+    plane_coords[:, :, axis] = zz
+    plane_coords[:, :, dim1] = xx
+    plane_coords[:, :, dim2] = yy
+
+    plane = segvert * 0
+    plane[plane_coords[:, :, 0], plane_coords[:, :, 1], plane_coords[:, :, 2]] = 1
+    plane_nii = compare_nii.set_array(plane)
+
+    plane_filled_nii = plane_nii.copy()
+    orientation = plane_filled_nii.orientation
+    plane_filled_nii.reorient_(("S", "A", "R"))
+    plane_filled_arr = plane_filled_nii.get_array()
+    x_slice = np.ones_like(plane_filled_arr[0]) * np.max(plane_filled_arr) + 1
+    # plane_filled[:, 0, :] = 2
+    # plane_filled[:, -1, :] = 1
+    for i in range(plane_filled_arr.shape[0]):
+        curr_slice = plane_filled_arr[i]
+        cond = np.where(curr_slice != 0)
+        x_slice[cond] = np.minimum(curr_slice[cond], x_slice[cond])
+        plane_filled_arr[i] = x_slice
+
+    plane_filled_nii.set_array_(plane_filled_arr).reorient_(orientation)
+    return plane_filled_nii
+
+
+def split_by_plane(
+    segvert: np.ndarray,
+    plane_filled_nii: NII,
+):
+    plane_filled_arr = plane_filled_nii.get_array()
+    # 1 above, 2 below
+    plane_filled_arr[segvert == 0] = 0
+    segvert = plane_filled_arr
+    # segvert[plane_filled_arr == 1] = 1
+    # segvert[plane_filled_arr == 2] = 2
+    return segvert
 
 
 def collect_vertebra_predictions(
