@@ -8,6 +8,7 @@ from TPTBox.core.np_utils import (
     np_bbox_binary,
     np_center_of_mass,
     np_connected_components,
+    np_contacts,
     np_count_nonzero,
     np_dilate_msk,
     np_extract_label,
@@ -17,6 +18,7 @@ from TPTBox.core.np_utils import (
 )
 
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
+from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 
 
 def phase_postprocess_combined(
@@ -25,8 +27,11 @@ def phase_postprocess_combined(
     debug_data: dict | None,
     labeling_offset: int = 0,
     proc_assign_missing_cc: bool = True,
+    proc_clean_inst_by_sem: bool = True,
     n_vert_bodies: int | None = None,
-    process_vertebra_inconsistency: bool = True,
+    process_merge_vertebra: bool = True,
+    proc_vertebra_inconsistency: bool = True,
+    proc_assign_posterior_instance_label: bool = True,
     verbose: bool = False,
 ) -> tuple[NII, NII]:
     logger.print("Post process", Log_Type.STAGE)
@@ -40,7 +45,9 @@ def phase_postprocess_combined(
         if debug_data is None:
             debug_data = {}
             #
-        vert_nii.apply_mask(seg_nii, inplace=True)
+
+        if proc_clean_inst_by_sem:
+            vert_nii.apply_mask(seg_nii, inplace=True)
         crop_slices = seg_nii.compute_crop(dist=2)
         vert_uncropped_arr = np.zeros(vert_nii.shape, dtype=seg_nii.dtype)
         seg_uncropped_arr = np.zeros(vert_nii.shape, dtype=seg_nii.dtype)
@@ -59,17 +66,24 @@ def phase_postprocess_combined(
             verbose=verbose,
         )
 
-        if process_vertebra_inconsistency:
+        if process_merge_vertebra and Location.Vertebra_Disc.value in seg_nii_cleaned.unique():
+            detect_and_solve_merged_vertebra(seg_nii_cleaned, whole_vert_nii_cleaned)
+
+        if proc_assign_posterior_instance_label:
+            whole_vert_nii_cleaned = fix_wrong_posterior_instance_label(seg_nii_cleaned, seg_inst=whole_vert_nii_cleaned, logger=logger)
+
+        if proc_vertebra_inconsistency:
             # Assigns superior/inferior based on instance label overlap
             assign_vertebra_inconsistency(seg_nii_cleaned, whole_vert_nii_cleaned)
 
         # Label vertebra top -> down
-        whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned)
-        if labeling_offset != 0:
-            whole_vert_nii_cleaned.map_labels_({i: i + 1 for i in vert_labels if i != 0}, verbose=verbose)
+        whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned, labeling_offset=labeling_offset)
+        # if labeling_offset != 0:
+        #    whole_vert_nii_cleaned.map_labels_({i: i + 1 for i in vert_labels if i != 0}, verbose=verbose)
         logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
-
         vert_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
+        #
+        #
         vert_arr_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
         ###############
         # Uncrop
@@ -305,20 +319,14 @@ def find_nearest_lower(seq, x):
     return max(values_lower)
 
 
-def label_instance_top_to_bottom(vert_nii: NII):
+def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0):
     ori = vert_nii.orientation
     vert_nii.reorient_()
     vert_arr = vert_nii.get_seg_array()
     com_i = np_center_of_mass(vert_arr)
-    # Old, more precise version (but takes longer)
-    # comb = {}
-    # for i in present_labels:
-    #    arr_i = vert_arr.copy()
-    #    arr_i[arr_i != i] = 0
-    #    comb[i] = center_of_mass(arr_i)
     comb_l = list(zip(com_i.keys(), com_i.values(), strict=True))
     comb_l.sort(key=lambda a: a[1][1])  # PIR
-    com_map = {comb_l[idx][0]: idx + 1 for idx in range(len(comb_l))}
+    com_map = {comb_l[idx][0]: idx + 1 + labeling_offset for idx in range(len(comb_l))}
 
     vert_nii.map_labels_(com_map, verbose=False)
     vert_nii.reorient_(ori)
@@ -374,3 +382,45 @@ def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII):
                 )
 
         vert_nii.set_array_(vert_arr)
+
+
+def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII):
+    seg_sem = seg_nii.map_labels({Location.Endplate.value: Location.Vertebra_Disc.value}, verbose=False)
+    # get all ivd CCs from seg_sem
+
+    stats = {}
+    # Map IVDS
+    subreg_cc, subreg_cc_n = seg_sem.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
+    subreg_cc = subreg_cc[Location.Vertebra_Disc.value] + 100
+    subreg_cc_n = subreg_cc_n[Location.Vertebra_Disc.value]
+
+    coms = np_center_of_mass(subreg_cc)
+    volumes = np_volume(subreg_cc)
+    stats = {i: (g[1], True, volumes[i]) for i, g in coms.items()}
+
+    vert_coms = vert_nii.center_of_masses()
+    vert_volumes = vert_nii.volumes()
+
+    for i, g in vert_coms.items():
+        stats[i] = (g[1], False, vert_volumes[i])
+
+    stats_by_height = dict(sorted(stats.items(), key=lambda x: x[1][0]))
+    stats_by_height_keys = list(stats_by_height.keys())
+
+    # detect C2 split into two components
+    first_key, second_key = stats_by_height_keys[0], stats_by_height_keys[1]
+    first_stats, second_stats = stats_by_height[first_key], stats_by_height[second_key]
+    if first_stats[1] is False and second_stats[1] is False:  # noqa: SIM102
+        # both vertebra
+        if first_stats[2] < 0.5 * second_stats[2]:
+            # first is significantly smaller than second and they are close in height
+            # how many pixels are touching
+            vert_firsttwo_arr = vert_nii.extract_label(first_key).get_seg_array()
+            vert_firsttwo_arr2 = vert_nii.extract_label(second_key).get_seg_array()
+            vert_firsttwo_arr += vert_firsttwo_arr2 + 1
+            contacts = np_contacts(vert_firsttwo_arr, connectivity=3)
+            if contacts[(1, 2)] > 20:
+                logger.print("Found first two instance weird, will merge", Log_Type.STRANGE)
+                vert_nii.map_labels_({first_key: second_key}, verbose=False)
+
+    return seg_nii, vert_nii

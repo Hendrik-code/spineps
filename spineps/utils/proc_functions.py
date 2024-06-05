@@ -2,8 +2,8 @@ import cc3d
 import numpy as np
 from ants.utils.convert_nibabel import from_nibabel
 from scipy.ndimage import center_of_mass
-from TPTBox import NII, Logger_Interface
-from TPTBox.core.np_utils import np_bbox_binary, np_count_nonzero, np_dilate_msk, np_unique, np_volume
+from TPTBox import NII, Location, Logger_Interface
+from TPTBox.core.np_utils import np_bbox_binary, np_count_nonzero, np_dilate_msk, np_unique, np_unique_withoutzero, np_volume
 from tqdm import tqdm
 
 
@@ -181,3 +181,57 @@ def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbo
         if (n) != 1:  # zero is a label
             print(f"subreg {subreg} does not have one CC (not counting zeros), got {n}") if verbose else None
     return subreg_cc, subreg_cc_stats
+
+
+def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger) -> NII:
+    seg_sem = seg_sem.copy()
+    seg_inst = seg_inst.copy()
+    orientation = seg_sem.orientation
+    seg_sem.assert_affine(other=seg_inst)
+    seg_sem.reorient_()
+    seg_inst.reorient_()
+
+    seg_inst_arr_proc = seg_inst.get_seg_array()
+
+    instance_labels = [i for i in seg_inst.unique() if 1 <= i <= 25]
+
+    for vert in instance_labels:
+        inst_vert = seg_inst.extract_label(vert)
+        # sem_vert = seg_sem.apply_mask(inst_vert)
+
+        # Check if multiple CC exist
+        inst_vert_cc = inst_vert.get_largest_k_segmentation_connected_components(3, return_original_labels=False)
+        inst_vert_cc_n = int(inst_vert_cc.max())
+        #
+        if inst_vert_cc_n == 1:
+            continue
+        #
+        # inst_vert_cc is labeled 1 to 3
+        for i in range(2, inst_vert_cc_n + 1):
+            inst_vert_cc_i = inst_vert_cc.extract_label(i)
+
+            crop = inst_vert_cc_i.compute_crop(dist=1)
+            inst_vert_cc_i_c = inst_vert_cc_i.apply_crop(crop)
+
+            cc_sem_vert = seg_sem.apply_crop(crop).apply_mask(inst_vert_cc_i_c)
+            # cc_vert is semantic mask of only that cc of instance
+
+            cc_sem_vert_labels = cc_sem_vert.unique()
+            # is that cc only arcus and spinosus?
+            if len(cc_sem_vert_labels) <= 2 and np.all(
+                [i in [Location.Arcus_Vertebrae.value, Location.Spinosus_Process.value] for i in cc_sem_vert_labels]
+            ):
+                # neighbor that have non arcus/spinosus label?
+                neighbor_instance_labels = seg_inst.apply_crop(crop).get_seg_array()
+                neighbor_instance_labels[inst_vert_cc_i_c.get_seg_array() == 1] = 0
+                neighbor_instance_labels = np_unique_withoutzero(neighbor_instance_labels)
+                # which instance labels does it touch
+                logger.print(f"vert {vert}, cc_k {i} has instance neighbors {neighbor_instance_labels}")
+                # is it touching only one other instance label?
+                if len(neighbor_instance_labels) == 1 and neighbor_instance_labels[0] != vert:
+                    to_label = neighbor_instance_labels[0]
+                    logger.print(f"vert {vert}, cc_k {i} relabel to instance {to_label}")
+                    seg_inst_arr_proc[inst_vert_cc_i.get_seg_array() == 1] = to_label
+
+    seg_inst_proc = seg_inst.set_array(seg_inst_arr_proc).reorient_(orientation)
+    return seg_inst_proc
