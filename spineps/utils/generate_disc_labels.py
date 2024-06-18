@@ -3,7 +3,6 @@ This script generates discs labels using SPINEPS' vertebrae segmentation
 
 Author: Nathan Molinier
 '''
-import os
 import argparse
 from pathlib import Path
 import cc3d
@@ -46,24 +45,24 @@ def main():
     args = parser.parse_args()
 
     # Fetch paths
-    path_in = os.path.abspath(args.path_vert)
-    path_out = os.path.abspath(args.path_out) if args.path_out else default_name_discs(path_in)
+    path_in = Path(args.path_vert).resolve()
+    path_out = Path(args.path_out).resolve() if args.path_out else default_name_discs(path_in)
 
     # Check if output folder exists
-    if not os.path.exists(os.path.dirname(path_out)):
-        os.makedirs(os.path.dirname(path_out))
+    if not path_out.parent.exists():
+        path_out.parent.mkdir(parents=True)
 
     # Extract discs labels
-    vert_image = Image(path_in)
+    vert_image = Image(str(path_in))
     print('-'*80)
-    print(f"Creating discs label using SPINEPS prediction: {path_in}")
+    print(f"Creating discs label using SPINEPS prediction: {str(path_in)}")
     print('-'*80)
     discs_nii_clean = extract_discs_label(vert_image, mapping=DISCS_MAP)
 
     # Save discs labels
-    discs_nii_clean.save(path_out)
+    discs_nii_clean.save(str(path_out))
     print('-'*80)
-    print(f'Discs label: {path_out} was created.')
+    print(f'Discs label: {str(path_out)} was created.')
     print('-'*80)
 
 
@@ -75,14 +74,8 @@ def default_name_discs(path_in, suffix="_label-discs_dlabel"):
     path_obj = Path(path_in)
     ext = ''.join(path_obj.suffixes)
 
-    # Check if the entity label is already present in the filename
-    fname = os.path.basename(path_in).replace(ext,'')
-    ofolder = os.path.dirname(path_in)
-    if '_label-vert' in fname:
-        fname = fname.split('_label-vert')[0]
- 
-    # Reconstruct out path
-    path_out = os.path.join(ofolder, fname+suffix+ext)
+    # Add suffix
+    path_out = Path(str(path_in).replace(ext,suffix + ext))
     return path_out
 
 
@@ -104,7 +97,7 @@ def extract_discs_label(label, mapping):
         data_discs_seg[np.where(data==seg_value)] = discs_value
 
     # Deal with disc 1 obtained with the first vertebrae (Highest vertical coordinate)
-    if 1 in data_discs_seg: 
+    if 1 in data_discs_seg:
         # If the first vertebrae is present identify label disc 1 at the top
         vert1_seg = np.array(np.where(data_discs_seg==1))
         disc1_idx = np.argmin(vert1_seg[1]) # find min on the S-I axis
@@ -118,7 +111,7 @@ def extract_discs_label(label, mapping):
     discs_centroids, discs_bb = extract_centroids_3d(data_discs_seg)
 
     # Generate a centerline between the discs by doing linear interpolation
-    yvals = np.linspace(discs_centroids[0, 1], 
+    yvals = np.linspace(discs_centroids[0, 1],
                         discs_centroids[-1, 1],
                         round(8*len(discs_centroids)))
     xvals = np.interp(yvals, discs_centroids[:,1], discs_centroids[:,0])
