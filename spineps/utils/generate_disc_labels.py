@@ -22,7 +22,7 @@ DISCS_MAP = {2:1, 102: 3, 103: 4, 104: 5,
 
 def get_parser():
     # parse command line arguments
-    parser = argparse.ArgumentParser(description='Convert BIDS-structured dataset to nnUNetV2 database format.')
+    parser = argparse.ArgumentParser(description="Generate discs labels from spineps' vertebrae segmentation.")
     parser.add_argument('--path-vert', type=str, required=True, help='Path to the SPINEPS vertebrae labels. Example: "/<path_to_BIDS_data>/derivatives/labels/sub-amuALT/anat/sub-amuALT_T2w_label-vert_dseg.nii.gz" (Required)')
     parser.add_argument('--path-out', type=str, default='', help='Output path of the discs label. Example: "/<path_to_BIDS_data>/derivatives/labels/sub-amuALT/anat/sub-amuALT_T2w_label-discs_dlabel.nii.gz". By default, the structure "_label-discs_dlabel" will be used.')
     return parser
