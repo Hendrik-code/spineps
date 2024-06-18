@@ -174,7 +174,7 @@ def project_point_on_line(point, line):
 
     :param point: coordinates of a point and its value: point = numpy.array([x y z])
     :param line: list of points coordinates which composes the line
-    :returns: closest coordinate to the referenced point on the line: 
+    :returns: closest coordinate to the referenced point on the line:
     projected_point = numpy.array([X Y Z])
     Copied from https://github.com/spinalcordtoolbox/spinalcordtoolbox
     """
@@ -194,7 +194,7 @@ def closest_point_seg_to_line(discs_seg, centerline, bounding_boxes):
         # Loop on all the pixels of the segmentation
         min_dist = np.inf
         nonzero = np.where(zer>0)
-        for u, v, w in zip(nonzero[0],nonzero[1],nonzero[2]):
+        for u, v, w in zip(nonzero[0], nonzero[1], nonzero[2]):
             _, dist = project_point_on_line(np.array([u, v, w]), centerline)
             if dist < min_dist:
                 min_dist = dist
