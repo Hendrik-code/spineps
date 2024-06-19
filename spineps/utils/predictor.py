@@ -134,7 +134,8 @@ class nnUNetPredictor(object):
                     self.network.load_state_dict(params)
                 else:
                     self.network._orig_mod.load_state_dict(params)
-                self.network.cuda()
+                if self.device.type == "cuda":
+                    self.network.cuda()
                 self.network.eval()
                 self.loaded_networks.append(self.network)
         # print(type(self.loaded_networks[0]))
