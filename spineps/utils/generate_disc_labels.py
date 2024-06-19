@@ -5,8 +5,10 @@ Author: Nathan Molinier
 '''
 import argparse
 from pathlib import Path
+
 import cc3d
 import numpy as np
+
 from spineps.utils.image import Image
 
 DISCS_MAP = {2:1, 102: 3, 103: 4, 104: 5,
@@ -24,15 +26,15 @@ def get_parser():
     Parser to generate discs labels
     '''
     # parse command line arguments
-    parser = argparse.ArgumentParser(description="Generate discs labels from spineps' \
-                                     vertebrae segmentation.")
-    parser.add_argument('--path-vert', type=str, required=True, \
-                        help='Path to the SPINEPS vertebrae labels. \
-                        Example: "/<data_path>/sub-amuALT_T2w_label-vert_dseg.nii.gz" (Required)')
-    parser.add_argument('--path-out', type=str, default='', \
-                        help='Output path of the discs label. \
-                        Example: "/<data_path>/sub-amuALT_T2w_label-discs_dlabel.nii.gz". \
-                        By default, the structure "_label-discs_dlabel" will be used.')
+    parser = argparse.ArgumentParser(description="Generate discs labels from spineps' "
+                                                 "vertebrae segmentation.")
+    parser.add_argument('--path-vert', type=str, required=True,
+                        help='Path to the SPINEPS vertebrae labels. '
+                        'Example: "/<data_path>/sub-amuALT_T2w_label-vert_dseg.nii.gz" (Required)')
+    parser.add_argument('--path-out', type=str, default='',
+                        help='Output path of the discs label. '
+                        'Example: "/<data_path>/sub-amuALT_T2w_label-discs_dlabel.nii.gz". '
+                        'By default, the structure "_label-discs_dlabel" will be used.')
     return parser
 
 
@@ -55,14 +57,14 @@ def main():
     # Extract discs labels
     vert_image = Image(str(path_in))
     print('-'*80)
-    print(f"Creating discs label using SPINEPS prediction: {str(path_in)}")
+    print(f"Creating discs label using SPINEPS prediction: {path_in}")
     print('-'*80)
     discs_nii_clean = extract_discs_label(vert_image, mapping=DISCS_MAP)
 
     # Save discs labels
     discs_nii_clean.save(str(path_out))
     print('-'*80)
-    print(f'Discs label: {str(path_out)} was created.')
+    print(f'Discs label: {path_out} was created.')
     print('-'*80)
 
 
@@ -126,8 +128,8 @@ def extract_discs_label(label, mapping):
     min_seg_ap = np.min(np.where(data_discs_seg>0)[2])
     max_centroid_ap = np.max(discs_centroids[:,2])
     offset = 5
-    shift = (max_centroid_ap - min_seg_ap + offset) \
-        if min_seg_ap >= offset else (max_centroid_ap - min_seg_ap)
+    shift = ((max_centroid_ap - min_seg_ap + offset)
+        if min_seg_ap >= offset else (max_centroid_ap - min_seg_ap))
 
     centerline_shifted = np.copy(centerline)
     centerline_shifted[:,2] = centerline_shifted[:,2] - shift
@@ -194,7 +196,7 @@ def closest_point_seg_to_line(discs_seg, centerline, bounding_boxes):
         # Loop on all the pixels of the segmentation
         min_dist = np.inf
         nonzero = np.where(zer>0)
-        for u, v, w in zip(nonzero[0], nonzero[1], nonzero[2]):
+        for u, v, w in zip(nonzero[0], nonzero[1], nonzero[2], strict=True):
             _, dist = project_point_on_line(np.array([u, v, w]), centerline)
             if dist < min_dist:
                 min_dist = dist
