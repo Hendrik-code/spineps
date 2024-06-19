@@ -1,3 +1,4 @@
+# ruff: noqa
 import os
 import numpy as np
 import nibabel as nib
