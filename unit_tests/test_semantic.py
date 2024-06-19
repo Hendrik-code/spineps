@@ -79,7 +79,9 @@ class Test_Semantic_Phase(unittest.TestCase):
         model = Segmentation_Model_Dummy()
         model.run = MagicMock(return_value={OutputType.seg: subreg, OutputType.softmax_logits: None})
         debug_data = {}
-        seg_nii, unc_nii, softmax_logits, errcode = predict_semantic_mask(mri, model, debug_data=debug_data, verbose=True)
+        seg_nii, unc_nii, softmax_logits, errcode = predict_semantic_mask(
+            mri, model, debug_data=debug_data, verbose=True, proc_clean_small_cc_artifacts=False
+        )
         predicted_volumes = seg_nii.volumes()
         ref_volumes = subreg.volumes()
         print(predicted_volumes)

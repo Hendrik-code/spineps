@@ -13,9 +13,11 @@ from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
 def predict_semantic_mask(
     mri_nii: NII,
     model: Segmentation_Model,
-    debug_data: dict,  # noqa: ARG001
-    fill_holes: bool = True,
-    clean_artifacts: bool = True,
+    debug_data: dict,
+    proc_fill_3d_holes: bool = True,
+    proc_clean_beyond_largest_bounding_box: bool = True,
+    proc_remove_inferior_beyond_canal: bool = True,
+    proc_clean_small_cc_artifacts: bool = True,
     verbose: bool = False,
 ) -> tuple[NII | None, NII | None, np.ndarray | None, ErrCode]:
     """Predicts the semantic mask, takes care of rescaling, and back
@@ -45,10 +47,18 @@ def predict_semantic_mask(
         unc_nii = results.get(OutputType.unc, None)
         softmax_logits = results[OutputType.softmax_logits]
 
+        logger.print("Post-process semantic mask...")
+
+        debug_data["sem_raw"] = seg_nii.copy()
+
         if len(seg_nii.unique()) == 0:
             logger.print("Subregion mask is empty, skip this", Log_Type.FAIL)
             return seg_nii, unc_nii, softmax_logits, ErrCode.EMPTY
-        if clean_artifacts:
+
+        if proc_remove_inferior_beyond_canal:
+            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii=seg_nii.copy())
+
+        if proc_clean_small_cc_artifacts:
             seg_nii.set_array_(
                 clean_cc_artifacts(
                     seg_nii,
@@ -73,19 +83,41 @@ def predict_semantic_mask(
                 ),
                 verbose=verbose,
             )
-        if fill_holes:
+
+        # Do two iterations of both processing if enabled to make sure
+        if proc_remove_inferior_beyond_canal:
+            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii=seg_nii.copy())
+
+        if proc_clean_beyond_largest_bounding_box:
+            seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
+
+        if proc_remove_inferior_beyond_canal and proc_clean_beyond_largest_bounding_box:
+            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii=seg_nii.copy())
+            seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
+
+        if proc_fill_3d_holes:
             seg_nii = seg_nii.fill_holes_(fill_holes_labels, verbose=logger)
 
-    seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
-
     return seg_nii, unc_nii, softmax_logits, ErrCode.OK
+
+
+def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
+    seg_nii.assert_affine(orientation=("P", "I", "R"))
+    canal_nii = seg_nii.extract_label([Location.Spinal_Canal.value, Location.Spinal_Cord.value])
+    crop_i = canal_nii.compute_crop(dist=16)[1]
+    seg_arr = seg_nii.get_seg_array()
+    sacrum_arr = seg_nii.extract_label(26).get_seg_array()
+    seg_arr[:, 0 : crop_i.start, :] = 0
+    seg_arr[:, crop_i.stop :, :] = 0
+    seg_arr[sacrum_arr == 1] = 26
+    return seg_nii.set_array_(seg_arr)
 
 
 def semantic_bounding_box_clean(seg_nii: NII):
     ori = seg_nii.orientation
     seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
     seg_bin_largest_k_cc_nii = seg_binary.get_largest_k_segmentation_connected_components(
-        k=20, labels=1, connectivity=3, return_original_labels=False
+        k=None, labels=1, connectivity=3, return_original_labels=False
     )
     max_k = int(seg_bin_largest_k_cc_nii.max())
     if max_k > 3:
@@ -93,7 +125,9 @@ def semantic_bounding_box_clean(seg_nii: NII):
     # PIR
     largest_nii = seg_bin_largest_k_cc_nii.extract_label(1)
     # width fixed, and heigh include all connected components within bounding box, then repeat
-    p_slice, i_slice, r_slice = largest_nii.compute_crop(dist=5)
+    p_slice, i_slice, r_slice = largest_nii.compute_crop(dist=4)
+    bboxes = [(p_slice, i_slice, r_slice)]
+
     # PIR -> fixed, extendable, extendable
     incorporated = [1]
     changed = True
@@ -101,21 +135,27 @@ def semantic_bounding_box_clean(seg_nii: NII):
         changed = False
         for k in [l for l in range(2, max_k + 1) if l not in incorporated]:
             k_nii = seg_bin_largest_k_cc_nii.extract_label(k)
-            p, i, r = k_nii.compute_crop(dist=3)
-            i_slice_compare = slice(
-                max(i_slice.start - 10, 0), i_slice.stop + 10
-            )  # more margin in inferior direction (allows for gaps in spine)
-            if overlap_slice(p_slice, p) and overlap_slice(i_slice_compare, i) and overlap_slice(r_slice, r):
-                # extend bbox
-                i_slice = slice(min(i_slice.start, i.start), max(i_slice.stop, i.stop))
-                r_slice = slice(min(r_slice.start, r.start), max(r_slice.stop, r.stop))
-                incorporated.append(k)
-                changed = True
+            p, i, r = k_nii.compute_crop(dist=4)
+
+            for bbox in bboxes:
+                i_slice_compare = slice(
+                    max(bbox[1].start - 4, 0), bbox[1].stop + 4
+                )  # more margin in inferior direction (allows for gaps of size 15 in spine)
+                if overlap_slice(bbox[0], p) and overlap_slice(i_slice_compare, i) and overlap_slice(bbox[2], r):
+                    # extend bbox
+                    bboxes.append((p, i, r))
+                    incorporated.append(k)
+                    changed = True
+                    break
 
     seg_bin_arr = seg_binary.get_seg_array()
     crop = (p_slice, i_slice, r_slice)
     seg_bin_clean_arr = np.zeros(seg_bin_arr.shape)
     seg_bin_clean_arr[crop] = 1
+
+    # everything below biggest k get always removed
+    largest_k_arr = seg_bin_largest_k_cc_nii.get_seg_array()
+    seg_bin_clean_arr[largest_k_arr == 0] = 0
 
     seg_arr = seg_nii.get_seg_array()
     # logger.print(seg_nii.volumes())
