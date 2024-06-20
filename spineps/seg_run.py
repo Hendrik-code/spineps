@@ -48,15 +48,24 @@ def process_dataset(
     override_ctd: bool = False,
     snapshot_copy_folder: Path | None | bool = None,
     #
-    do_crop_semantic: bool = True,
-    #
-    proc_n4correction: bool = True,
-    proc_fillholes: bool = True,
-    proc_clean: bool = True,
-    proc_corpus_clean: bool = True,
-    proc_cleanvert: bool = True,
+    pad_size: int = 4,
+    # Processings
+    # Semantic
+    proc_sem_crop_input: bool = True,
+    proc_sem_n4_bias_correction: bool = True,
+    proc_sem_remove_inferior_beyond_canal: bool = False,
+    proc_sem_clean_beyond_largest_bounding_box: bool = True,
+    proc_sem_clean_small_cc_artifacts: bool = True,
+    # Instance
+    proc_inst_corpus_clean: bool = True,
+    proc_inst_clean_small_cc_artifacts: bool = True,
+    proc_inst_largest_k_cc: int = 0,
+    proc_inst_detect_and_solve_merged_corpi: bool = True,
+    # Both
+    proc_fill_3d_holes: bool = True,
     proc_assign_missing_cc: bool = True,
-    proc_largest_cc: int = 0,
+    proc_clean_inst_by_sem: bool = True,
+    proc_vertebra_inconsistency: bool = True,
     #
     ignore_model_compatibility: bool = False,
     ignore_inference_compatibility: bool = False,
@@ -187,17 +196,25 @@ def process_dataset(
                     override_postpair=override_postpair,
                     override_ctd=override_ctd,
                     #
-                    do_crop_semantic=do_crop_semantic,
-                    proc_n4correction=proc_n4correction,
-                    proc_fillholes=proc_fillholes,
+                    proc_pad_size=pad_size,
                     #
-                    proc_clean=proc_clean,
-                    proc_corpus_clean=proc_corpus_clean,
-                    proc_cleanvert=proc_cleanvert,
+                    proc_sem_crop_input=proc_sem_crop_input,
+                    proc_sem_n4_bias_correction=proc_sem_n4_bias_correction,
+                    proc_fill_3d_holes=proc_fill_3d_holes,
+                    proc_sem_remove_inferior_beyond_canal=proc_sem_remove_inferior_beyond_canal,
+                    proc_sem_clean_beyond_largest_bounding_box=proc_sem_clean_beyond_largest_bounding_box,
+                    #
+                    proc_sem_clean_small_cc_artifacts=proc_sem_clean_small_cc_artifacts,
+                    proc_inst_detect_and_solve_merged_corpi=proc_inst_detect_and_solve_merged_corpi,
+                    proc_inst_corpus_clean=proc_inst_corpus_clean,
+                    proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
                     proc_assign_missing_cc=proc_assign_missing_cc,
-                    proc_largest_cc=proc_largest_cc,
+                    proc_inst_largest_k_cc=proc_inst_largest_k_cc,
+                    proc_clean_inst_by_sem=proc_clean_inst_by_sem,
+                    proc_vertebra_inconsistency=proc_vertebra_inconsistency,
                     #
                     snapshot_copy_folder=snapshot_copy_folder,
+                    ignore_bids_filter=ignore_bids_filter,
                     ignore_compatibility_issues=ignore_inference_compatibility,
                     log_inference_time=log_inference_time,
                     verbose=verbose,
@@ -248,19 +265,28 @@ def process_img_nii(  # noqa: C901
     override_postpair: bool = False,
     override_ctd: bool = False,
     #
-    do_crop_semantic: bool = True,
-    proc_n4correction: bool = True,
-    proc_fillholes: bool = True,
-    #
-    proc_clean: bool = True,
-    proc_corpus_clean: bool = True,
-    proc_cleanvert: bool = True,
+    proc_pad_size: int = 4,
+    # Processings
+    # Semantic
+    proc_sem_crop_input: bool = True,
+    proc_sem_n4_bias_correction: bool = True,
+    proc_sem_remove_inferior_beyond_canal: bool = False,
+    proc_sem_clean_beyond_largest_bounding_box: bool = True,
+    proc_sem_clean_small_cc_artifacts: bool = True,
+    # Instance
+    proc_inst_corpus_clean: bool = True,
+    proc_inst_clean_small_cc_artifacts: bool = True,
+    proc_inst_largest_k_cc: int = 0,
+    proc_inst_detect_and_solve_merged_corpi: bool = True,
+    # Both
+    proc_fill_3d_holes: bool = True,
     proc_assign_missing_cc: bool = True,
-    proc_largest_cc: int = 0,
-    process_vertebra_inconsistency: bool = True,
+    proc_clean_inst_by_sem: bool = True,
+    proc_vertebra_inconsistency: bool = True,
     #
     lambda_semantic: Callable[[NII], NII] | None = None,
     snapshot_copy_folder: Path | None = None,
+    ignore_bids_filter: bool = False,
     ignore_compatibility_issues: bool = False,
     log_inference_time: bool = True,
     verbose: bool = False,
@@ -305,9 +331,12 @@ def process_img_nii(  # noqa: C901
     Returns:
         ErrCode: Error code depicting whether the operation was successful or not
     """
+    arguments = locals()
     input_format = img_ref.format
 
-    output_paths = output_paths_from_input(img_ref, derivative_name, snapshot_copy_folder, input_format=input_format)
+    output_paths = output_paths_from_input(
+        img_ref, derivative_name, snapshot_copy_folder, input_format=input_format, non_strict_mode=ignore_bids_filter
+    )
     out_spine = output_paths["out_spine"]
     out_spine_raw = output_paths["out_spine_raw"]
     out_vert = output_paths["out_vert"]
@@ -358,7 +387,7 @@ def process_img_nii(  # noqa: C901
         input_nii = img_ref.open_nii()
         input_package = InputPackage(
             input_nii,
-            pad_size=4,
+            pad_size=proc_pad_size,
         )
         logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
 
@@ -371,21 +400,24 @@ def process_img_nii(  # noqa: C901
                 input_nii,
                 pad_size=input_package.pad_size,
                 debug_data=debug_data_run,
-                do_crop=do_crop_semantic,
-                do_n4=proc_n4correction,
+                proc_crop_input=proc_sem_crop_input,
+                proc_do_n4_bias_correction=proc_sem_n4_bias_correction,
                 verbose=verbose,
             )
             if errcode != ErrCode.OK:
                 logger.print("Got Error from preprocessing", Log_Type.FAIL)
                 return output_paths, errcode
             # make subreg mask
+            assert input_preprocessed is not None
             seg_nii_modelres, unc_nii, softmax_logits, errcode = predict_semantic_mask(
                 input_preprocessed,
                 model_semantic,
                 debug_data=debug_data_run,
                 verbose=verbose,
-                fill_holes=proc_fillholes,
-                clean_artifacts=proc_clean,
+                proc_fill_3d_holes=proc_fill_3d_holes,
+                proc_clean_small_cc_artifacts=proc_sem_clean_small_cc_artifacts,
+                proc_clean_beyond_largest_bounding_box=proc_sem_clean_beyond_largest_bounding_box,
+                proc_remove_inferior_beyond_canal=proc_sem_remove_inferior_beyond_canal,
             )
             if errcode != ErrCode.OK:
                 return output_paths, errcode
@@ -423,10 +455,11 @@ def process_img_nii(  # noqa: C901
                 model_instance,
                 debug_data=debug_data_run,
                 verbose=verbose,
-                fill_holes=proc_fillholes,
-                proc_corpus_clean=proc_corpus_clean,
-                proc_cleanvert=proc_cleanvert,
-                proc_largest_cc=proc_largest_cc,
+                proc_inst_fill_3d_holes=proc_fill_3d_holes,
+                proc_detect_and_solve_merged_corpi=proc_inst_detect_and_solve_merged_corpi,
+                proc_corpus_clean=proc_inst_corpus_clean,
+                proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
+                proc_inst_largest_k_cc=proc_inst_largest_k_cc,
             )
             if errcode != ErrCode.OK:
                 logger.print(f"Vert Mask creation failed with errcode {errcode}", Log_Type.FAIL)
@@ -457,8 +490,9 @@ def process_img_nii(  # noqa: C901
                 vert_nii=whole_vert_nii,
                 debug_data=debug_data_run,
                 labeling_offset=1,
+                proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                 proc_assign_missing_cc=proc_assign_missing_cc,
-                process_vertebra_inconsistency=process_vertebra_inconsistency,
+                proc_vertebra_inconsistency=proc_vertebra_inconsistency,
                 verbose=verbose,
             )
 
@@ -479,6 +513,7 @@ def process_img_nii(  # noqa: C901
                 vert_nii_clean,
                 seg_nii_clean,
                 models=[model_semantic, model_instance],
+                parameter={l: v for l, v in arguments.items() if "proc_" in l},
                 input_zms_pir=input_package.zms_pir,
             )
             ctd.rescale(input_package._zms, verbose=logger).reorient(input_package._orientation).save(out_ctd, verbose=logger)
@@ -516,28 +551,60 @@ def process_img_nii(  # noqa: C901
     return output_paths, ErrCode.OK
 
 
-def output_paths_from_input(img_ref: BIDS_FILE, derivative_name: str, snapshot_copy_folder: Path | None, input_format: str):
-    out_spine = img_ref.get_changed_path(format="msk", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
-    out_vert = img_ref.get_changed_path(format="msk", parent=derivative_name, info={"seg": "vert", "mod": img_ref.format})
-    out_snap = img_ref.get_changed_path(format="snp", file_type="png", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
-    out_ctd = img_ref.get_changed_path(format="ctd", file_type="json", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
+def output_paths_from_input(
+    img_ref: BIDS_FILE,
+    derivative_name: str,
+    snapshot_copy_folder: Path | None,
+    input_format: str,
+    non_strict_mode: bool = False,
+):
+    out_spine = img_ref.get_changed_path(
+        bids_format="msk", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+    )
+    out_vert = img_ref.get_changed_path(
+        bids_format="msk", parent=derivative_name, info={"seg": "vert", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+    )
+    out_snap = img_ref.get_changed_path(
+        bids_format="snp",
+        file_type="png",
+        parent=derivative_name,
+        info={"seg": "spine", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+    )
+    out_ctd = img_ref.get_changed_path(
+        bids_format="ctd",
+        file_type="json",
+        parent=derivative_name,
+        info={"seg": "spine", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+    )
     out_snap2 = snapshot_copy_folder.joinpath(out_snap.name) if snapshot_copy_folder is not None else out_snap
     #
     out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
     #
     out_raw = out_vert.parent.joinpath(f"output_raw_{input_format}")
     #
-    out_spine_raw = img_ref.get_changed_path(format="msk", parent=derivative_name, info={"seg": "spine-raw", "mod": img_ref.format})
+    out_spine_raw = img_ref.get_changed_path(
+        bids_format="msk", parent=derivative_name, info={"seg": "spine-raw", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+    )
     out_spine_raw = out_raw.joinpath(out_spine_raw.name)
     #
-    out_vert_raw = img_ref.get_changed_path(format="msk", parent=derivative_name, info={"seg": "vert-raw", "mod": img_ref.format})
+    out_vert_raw = img_ref.get_changed_path(
+        bids_format="msk", parent=derivative_name, info={"seg": "vert-raw", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+    )
     out_vert_raw = out_raw.joinpath(out_vert_raw.name)
     #
-    out_unc = img_ref.get_changed_path(format="uncertainty", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format})
+    out_unc = img_ref.get_changed_path(
+        bids_format="uncertainty", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+    )
     out_unc = out_raw.joinpath(out_unc.name)
     #
     out_logits = img_ref.get_changed_path(
-        file_type="npz", format="logit", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}
+        file_type="npz",
+        bids_format="logit",
+        parent=derivative_name,
+        info={"seg": "spine", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
     )
     out_logits = out_raw.joinpath(out_logits.name)
     return {

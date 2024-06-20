@@ -1,5 +1,6 @@
 # from utils.predictor import nnUNetPredictor
 import subprocess
+from typing import Any
 
 from scipy.ndimage import center_of_mass
 from TPTBox import NII, Location, No_Logger, Zooms, v_name2idx
@@ -8,8 +9,7 @@ from TPTBox.logger.log_file import format_time_short, get_time
 
 from spineps.seg_model import Segmentation_Model
 
-logger = No_Logger()
-logger.override_prefix = "SPINEPS"
+logger = No_Logger(prefix="SPINEPS")
 
 fill_holes_labels = [
     Location.Vertebra_Corpus_border.value,
@@ -37,6 +37,7 @@ def predict_centroids_from_both(
     vert_nii_cleaned: NII,
     seg_nii: NII,
     models: list[Segmentation_Model],
+    parameter: dict[str, Any],
     input_zms_pir: Zooms | None = None,
 ):
     """Calculates the centroids of each vertebra corpus by using both semantic and instance mask
@@ -70,6 +71,8 @@ def predict_centroids_from_both(
     ctd.info["models"] = models_repr
     ctd.info["revision"] = pipeline_revision()
     ctd.info["timestamp"] = format_time_short(get_time())
+    for pname, pvalue in parameter.items():
+        ctd.info[pname] = str(pvalue)
     return ctd
 
 
