@@ -61,9 +61,9 @@ def get_network_from_plans(
     network_class = mapping[segmentation_network_class_name]
 
     conv_or_blocks_per_stage = {
-        "n_conv_per_stage"
-        if network_class != ResidualEncoderUNet
-        else "n_blocks_per_stage": configuration_manager.n_conv_per_stage_encoder,
+        (
+            "n_conv_per_stage" if network_class != ResidualEncoderUNet else "n_blocks_per_stage"
+        ): configuration_manager.n_conv_per_stage_encoder,
         "n_conv_per_stage_decoder": configuration_manager.n_conv_per_stage_decoder,
     }
     # network class name!!
@@ -71,8 +71,7 @@ def get_network_from_plans(
         input_channels=num_input_channels,
         n_stages=num_stages,
         features_per_stage=[
-            min(configuration_manager.UNet_base_num_features * 2**i, configuration_manager.unet_max_num_features)
-            for i in range(num_stages)
+            min(configuration_manager.UNet_base_num_features * 2**i, configuration_manager.unet_max_num_features) for i in range(num_stages)
         ],
         conv_op=conv_op,
         kernel_sizes=configuration_manager.conv_kernel_sizes,

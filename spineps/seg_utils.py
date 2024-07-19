@@ -1,6 +1,6 @@
 # from utils.predictor import nnUNetPredictor
 import nibabel as nib
-from TPTBox import BIDS_FILE, NII, Log_Type, Zooms
+from TPTBox import BIDS_FILE, NII, ZOOMS, Log_Type
 
 from spineps.seg_enums import Acquisition, Modality
 from spineps.seg_model import Segmentation_Model
@@ -29,9 +29,10 @@ class InputPackage:
         other_nii.rescale_(voxel_spacing=self.zms_pir, verbose=logger).reorient_(self._orientation, verbose=logger)
         # other_nii.reorient_(self._orientation, verbose=logger).rescale_(voxel_spacing=self._zms, verbose=logger)
         if self.pad_size > 0:
-            arr = other_nii.get_array()
-            arr = arr[self.pad_size : -self.pad_size, self.pad_size : -self.pad_size, self.pad_size : -self.pad_size]
-            other_nii.set_array_(arr)
+            other_nii = other_nii.pad_to(tuple(other_nii.shape[i] - (2 * self.pad_size) for i in range(3)))
+            # arr = other_nii.get_array()
+            # arr = arr[self.pad_size : -self.pad_size, self.pad_size : -self.pad_size, self.pad_size : -self.pad_size]
+            # other_nii.set_array_(arr)
         other_nii.pad_to(self._shape, inplace=True)
         assert_true = other_nii.assert_affine(
             zoom=self._zms, orientation=self._orientation, shape=self._shape, raise_error=False, verbose=logger
@@ -50,7 +51,7 @@ class InputPackage:
 
 def find_best_matching_model(
     modality_pair: Modality_Pair,
-    expected_resolution: Zooms | None,  # actual resolution here?
+    expected_resolution: ZOOMS | None,  # actual resolution here?
 ) -> Segmentation_Model:
     raise NotImplementedError("find_best_matching_model()")
     logger.print(expected_resolution)

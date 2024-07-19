@@ -8,21 +8,16 @@ from typing import Tuple, Union
 import numpy as np
 import torch
 from acvl_utils.cropping_and_padding.padding import pad_nd_image
-from batchgenerators.utilities.file_and_folder_operations import (join,
-                                                                  load_json)
-from nnunetv2.utilities.label_handling.label_handling import \
-    determine_num_input_channels
+from batchgenerators.utilities.file_and_folder_operations import join, load_json
+from nnunetv2.utilities.label_handling.label_handling import determine_num_input_channels
 from torch._dynamo import OptimizedModule
 from tqdm import tqdm
 
 from spineps.utils.data_iterators import PreprocessAdapterFromNpy
-from spineps.utils.export_prediction import (
-    convert_predicted_logits_to_segmentation_with_correct_shape,
-    export_prediction_from_logits)
+from spineps.utils.export_prediction import convert_predicted_logits_to_segmentation_with_correct_shape, export_prediction_from_logits
 from spineps.utils.get_network_from_plans import get_network_from_plans
 from spineps.utils.plans_handler import PlansManager
-from spineps.utils.sliding_window_prediction import (
-    compute_gaussian, compute_steps_for_sliding_window)
+from spineps.utils.sliding_window_prediction import compute_gaussian, compute_steps_for_sliding_window
 
 
 class nnUNetPredictor(object):
@@ -169,12 +164,10 @@ class nnUNetPredictor(object):
 
         if self.verbose:
             print("predicting")
-        (
-            predicted_logits,
-            prediction_stacked,
-        ) = self.predict_logits_from_preprocessed_data(dct["data"])
+
+        predicted_logits = self.predict_logits_from_preprocessed_data(dct["data"])
         predicted_logits.cpu()
-        prediction_stacked.cpu()
+        prediction_stacked = None
 
         if self.verbose:
             print("resampling to original shape")
@@ -197,7 +190,7 @@ class nnUNetPredictor(object):
                 dct["data_properites"],
                 return_probabilities=save_or_return_probabilities,
             )
-            if prediction_stacked is not None:
+            if False and prediction_stacked is not None:
                 seg_stacked = np.stack(
                     list(
                         [
@@ -215,9 +208,9 @@ class nnUNetPredictor(object):
                 )
 
             if save_or_return_probabilities:
-                return ret[0], seg_stacked, ret[1]
+                return ret[0], ret[1]
             else:
-                return ret, seg_stacked
+                return ret  # , seg_stacked
 
     def predict_logits_from_preprocessed_data(self, data: torch.Tensor) -> torch.Tensor:
         """
@@ -235,7 +228,7 @@ class nnUNetPredictor(object):
         original_perform_everything_on_gpu = self.perform_everything_on_gpu
         with torch.no_grad():
             prediction = None
-            prediction_stacked = None
+            # prediction_stacked = None  # TODO REMOVE (unecessary time!)
             if self.perform_everything_on_gpu:
                 try:
                     for idx, params in enumerate(self.list_of_parameters):
@@ -251,11 +244,11 @@ class nnUNetPredictor(object):
 
                         if prediction is None:
                             prediction = self.predict_sliding_window_return_logits(data, network=network)
-                            prediction_stacked = [prediction.to("cpu")]
+                            # prediction_stacked = [prediction.to("cpu")]
                         else:
                             new_prediction = self.predict_sliding_window_return_logits(data, network=network)
                             prediction += new_prediction
-                            prediction_stacked.append(new_prediction.to("cpu"))
+                            # prediction_stacked.append(new_prediction.to("cpu"))
 
                     if len(self.list_of_parameters) > 1:
                         prediction /= len(self.list_of_parameters)
@@ -285,11 +278,11 @@ class nnUNetPredictor(object):
 
                     if prediction is None:
                         prediction = self.predict_sliding_window_return_logits(data, network=network)
-                        prediction_stacked = [prediction.to("cpu")]
+                        # prediction_stacked = [prediction.to("cpu")]
                     else:
                         new_prediction = self.predict_sliding_window_return_logits(data, network=network)
                         prediction += new_prediction
-                        prediction_stacked.append(new_prediction.to("cpu"))
+                        # prediction_stacked.append(new_prediction.to("cpu"))
 
                 if len(self.list_of_parameters) > 1:
                     prediction /= len(self.list_of_parameters)
@@ -297,7 +290,7 @@ class nnUNetPredictor(object):
             print("Prediction done, transferring to CPU if needed") if self.verbose else None
             prediction = prediction.to("cpu")
             self.perform_everything_on_gpu = original_perform_everything_on_gpu
-        return prediction, torch.stack(prediction_stacked)
+        return prediction  # , torch.stack(prediction_stacked)
 
     def _internal_get_sliding_window_slicers(self, image_size: Tuple[int, ...]):
         # USED

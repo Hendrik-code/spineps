@@ -11,15 +11,14 @@ from spineps.models import get_instance_model, get_segmentation_model, get_seman
 from spineps.seg_run import process_dataset, process_img_nii
 from spineps.utils.citation_reminder import citation_reminder
 
-logger = No_Logger()
-logger.override_prefix = "Init"
+logger = No_Logger(prefix="Init")
 
 
 def parser_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("-der_name", "-dn", type=str, default="derivatives_seg", metavar="", help="Name of the derivatives folder")
     #
     parser.add_argument("-save_debug", "-sd", action="store_true", help="Saves a lot of debug data and intermediate results")
-    parser.add_argument("-save_unc_img", "-sui", action="store_true", help="Saves a uncertainty image from the subreg prediction")
+    # parser.add_argument("-save_unc_img", "-sui", action="store_true", help="Saves a uncertainty image from the subreg prediction")
     parser.add_argument(
         "-save_softmax_logits", "-ssl", action="store_true", help="Saves an .npz containing the softmax logit outputs of the semantic mask"
     )
@@ -200,7 +199,7 @@ def run_sample(opt: Namespace):
         "model_instance": model_instance,
         "derivative_name": opt.der_name,
         #
-        "save_uncertainty_image": opt.save_unc_img,
+        # "save_uncertainty_image": opt.save_unc_img,
         "save_softmax_logits": opt.save_softmax_logits,
         "save_debug_data": opt.save_debug,
         "save_modelres_mask": opt.save_modelres_mask,
@@ -269,7 +268,7 @@ def run_dataset(opt: Namespace):
         "rawdata_name": opt.raw_name,
         "derivative_name": opt.der_name,
         #
-        "save_uncertainty_image": opt.save_unc_img,
+        # "save_uncertainty_image": opt.save_unc_img,
         "save_modelres_mask": opt.save_modelres_mask,
         "save_softmax_logits": opt.save_softmax_logits,
         "save_debug_data": opt.save_debug,

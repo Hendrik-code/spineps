@@ -122,6 +122,9 @@ class ConfigurationManager(object):
 
     @property
     def conv_kernel_sizes(self) -> List[List[int]]:
+        for k in ["conv_kernel_sizes", "kernel_sizes"]:
+            if k in self.configuration:
+                return self.configuration[k]
         return self.configuration["conv_kernel_sizes"]
 
     @property
