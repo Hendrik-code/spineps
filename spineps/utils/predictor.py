@@ -167,7 +167,7 @@ class nnUNetPredictor(object):
 
         predicted_logits = self.predict_logits_from_preprocessed_data(dct["data"])
         predicted_logits.cpu()
-        # prediction_stacked.cpu()
+        prediction_stacked = None
 
         if self.verbose:
             print("resampling to original shape")
