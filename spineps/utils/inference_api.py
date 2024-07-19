@@ -129,12 +129,12 @@ def run_inference(
         # are returned x,y,z but spacing is returned z,y,x. Duh.
         "spacing": [zoom[2], zoom[1], zoom[0]],  # PIR
     }
-    segmentation, seg_stacked, softmax_logits = predictor.predict_single_npy_array(  # type:ignore
+    segmentation, softmax_logits = predictor.predict_single_npy_array(  # type:ignore # seg_stacked
         img,
         props,
         save_or_return_probabilities=True,
     )  # type:ignore
-    del seg_stacked
+    # del seg_stacked
     segmentation = np.swapaxes(segmentation, 0, 2)
     # segmentation[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size]
     # uncertainty
@@ -142,20 +142,21 @@ def run_inference(
     softmax_logits = np.swapaxes(softmax_logits, 0, 3)
     # PRI label
     softmax_logits = np.swapaxes(softmax_logits, 1, 2)
-    uncertainty_arr = np.max(softmax_logits, axis=-1)  # max of (average softmax from the different folds)
+    # uncertainty_arr = np.max(softmax_logits, axis=-1)  # max of (average softmax from the different folds)
     # uncertainty_arr = np.swapaxes(uncertainty_arr, 0, 2)
 
     assert isinstance(segmentation, np.ndarray)
     seg_nii = NII(nib.ni1.Nifti1Image(segmentation, affine=affine, header=header), seg=True)
 
-    uncertainty_nii = NII(
-        nib.ni1.Nifti1Image(uncertainty_arr, affine=affine, header=header),
-        seg=False,
-    )
+    # uncertainty_nii = NII(
+    #    nib.ni1.Nifti1Image(uncertainty_arr, affine=affine, header=header),
+    #    seg=False,
+    # )
 
     seg_nii.reorient_(orientation)
-    uncertainty_nii.reorient_(orientation)
+    # uncertainty_nii.reorient_(orientation)
 
-    if np.isnan(uncertainty_nii.min()):
-        return seg_nii, None, softmax_logits
-    return seg_nii, uncertainty_nii, softmax_logits
+    # if np.isnan(uncertainty_nii.min()):
+    #    return seg_nii, None, softmax_logits
+    # return seg_nii, uncertainty_nii, softmax_logits
+    return seg_nii, softmax_logits

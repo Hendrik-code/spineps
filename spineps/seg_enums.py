@@ -1,9 +1,18 @@
-from enum import Enum, auto
+from enum import Enum, EnumMeta, auto
 
 from typing_extensions import Self
 
 
-class Enum_Compare(Enum):
+class MetaEnum(EnumMeta):
+    def __contains__(cls, item):  # noqa: N805
+        try:
+            cls[item]
+        except ValueError:
+            return False
+        return True
+
+
+class Enum_Compare(Enum, metaclass=MetaEnum):
     def __eq__(self, __value: object) -> bool:
         if isinstance(__value, Enum):
             return self.name == __value.name and self.value == __value.value
@@ -40,6 +49,7 @@ class Modality(Enum_Compare):
     Vibe = auto()
     CT = auto()
     SEG = auto()
+    MPR = auto()
 
     @classmethod
     def format_keys(cls, modalities: Self | list[Self]) -> list[str]:
@@ -57,6 +67,8 @@ class Modality(Enum_Compare):
                 result += ["T2w", "dixon", "mr", "t2", "T2"]
             elif modality == Modality.Vibe:
                 result += ["t1dixon", "vibe"]
+            elif modality == Modality.MPR:
+                result += ["mpr", "MPR", "Mpr"]
             else:
                 raise NotImplementedError(modality)
         return result
@@ -78,6 +90,7 @@ class Acquisition(Enum_Compare):
     sag = auto()
     cor = auto()
     ax = auto()
+    iso = auto()
 
     @classmethod
     def format_keys(cls, acquisition: Self) -> list[str]:
@@ -87,6 +100,8 @@ class Acquisition(Enum_Compare):
             return ["coronal", "cor"]
         elif acquisition == Acquisition.sag:
             return ["sagittal", "sag"]
+        elif acquisition == Acquisition.iso:
+            return ["iso", "ISO"]
         else:
             raise NotImplementedError(acquisition)
 

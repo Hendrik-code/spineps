@@ -60,18 +60,20 @@ class Test_Semantic_Phase(unittest.TestCase):
     def test_phase_preprocess(self):
         mri, subreg, vert, label = get_test_mri()
         #
-        pad_size = 4
-        preprossed_input, errcode = preprocess_input(mri, debug_data={}, pad_size=pad_size)
-        print(mri.shape)
-        print(preprossed_input.shape)
-        self.assertTrue(
-            preprossed_input.assert_affine(
-                affine=mri.affine, origin=mri.origin, rotation=mri.rotation, orientation=mri.orientation, zoom=mri.zoom
-            )
-        )
-        self.assertEqual(errcode, ErrCode.OK)
-        for idx, s in enumerate(mri.shape):
-            self.assertEqual(s + (2 * pad_size), preprossed_input.shape[idx])
+        for pad_size in range(7):
+            origin_diff = max([d * float(pad_size) for d in mri.zoom]) + 1e-4
+            # print(origin_diff)
+            preprossed_input, errcode = preprocess_input(mri, debug_data={}, pad_size=pad_size, verbose=True)
+            print(mri)
+            print(preprossed_input)
+
+            # backchanged_origin = tuple(preprossed_input.origin[idx] + origin_diff[idx] for idx in range(3))
+            self.assertTrue(preprossed_input.assert_affine(origin=mri.origin, error_tolerance=origin_diff))
+            # affine=mri.affine,
+            self.assertTrue(preprossed_input.assert_affine(rotation=mri.rotation, orientation=mri.orientation, zoom=mri.zoom))
+            self.assertEqual(errcode, ErrCode.OK)
+            for idx, s in enumerate(mri.shape):
+                self.assertEqual(s + (2 * pad_size), preprossed_input.shape[idx])
 
     def test_segment_scan(self):
         mri, subreg, vert, label = get_test_mri()
@@ -79,7 +81,7 @@ class Test_Semantic_Phase(unittest.TestCase):
         model = Segmentation_Model_Dummy()
         model.run = MagicMock(return_value={OutputType.seg: subreg, OutputType.softmax_logits: None})
         debug_data = {}
-        seg_nii, unc_nii, softmax_logits, errcode = predict_semantic_mask(
+        seg_nii, softmax_logits, errcode = predict_semantic_mask(
             mri, model, debug_data=debug_data, verbose=True, proc_clean_small_cc_artifacts=False
         )
         predicted_volumes = seg_nii.volumes()

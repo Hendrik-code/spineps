@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch import from_numpy
-from TPTBox import NII, Image_Reference, Log_Type, Logger, No_Logger, Zooms, to_nii
+from TPTBox import NII, ZOOMS, Image_Reference, Log_Type, Logger, No_Logger, to_nii
 from typing_extensions import Self
 
 from spineps.seg_enums import Acquisition, InputType, Modality, ModelType, OutputType
@@ -74,14 +74,14 @@ class Segmentation_Model(ABC):
         """
         return self
 
-    def calc_recommended_resampling_zoom(self, input_zoom: Zooms) -> Zooms:
+    def calc_recommended_resampling_zoom(self, input_zoom: ZOOMS) -> ZOOMS:
         """Calculates the resolution a corresponding input should be resampled to for this model
 
         Args:
-            input_zoom (Zooms): _description_
+            input_zoom (ZOOMS): _description_
 
         Returns:
-            Zooms: _description_
+            ZOOMS: _description_
         """
         if len(self.inference_config.resolution_range) != 2:
             return self.inference_config.resolution_range
@@ -94,7 +94,7 @@ class Segmentation_Model(ABC):
         )
         return output_zoom
 
-    def same_modelzoom_as_model(self, model: Self, input_zoom: Zooms) -> bool:
+    def same_modelzoom_as_model(self, model: Self, input_zoom: ZOOMS) -> bool:
         self_zms = self.calc_recommended_resampling_zoom(input_zoom=input_zoom)
         model_zms = model.calc_recommended_resampling_zoom(input_zoom=self_zms)
         match: bool = bool(np.all([self_zms[i] - model_zms[i] < 1e-4 for i in range(3)]))
@@ -105,7 +105,7 @@ class Segmentation_Model(ABC):
         self,
         input_image: Image_Reference | dict[InputType, Image_Reference],
         pad_size: int = 0,
-        step_size: float | None = 0.5,
+        step_size: float | None = None,
         resample_to_recommended: bool = True,
         resample_output_to_input_space: bool = True,
         verbose: bool = False,
@@ -145,7 +145,7 @@ class Segmentation_Model(ABC):
         zms = None
         #
         input_niftys_in_order = []
-        zms_pir: Zooms = None  # type: ignore
+        zms_pir: ZOOMS = None  # type: ignore
         for id in self.inference_config.expected_inputs:  # noqa: A001
             # Make nifty
             nii = to_nii(inputdict[id], seg=id == InputType.seg)
@@ -177,9 +177,7 @@ class Segmentation_Model(ABC):
         if hasattr(self.predictor, "tile_step_size"):
             self.predictor.tile_step_size = step_size if step_size is not None else self.inference_config.default_step_size
 
-        self.print(
-            "input", input_niftys_in_order[0].zoom, input_niftys_in_order[0].orientation, input_niftys_in_order[0].shape, verbose=verbose
-        )
+        self.print("input", input_niftys_in_order[0], verbose=verbose)
         self.print("Run Segmentation")
         result = self.run(
             input_nii=input_niftys_in_order,
@@ -246,7 +244,7 @@ class Segmentation_Model(ABC):
             return name
         return self.inference_config.log_name
 
-    def dict_representation(self, input_zms: Zooms | None):
+    def dict_representation(self, input_zms: ZOOMS | None):
         info = {
             "name": self.modelid(),  # self.inference_config.__repr__()
             "model_path": str(self.model_folder),
@@ -303,13 +301,13 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
         self.print("Segmenting...")
-        seg_nii, unc_nii, softmax_logits = run_inference(
+        seg_nii, softmax_logits = run_inference(
             input_nii,
             self.predictor,
         )
         self.print("Segmentation done!")
         self.print("out_inf", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
-        return {OutputType.seg: seg_nii, OutputType.unc: unc_nii, OutputType.softmax_logits: softmax_logits}
+        return {OutputType.seg: seg_nii, OutputType.softmax_logits: softmax_logits}
 
 
 class Segmentation_Model_Unet3D(Segmentation_Model):

@@ -303,10 +303,6 @@ def get_corpus_coms(
                         plane_split_nii = get_plane_split(segvert, corpus_nii, spart, tpart, spart_dil, tpart_dil)
                         split_vert = split_by_plane(segvert, plane_split_nii)
                         corpus_cc[split_vert == 2] = corpus_cc.max() + 1
-
-                        seg_nii.set_array(corpus_cc).save(
-                            "/DATA/NAS/ongoing_projects/hendrik/mri_usage/nako_fixmerge_test/derivatives_seg/mincutmaxflow_array.nii.gz"
-                        )
                     except Exception as e:
                         logger.print(f"Separating Corpi failed with exception {e}")
 

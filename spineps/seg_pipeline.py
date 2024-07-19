@@ -3,7 +3,7 @@ import subprocess
 from typing import Any
 
 from scipy.ndimage import center_of_mass
-from TPTBox import NII, Location, No_Logger, Zooms, v_name2idx
+from TPTBox import NII, ZOOMS, Location, No_Logger, v_name2idx
 from TPTBox.core import poi
 from TPTBox.logger.log_file import format_time_short, get_time
 
@@ -38,7 +38,7 @@ def predict_centroids_from_both(
     seg_nii: NII,
     models: list[Segmentation_Model],
     parameter: dict[str, Any],
-    input_zms_pir: Zooms | None = None,
+    input_zms_pir: ZOOMS | None = None,
 ):
     """Calculates the centroids of each vertebra corpus by using both semantic and instance mask
 
@@ -46,7 +46,7 @@ def predict_centroids_from_both(
         vert_nii_cleaned (NII): _description_
         seg_nii (NII): _description_
         models (list[Segmentation_Model]): _description_
-        input_zms_pir (Zooms | None, optional): _description_. Defaults to None.
+        input_zms_pir (ZOOMS | None, optional): _description_. Defaults to None.
 
     Returns:
         _type_: _description_

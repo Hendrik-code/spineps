@@ -29,7 +29,7 @@ torchmetrics = "^1.1.2"
 tqdm = "^4.66.1"
 einops= "^0.6.1"
 nnunetv2 = "2.2"
-tptbox = "^0.1.2"
+tptbox = "^0.1.4"
 antspyx = "*"
 rich = "^13.6.0"
 

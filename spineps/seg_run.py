@@ -37,7 +37,7 @@ def process_dataset(
     modalities: list[Modality_Pair] | Modality_Pair = [(Modality.T2w, Acquisition.sag)],  # noqa: B006
     #
     save_debug_data: bool = False,
-    save_uncertainty_image: bool = False,
+    # save_uncertainty_image: bool = False,
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_log_data: bool = True,
@@ -84,7 +84,7 @@ def process_dataset(
         modalities (list[Modality_Pair] | Modality_Pair, optional): List of modalities you want to segment in the dataset. Defaults to [(Modality.T2w, Acquisition.sag)].
 
         save_debug_data (bool, optional): If true, saves debug data. Increases space usage! Defaults to False.
-        save_uncertainty_image (bool, optional): If true, saves a uncertainty image for the semantic segmentation. Defaults to False.
+        #save_uncertainty_image (bool, optional): If true, saves a uncertainty image for the semantic segmentation. Defaults to False.
         save_modelres_mask (bool, optional): If true, will additionally save the semantic mask in the resolution of the model. Defaults to False.
         save_softmax_logits (bool, optional): If true, additionally saves the softmax logits (averaged over folds) as an npz. Defaults to False.
         save_log_data (bool, optional): If true, will save the log to a file. Defaults to True.
@@ -180,13 +180,13 @@ def process_dataset(
                 q.filter("acq", lambda x: x in allowed_acq, required=False)  # noqa: B023
             scans = q.loop_list(sort=True)  # TODO make it family to allow for multi-inputs
             for s in scans:
-                errcode = process_img_nii(
+                output_paths, errcode = process_img_nii(
                     img_ref=s,
                     model_semantic=model,
                     model_instance=model_instance,
                     derivative_name=derivative_name,
                     #
-                    save_uncertainty_image=save_uncertainty_image,
+                    # save_uncertainty_image=save_uncertainty_image,
                     save_modelres_mask=save_modelres_mask,
                     save_softmax_logits=save_softmax_logits,
                     save_debug_data=save_debug_data,
@@ -226,7 +226,7 @@ def process_dataset(
                 elif errcode == ErrCode.ALL_DONE:
                     processed_alldone_counter += 1
                 else:
-                    not_properly_processed.append(str(s.file["nii.gz"]))
+                    not_properly_processed.append((errcode, str(s.file["nii.gz"])))
         if subject_scan_processed == 0:
             logger.print(f"Subject {s_idx+1}: {name} had no scans to be processed")
 
@@ -255,7 +255,7 @@ def process_img_nii(  # noqa: C901
     model_instance: Segmentation_Model,
     derivative_name: str = "derivatives_seg",
     #
-    save_uncertainty_image: bool = False,
+    # save_uncertainty_image: bool = False,
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_debug_data: bool = False,
@@ -302,7 +302,7 @@ def process_img_nii(  # noqa: C901
         modalities (list[Modality_Pair] | Modality_Pair, optional): List of modalities you want to segment in the dataset. Defaults to [(Modality.T2w, Acquisition.sag)].
 
         save_debug_data (bool, optional): If true, saves debug data. Increases space usage! Defaults to False.
-        save_uncertainty_image (bool, optional): If true, saves a uncertainty image for the semantic segmentation. Defaults to False.
+        #save_uncertainty_image (bool, optional): If true, saves a uncertainty image for the semantic segmentation. Defaults to False.
         save_modelres_mask (bool, optional): If true, will additionally save the semantic mask in the resolution of the model. Defaults to False.
         save_softmax_logits (bool, optional): If true, additionally saves the softmax logits (averaged over folds) as an npz. Defaults to False.
         save_log_data (bool, optional): If true, will save the log to a file. Defaults to True.
@@ -341,7 +341,6 @@ def process_img_nii(  # noqa: C901
     out_spine_raw = output_paths["out_spine_raw"]
     out_vert = output_paths["out_vert"]
     out_vert_raw = output_paths["out_vert_raw"]
-    out_unc = output_paths["out_unc"]
     out_logits = output_paths["out_logits"]
     out_snap = output_paths["out_snap"]
     out_ctd = output_paths["out_ctd"]
@@ -363,7 +362,7 @@ def process_img_nii(  # noqa: C901
         and not override_ctd
         and (snapshot_copy_folder is None or out_snap2.exists())
     ):
-        logger.print("Outputs are all already created and no override set, will skip")
+        logger.print(f"{out_spine.name}: Outputs are all already created and no override set, will skip")
         return output_paths, ErrCode.ALL_DONE
 
     out_raw.mkdir(parents=True, exist_ok=True)
@@ -391,9 +390,6 @@ def process_img_nii(  # noqa: C901
         )
         logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
 
-        # TODO what to do with this info?
-        # modelres_compatible: bool = model_semantic.same_modelzoom_as_model(model_instance, input_package.zms_pir)
-
         # First stage
         if not out_spine_raw.exists() or override_semantic:
             input_preprocessed, errcode = preprocess_input(
@@ -409,7 +405,7 @@ def process_img_nii(  # noqa: C901
                 return output_paths, errcode
             # make subreg mask
             assert input_preprocessed is not None
-            seg_nii_modelres, unc_nii, softmax_logits, errcode = predict_semantic_mask(
+            seg_nii_modelres, softmax_logits, errcode = predict_semantic_mask(
                 input_preprocessed,
                 model_semantic,
                 debug_data=debug_data_run,
@@ -434,12 +430,6 @@ def process_img_nii(  # noqa: C901
                 seg_nii_modelres = lambda_semantic(seg_nii_modelres)
 
             seg_nii_modelres.save(out_spine_raw, verbose=logger)
-            if save_uncertainty_image:
-                if unc_nii is None:
-                    logger.print("Uncertainty Map is None, something went wrong", Log_Type.STRANGE)
-                else:
-                    unc_nii = input_package.sample_to_this(unc_nii)
-                    unc_nii.save(out_unc, verbose=logger)
             if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
                 save_nparray(softmax_logits, out_logits)
             done_something = True
@@ -484,6 +474,8 @@ def process_img_nii(  # noqa: C901
             else:
                 seg_nii_back = seg_nii_modelres
 
+            seg_nii_back.assert_affine(other=input_nii)
+
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
                 seg_nii=seg_nii_back,
@@ -497,8 +489,9 @@ def process_img_nii(  # noqa: C901
             )
 
             seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
-            input_package.make_nii_from_this(seg_nii_clean)
-            input_package.make_nii_from_this(vert_nii_clean)
+            vert_nii_clean.assert_affine(other=input_nii)
+            # input_package.make_nii_from_this(seg_nii_clean)
+            # input_package.make_nii_from_this(vert_nii_clean)
 
             seg_nii_clean.save(out_spine, verbose=logger)
             vert_nii_clean.save(out_vert, verbose=logger)

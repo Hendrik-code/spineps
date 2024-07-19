@@ -19,9 +19,9 @@ def preprocess_input(
     verbose: bool = False,
 ) -> tuple[NII | None, ErrCode]:
     logger.print("Prepare input image", Log_Type.STAGE)
+    mri_nii = mri_nii.copy()
     with logger:
         # Crop Down
-        uncropped_input = np.zeros(mri_nii.shape)
         try:
             # Enforce to range [0, 1500]
             mri_nii.normalize_to_range_(min_value=0, max_value=9000, verbose=logger)
@@ -43,12 +43,13 @@ def preprocess_input(
         cropped_nii.normalize_to_range_(min_value=0, max_value=1500, verbose=logger)
 
         # Uncrop again
-        uncropped_input[crop] = cropped_nii.get_array()
-        logger.print(f"Uncrop back from {cropped_nii.shape} to {uncropped_input.shape}", verbose=verbose)
+        # uncropped_input[crop] = cropped_nii.get_array()
+        mri_nii[crop] = cropped_nii
+        logger.print(f"Uncrop back from {cropped_nii.shape} to {mri_nii.shape}", verbose=verbose)
 
         # Apply padding
-        padded_input = np.pad(uncropped_input, pad_width=pad_size, mode="edge")
-        logger.print(f"Padded from {uncropped_input.shape} to {padded_input.shape}", verbose=verbose)
+        padded_nii = mri_nii.pad_to(tuple(mri_nii.shape[i] + (2 * pad_size) for i in range(3)))
+        logger.print(f"Padded from {mri_nii.shape} to {padded_nii.shape}", verbose=verbose)
 
     # Return pre-processed
-    return mri_nii.set_array(padded_input), ErrCode.OK
+    return padded_nii, ErrCode.OK
