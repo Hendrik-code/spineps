@@ -139,11 +139,9 @@ class Segmentation_Model(ABC):
         # Check if all required inputs are there
         if not set(inputdict.keys()).issuperset(self.inference_config.expected_inputs):
             self.print(f"expected {self.inference_config.expected_inputs}, but only got {list(inputdict.keys())}")
-        #
         orig_shape = None
         orientation = None
         zms = None
-        #
         input_niftys_in_order = []
         zms_pir: ZOOMS = None  # type: ignore
         for id in self.inference_config.expected_inputs:  # noqa: A001
@@ -184,8 +182,6 @@ class Segmentation_Model(ABC):
             verbose=verbose,
         )
         assert OutputType.seg in result and isinstance(result[OutputType.seg], NII), "No seg output in segmentation result"
-        #
-        #
         for k, v in result.items():
             if isinstance(v, NII):  # and k != OutputType.seg_modelres:
                 if resample_output_to_input_space:

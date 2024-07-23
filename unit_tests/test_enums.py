@@ -16,6 +16,5 @@ class Test_Enums(unittest.TestCase):
         self.assertEqual(ErrCode.OK, ErrCode.OK)
         self.assertEqual(ErrCode.OK, "OK")
         self.assertEqual(ErrCode.OK.name, "OK")
-        #
         self.assertNotEqual(ErrCode.OK, ErrCode.ALL_DONE)
         self.assertNotEqual(ErrCode.UNKNOWN, "OK")

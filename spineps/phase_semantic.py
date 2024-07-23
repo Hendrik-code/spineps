@@ -189,6 +189,4 @@ def overlap_slice(slice1: slice, slice2: slice):
     if slice2s > slice1s and slice2s <= slice1e:
         return True
 
-    if slice2s < slice1s and slice2e >= slice1s:
-        return True
-    return False
+    return bool(slice2s < slice1s and slice2e >= slice1s)
