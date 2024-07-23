@@ -120,7 +120,6 @@ def clean_cc_artifacts(
                 # dilated mask nothing in original mask, just delete it
                 result_arr[mask_cc_l != 0] = 0
                 continue
-            #
             dilated_m = np_dilate_msk(mask_cc_l, mm=1)
             dilated_m[mask_cc_l != 0] = 0
             neighbor_voxel_count = np_count_nonzero(dilated_m)
@@ -202,7 +201,6 @@ def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger) -> N
         # Check if multiple CC exist
         inst_vert_cc = inst_vert.get_largest_k_segmentation_connected_components(3, return_original_labels=False)
         inst_vert_cc_n = int(inst_vert_cc.max())
-        #
         if inst_vert_cc_n == 1:
             continue
         #
