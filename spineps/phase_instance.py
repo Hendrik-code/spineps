@@ -66,14 +66,12 @@ def predict_instance_mask(
             arr = np.pad(arr, pad_size, mode="edge")
             seg_nii_rdy.set_array_(arr)
             # logger.print(seg_nii_rdy.shape)
-        #
 
         zms = seg_nii_rdy.zoom
         logger.print("zms", zms, verbose=verbose)
         expected_zms = model.calc_recommended_resampling_zoom(seg_nii_rdy.zoom)
         if not seg_nii_rdy.assert_affine(zoom=expected_zms, raise_error=False):
             seg_nii_rdy.rescale_(expected_zms, verbose=logger)  # in PIR
-        #
         seg_nii_uncropped = seg_nii_rdy.copy()
         logger.print(
             "Vertebra seg_nii_uncropped", seg_nii_uncropped.zoom, seg_nii_uncropped.orientation, seg_nii_uncropped.shape, verbose=verbose
@@ -81,7 +79,6 @@ def predict_instance_mask(
         debug_data["inst_uncropped_Subreg_nii_b_zms"] = seg_nii_uncropped.copy()
         uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape, dtype=seg_nii_uncropped.dtype)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
-        #
         crop = seg_nii_rdy.compute_crop(dist=5)
         # logger.print("Crop", crop, verbose=verbose)
         seg_nii_rdy.apply_crop_(crop)
@@ -383,7 +380,6 @@ def get_separating_components(
             break
         tpart_dil = np_dilate_msk(tpart_dil, mm=1, connectivity=connectivity)
         stpart = (spart_dil + (tpart_dil * 2)).astype(np.uint8)
-    #
     stpart = spart_dil + (tpart_dil * 2)
     return spart, tpart, spart_dil, tpart_dil, stpart
 
@@ -398,7 +394,6 @@ def get_plane_split(
 ):
     s_dilint = spart_dil.astype(np.uint8)
     t_dilint = tpart_dil.astype(np.uint8)
-    #
     collision_arr = s_dilint + t_dilint
     if 2 not in collision_arr:
         logger.print("S and T dilated do not touch each other error")
@@ -410,12 +405,10 @@ def get_plane_split(
     #
     normal_vector = np_center_of_mass(spart.astype(np.uint8))[1] - np_center_of_mass(tpart.astype(np.uint8))[1]
     normalized_normal = normal_vector / np.linalg.norm(normal_vector)
-    #
     axis = np.argmax(np.abs(normalized_normal))
     dims = [0, 1, 2]
     dims.remove(axis)
     dim1, dim2 = dims
-    #
     shift_total = -collision_point.dot(normal_vector)
     xx, yy = np.meshgrid(range(collision_arr.shape[dim1]), range(collision_arr.shape[dim2]))
     zz = (-normal_vector[dim1] * xx - normal_vector[dim2] * yy - shift_total) * 1.0 / normal_vector[axis]
@@ -618,7 +611,6 @@ def from_vert3_predictions_make_vert_mask(
     hierarchical_existing_predictions: list[str],  # list of actually used vert predictions
     vert_size_threshold: int,
     debug_data: dict,
-    #
     proc_inst_clean_small_cc_artifacts: bool = True,
     verbose: bool = False,
 ) -> tuple[NII, dict, ErrCode]:

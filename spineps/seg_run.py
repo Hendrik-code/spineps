@@ -35,19 +35,16 @@ def process_dataset(
     rawdata_name: str = "rawdata",
     derivative_name: str = "derivatives_seg",
     modalities: list[Modality_Pair] | Modality_Pair = [(Modality.T2w, Acquisition.sag)],  # noqa: B006
-    #
     save_debug_data: bool = False,
     # save_uncertainty_image: bool = False,
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_log_data: bool = True,
-    #
     override_semantic: bool = False,
     override_instance: bool = False,
     override_postpair: bool = False,
     override_ctd: bool = False,
     snapshot_copy_folder: Path | None | bool = None,
-    #
     pad_size: int = 4,
     # Processings
     # Semantic
@@ -66,7 +63,6 @@ def process_dataset(
     proc_assign_missing_cc: bool = True,
     proc_clean_inst_by_sem: bool = True,
     proc_vertebra_inconsistency: bool = True,
-    #
     ignore_model_compatibility: bool = False,
     ignore_inference_compatibility: bool = False,
     ignore_bids_filter: bool = False,
@@ -190,20 +186,16 @@ def process_dataset(
                     save_modelres_mask=save_modelres_mask,
                     save_softmax_logits=save_softmax_logits,
                     save_debug_data=save_debug_data,
-                    #
                     override_semantic=override_semantic,
                     override_instance=override_instance,
                     override_postpair=override_postpair,
                     override_ctd=override_ctd,
-                    #
                     proc_pad_size=pad_size,
-                    #
                     proc_sem_crop_input=proc_sem_crop_input,
                     proc_sem_n4_bias_correction=proc_sem_n4_bias_correction,
                     proc_fill_3d_holes=proc_fill_3d_holes,
                     proc_sem_remove_inferior_beyond_canal=proc_sem_remove_inferior_beyond_canal,
                     proc_sem_clean_beyond_largest_bounding_box=proc_sem_clean_beyond_largest_bounding_box,
-                    #
                     proc_sem_clean_small_cc_artifacts=proc_sem_clean_small_cc_artifacts,
                     proc_inst_detect_and_solve_merged_corpi=proc_inst_detect_and_solve_merged_corpi,
                     proc_inst_corpus_clean=proc_inst_corpus_clean,
@@ -212,7 +204,6 @@ def process_dataset(
                     proc_inst_largest_k_cc=proc_inst_largest_k_cc,
                     proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                     proc_vertebra_inconsistency=proc_vertebra_inconsistency,
-                    #
                     snapshot_copy_folder=snapshot_copy_folder,
                     ignore_bids_filter=ignore_bids_filter,
                     ignore_compatibility_issues=ignore_inference_compatibility,
@@ -259,12 +250,10 @@ def process_img_nii(  # noqa: C901
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_debug_data: bool = False,
-    #
     override_semantic: bool = False,
     override_instance: bool = False,
     override_postpair: bool = False,
     override_ctd: bool = False,
-    #
     proc_pad_size: int = 4,
     # Processings
     # Semantic
@@ -283,7 +272,6 @@ def process_img_nii(  # noqa: C901
     proc_assign_missing_cc: bool = True,
     proc_clean_inst_by_sem: bool = True,
     proc_vertebra_inconsistency: bool = True,
-    #
     lambda_semantic: Callable[[NII], NII] | None = None,
     snapshot_copy_folder: Path | None = None,
     ignore_bids_filter: bool = False,
@@ -457,7 +445,6 @@ def process_img_nii(  # noqa: C901
             assert whole_vert_nii is not None, "whole_vert_nii is None"
             whole_vert_nii = whole_vert_nii.copy()  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
             logger.print("vert_out", whole_vert_nii.zoom, whole_vert_nii.orientation, whole_vert_nii.shape, verbose=verbose)
-            #
             whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
         else:
@@ -572,26 +559,20 @@ def output_paths_from_input(
         non_strict_mode=non_strict_mode,
     )
     out_snap2 = snapshot_copy_folder.joinpath(out_snap.name) if snapshot_copy_folder is not None else out_snap
-    #
     out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
-    #
     out_raw = out_vert.parent.joinpath(f"output_raw_{input_format}")
-    #
     out_spine_raw = img_ref.get_changed_path(
         bids_format="msk", parent=derivative_name, info={"seg": "spine-raw", "mod": img_ref.format}, non_strict_mode=non_strict_mode
     )
     out_spine_raw = out_raw.joinpath(out_spine_raw.name)
-    #
     out_vert_raw = img_ref.get_changed_path(
         bids_format="msk", parent=derivative_name, info={"seg": "vert-raw", "mod": img_ref.format}, non_strict_mode=non_strict_mode
     )
     out_vert_raw = out_raw.joinpath(out_vert_raw.name)
-    #
     out_unc = img_ref.get_changed_path(
         bids_format="uncertainty", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}, non_strict_mode=non_strict_mode
     )
     out_unc = out_raw.joinpath(out_unc.name)
-    #
     out_logits = img_ref.get_changed_path(
         file_type="npz",
         bids_format="logit",

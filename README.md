@@ -143,6 +143,14 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 
 There are a lot more arguments, run `spineps sample -h` to see them.
 
+#### Example
+```bash
+#T2w sagittal
+spineps sample -ignore_bids_filter -ignore_inference_compatibility -i /path/sub-testsample_T2w.nii.gz -model_semantic t2w -model_instance instance
+#T1w sagittal
+spineps sample -ignore_bids_filter -ignore_inference_compatibility -i ~/path/sub-testsample_T1w.nii.gz -model_semantic t1w -model_instance instance
+```
+
 
 ### Dataset
 

@@ -16,7 +16,6 @@ logger = No_Logger(prefix="Init")
 
 def parser_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("-der_name", "-dn", type=str, default="derivatives_seg", metavar="", help="Name of the derivatives folder")
-    #
     parser.add_argument("-save_debug", "-sd", action="store_true", help="Saves a lot of debug data and intermediate results")
     # parser.add_argument("-save_unc_img", "-sui", action="store_true", help="Saves a uncertainty image from the subreg prediction")
     parser.add_argument(
@@ -28,7 +27,6 @@ def parser_arguments(parser: argparse.ArgumentParser):
         action="store_true",
         help="If true, will additionally save the semantic mask in the resolution used by the model",
     )
-    #
     parser.add_argument("-override_semantic", "-os", action="store_true", help="Will override existing seg-spine files")
     parser.add_argument(
         "-override_instance", "-oi", action="store_true", help="Will override existing seg-vert files (True if semantic mask changed)"
@@ -42,14 +40,12 @@ def parser_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-override_ctd", "-oc", action="store_true", help="Will override existing centroid files (True if the instance mask changed)"
     )
-    #
     parser.add_argument(
         "-ignore_inference_compatibility",
         "-iic",
         action="store_true",
         help="Does not skip input masks that do not match the models modalities",
     )
-    #
     parser.add_argument(
         "-nocrop",
         "-nc",
@@ -61,7 +57,6 @@ def parser_arguments(parser: argparse.ArgumentParser):
         action="store_true",
         help="Does not apply n4 bias field correction",
     )
-    #
     parser.add_argument("-cpu", action="store_true", help="Use CPU instead of GPU (will take way longer)")
     parser.add_argument("-run_cprofiler", "-rcp", action="store_true", help="Runs a cprofiler over the entire action")
     parser.add_argument("-verbose", "-v", action="store_true", help="Prints much more stuff, may fully clutter your terminal")
@@ -99,20 +94,18 @@ def entry_point():
         "-model_instance",
         "-mv",
         # type=str.lower,
-        default=None,
+        default="instance",
         # required=True,
         # choices=modelids_instance,
         metavar="",
         help=f"The model used for the vertebra instance segmentation. Choices are {modelids_instance} or a string absolute path the model folder",
     )
     parser_sample = parser_arguments(parser_sample)
-    #
 
     ###########################
     #
     model_subreg_choices = ["auto", *modelids_semantic]
     model_vert_choices = ["auto", *modelids_instance]
-    #
     parser_dataset.add_argument(
         "-directory", "-i", "-d", required=True, type=str, help="path to the input directory, preferably a BIDS dataset"
     )
@@ -160,7 +153,7 @@ def entry_point():
     #
     ###########################
     opt = main_parser.parse_args()
-
+    print(opt)
     # print(opt)
     if opt.cmd == "sample":
         run_sample(opt)
@@ -203,12 +196,10 @@ def run_sample(opt: Namespace):
         "save_softmax_logits": opt.save_softmax_logits,
         "save_debug_data": opt.save_debug,
         "save_modelres_mask": opt.save_modelres_mask,
-        #
         "override_semantic": opt.override_semantic,
         "override_instance": opt.override_instance,
         "override_postpair": opt.override_postpair,
         "override_ctd": opt.override_ctd,
-        #
         "proc_sem_crop_input": not opt.nocrop,
         "proc_sem_n4_bias_correction": not opt.non4,
         "ignore_compatibility_issues": opt.ignore_inference_compatibility,
@@ -273,16 +264,13 @@ def run_dataset(opt: Namespace):
         "save_softmax_logits": opt.save_softmax_logits,
         "save_debug_data": opt.save_debug,
         "save_log_data": opt.save_log,
-        #
         "override_semantic": opt.override_semantic,
         "override_instance": opt.override_instance,
         "override_postpair": opt.override_postpair,
         "override_ctd": opt.override_ctd,
-        #
         "ignore_model_compatibility": opt.ignore_model_compatibility,
         "ignore_inference_compatibility": opt.ignore_inference_compatibility,
         "ignore_bids_filter": opt.ignore_bids_filter,
-        #
         "proc_sem_crop_input": not opt.nocrop,
         "proc_sem_n4_bias_correction": not opt.non4,
         "snapshot_copy_folder": opt.save_snaps_folder,

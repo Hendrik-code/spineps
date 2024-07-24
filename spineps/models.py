@@ -3,13 +3,14 @@ from pathlib import Path
 
 from TPTBox import Log_Type, No_Logger
 
+from spineps.auto_download import download_if_missing, instances, semantic
 from spineps.seg_enums import Modality
 from spineps.seg_model import Segmentation_Model, modeltype2class
 from spineps.seg_modelconfig import load_inference_config
 from spineps.utils.filepaths import get_mri_segmentor_models_dir, search_path
 
 logger = No_Logger()
-logger.override_prefix = "Models"
+logger.prefix = "Models"
 
 
 def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
@@ -24,6 +25,7 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
     model_name = model_name.lower()
     _modelid2folder_subreg = modelid2folder_semantic()
     possible_keys = list(_modelid2folder_subreg.keys())
+
     if len(possible_keys) == 0:
         logger.print(
             "Found no available semantic models. Did you set one up by downloading modelweights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
@@ -33,7 +35,11 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
     if model_name not in possible_keys:
         logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
         raise KeyError(model_name)
-    return get_segmentation_model(_modelid2folder_subreg[model_name], **kwargs)
+    config_path = _modelid2folder_subreg[model_name]
+    if str(config_path).startswith("http"):
+        # Resolve HTTP
+        config_path = download_if_missing(model_name, config_path)
+    return get_segmentation_model(config_path, **kwargs)
 
 
 def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
@@ -57,14 +63,19 @@ def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
     if model_name not in possible_keys:
         logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
         raise KeyError(model_name)
-    return get_segmentation_model(_modelid2folder_vert[model_name], **kwargs)
+    config_path = _modelid2folder_vert[model_name]
+    if str(config_path).startswith("http"):
+        # Resolve HTTP
+        config_path = download_if_missing(model_name, config_path)
+
+    return get_segmentation_model(config_path, **kwargs)
 
 
-_modelid2folder_semantic: dict[str, Path] | None = None
-_modelid2folder_instance: dict[str, Path] | None = None
+_modelid2folder_semantic: dict[str, Path | str] | None = None
+_modelid2folder_instance: dict[str, Path | str] | None = None
 
 
-def modelid2folder_semantic() -> dict[str, Path]:
+def modelid2folder_semantic() -> dict[str, Path | str]:
     """Returns the dictionary mapping semantic model ids to their corresponding path
 
     Returns:
@@ -76,7 +87,7 @@ def modelid2folder_semantic() -> dict[str, Path]:
         return check_available_models(get_mri_segmentor_models_dir())[0]
 
 
-def modelid2folder_instance() -> dict[str, Path]:
+def modelid2folder_instance() -> dict[str, Path | str]:
     """Returns the dictionary mapping instance model ids to their corresponding path
 
     Returns:
@@ -88,7 +99,7 @@ def modelid2folder_instance() -> dict[str, Path]:
         return check_available_models(get_mri_segmentor_models_dir())[1]
 
 
-def check_available_models(models_folder: str | Path, verbose: bool = False) -> tuple[dict[str, Path], dict[str, Path]]:
+def check_available_models(models_folder: str | Path, verbose: bool = False) -> tuple[dict[str, Path | int], dict[str, Path | int]]:
     """Searches through the specified directories and finds models, sorting them into the dictionaries mapping to instance or semantic models
 
     Args:
@@ -105,8 +116,8 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
 
     config_paths = search_path(models_folder, query="**/inference_config.json", suppress=True)
     global _modelid2folder_semantic, _modelid2folder_instance  # noqa: PLW0603
-    _modelid2folder_semantic = {}  # id to model_folder
-    _modelid2folder_instance = {}  # id to model_folder
+    _modelid2folder_semantic = semantic  # id to model_folder
+    _modelid2folder_instance = instances  # id to model_folder
     for cp in config_paths:
         model_folder = cp.parent
         model_folder_name = model_folder.name.lower()
@@ -124,6 +135,7 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
             "Automatic search for models did not find anything. Did you set the environment variable correctly? Did you download model weights and put them into the specified folder? Ignore this if you specified your model using an absolute path.",
             Log_Type.FAIL,
         )
+
     return _modelid2folder_semantic, _modelid2folder_instance
 
 
@@ -139,6 +151,7 @@ def get_segmentation_model(in_config: str | Path, **kwargs) -> Segmentation_Mode
     # if isinstance(in_config, MODELS):
     #    in_dir = filepath_model(in_config.value, model_dir=None)
     # else:
+
     in_dir = in_config
 
     if os.path.isdir(str(in_dir)):  # noqa: PTH112

@@ -59,7 +59,6 @@ class Segmentation_Model_Dummy(Segmentation_Model):
 class Test_Semantic_Phase(unittest.TestCase):
     def test_phase_preprocess(self):
         mri, subreg, vert, label = get_test_mri()
-        #
         for pad_size in range(7):
             origin_diff = max([d * float(pad_size) for d in mri.zoom]) + 1e-4
             # print(origin_diff)
@@ -77,7 +76,6 @@ class Test_Semantic_Phase(unittest.TestCase):
 
     def test_segment_scan(self):
         mri, subreg, vert, label = get_test_mri()
-        #
         model = Segmentation_Model_Dummy()
         model.run = MagicMock(return_value={OutputType.seg: subreg, OutputType.softmax_logits: None})
         debug_data = {}

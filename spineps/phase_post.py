@@ -44,7 +44,6 @@ def phase_postprocess_combined(
             n_vert_bodies = len(vert_nii.unique())
         if debug_data is None:
             debug_data = {}
-            #
 
         if proc_clean_inst_by_sem:
             vert_nii.apply_mask(seg_nii, inplace=True)
@@ -84,8 +83,6 @@ def phase_postprocess_combined(
         #    whole_vert_nii_cleaned.map_labels_({i: i + 1 for i in vert_labels if i != 0}, verbose=verbose)
         logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
         vert_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
-        #
-        #
         vert_arr_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
         ###############
         # Uncrop
