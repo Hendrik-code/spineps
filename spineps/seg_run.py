@@ -17,13 +17,7 @@ from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger, predict_centroids_from_both
-from spineps.seg_utils import (
-    InputPackage,
-    Modality_Pair,
-    check_input_model_compatibility,
-    check_model_modality_acquisition,
-    find_best_matching_model,
-)
+from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition, find_best_matching_model
 from spineps.utils.citation_reminder import citation_reminder
 
 
@@ -372,17 +366,15 @@ def process_img_nii(  # noqa: C901
         if verbose:
             model_semantic.logger.default_verbose = True
         input_nii = img_ref.open_nii()
-        input_package = InputPackage(
-            input_nii,
-            pad_size=proc_pad_size,
-        )
+        input_nii.seg = False
+        input_nii_ = input_nii.copy()
         logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
 
         # First stage
         if not out_spine_raw.exists() or override_semantic:
             input_preprocessed, errcode = preprocess_input(
                 input_nii,
-                pad_size=input_package.pad_size,
+                pad_size=proc_pad_size,
                 debug_data=debug_data_run,
                 proc_crop_input=proc_sem_crop_input,
                 proc_do_n4_bias_correction=proc_sem_n4_bias_correction,
@@ -456,13 +448,12 @@ def process_img_nii(  # noqa: C901
             # back to input space
             #
             if not save_modelres_mask:
-                seg_nii_back = input_package.sample_to_this(seg_nii_modelres)
-                whole_vert_nii = input_package.sample_to_this(whole_vert_nii, intermediate_nii=seg_nii_modelres)
+                seg_nii_back = seg_nii_modelres.resample_from_to(input_nii_)
+                whole_vert_nii = whole_vert_nii.resample_from_to(input_nii_)
             else:
                 seg_nii_back = seg_nii_modelres
 
             seg_nii_back.assert_affine(other=input_nii)
-
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
                 seg_nii=seg_nii_back,
@@ -494,9 +485,8 @@ def process_img_nii(  # noqa: C901
                 seg_nii_clean,
                 models=[model_semantic, model_instance],
                 parameter={l: v for l, v in arguments.items() if "proc_" in l},
-                input_zms_pir=input_package.zms_pir,
             )
-            ctd.rescale(input_package._zms, verbose=logger).reorient(input_package._orientation).save(out_ctd, verbose=logger)
+            ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
             done_something = True
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
@@ -509,7 +499,7 @@ def process_img_nii(  # noqa: C901
             else:
                 out_debug.parent.mkdir(parents=True, exist_ok=True)
                 for k, v in debug_data_run.items():
-                    v.reorient_(input_package._orientation).save(
+                    v.reorient_(input_nii_.orientation).save(
                         out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False
                     )
                 logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)

@@ -85,7 +85,7 @@ def entry_point():
         "-ms",
         # type=str.lower,
         default=None,
-        # required=True,
+        required=True,
         # choices=modelids_semantic,
         metavar="",
         help=f"The model used for the semantic segmentation. Choices are {modelids_semantic} or a string absolute path the model folder",
