@@ -24,13 +24,17 @@ semantic and instance segmentation. arXiv preprint arXiv:2402.16368, 2024.
 
 Source of the T2w/T1w Segmentation:
 
-Robert Graf, Joachim Schmitt, Sarah Schlaeger, Hendrik Kristian Möller, Vasiliki Sideri-Lampretsa, Anjany Sekuboyina, Sandro Manuel Krieg, Benedikt Wiestler, Bjoern Menze, Daniel Rueckert, Jan Stefan Kirschke. Denoising diffusion-based MRI to CT image translation enables automated spinal segmentation. Eur Radiol Exp 7, 70 (2023). https://doi.org/10.1186/s41747-023-00385-2
+Robert Graf, Joachim Schmitt, Sarah Schlaeger, Hendrik Kristian Möller, Vasiliki 
+Sideri-Lampretsa, Anjany Sekuboyina, Sandro Manuel Krieg, Benedikt Wiestler, Bjoern 
+Menze, Daniel Rueckert, Jan Stefan Kirschke. Denoising diffusion-based MRI to CT image 
+translation enables automated spinal segmentation. Eur Radiol Exp 7, 70 (2023). 
+https://doi.org/10.1186/s41747-023-00385-2
 ```
 SPINEPS:
 
 ArXiv link: <a href="https://arxiv.org/abs/2402.16368">https://arxiv.org/abs/2402.16368</a>
 
-Source of the T2w/T1w Segmentation
+Source of the T2w/T1w Segmentation:
 
 Open Access link: <a href="https://doi.org/10.1186/s41747-023-00385-2">https://doi.org/10.1186/s41747-023-00385-2</a>
 
