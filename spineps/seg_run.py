@@ -244,6 +244,7 @@ def process_img_nii(  # noqa: C901
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_debug_data: bool = False,
+    save_raw: bool = True,
     override_semantic: bool = False,
     override_instance: bool = False,
     override_postpair: bool = False,
@@ -347,7 +348,6 @@ def process_img_nii(  # noqa: C901
         logger.print(f"{out_spine.name}: Outputs are all already created and no override set, will skip")
         return output_paths, ErrCode.ALL_DONE
 
-    out_raw.mkdir(parents=True, exist_ok=True)
     done_something = False
     debug_data_run: dict[str, NII] = {}
 
@@ -408,8 +408,8 @@ def process_img_nii(  # noqa: C901
             # Lambda Injection
             if lambda_semantic is not None:
                 seg_nii_modelres = lambda_semantic(seg_nii_modelres)
-
-            seg_nii_modelres.save(out_spine_raw, verbose=logger)
+            if save_raw:
+                seg_nii_modelres.save(out_spine_raw, verbose=logger)
             if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
                 save_nparray(softmax_logits, out_logits)
             done_something = True
@@ -437,7 +437,8 @@ def process_img_nii(  # noqa: C901
             assert whole_vert_nii is not None, "whole_vert_nii is None"
             whole_vert_nii = whole_vert_nii.copy()  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
             logger.print("vert_out", whole_vert_nii.zoom, whole_vert_nii.orientation, whole_vert_nii.shape, verbose=verbose)
-            whole_vert_nii.save(out_vert_raw, verbose=logger)
+            if save_raw:
+                whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
         else:
             logger.print("Vert Mask already exists. Set -override_vert to create it anew")
@@ -524,15 +525,23 @@ def process_img_nii(  # noqa: C901
 def output_paths_from_input(
     img_ref: BIDS_FILE,
     derivative_name: str,
-    snapshot_copy_folder: Path | None,
+    snapshot_copy_folder: Path | str | None,
     input_format: str,
     non_strict_mode: bool = False,
 ):
     out_spine = img_ref.get_changed_path(
-        bids_format="msk", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "spine", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_vert = img_ref.get_changed_path(
-        bids_format="msk", parent=derivative_name, info={"seg": "vert", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "vert", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_snap = img_ref.get_changed_path(
         bids_format="snp",
@@ -540,6 +549,7 @@ def output_paths_from_input(
         parent=derivative_name,
         info={"seg": "spine", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_ctd = img_ref.get_changed_path(
         bids_format="ctd",
@@ -547,20 +557,33 @@ def output_paths_from_input(
         parent=derivative_name,
         info={"seg": "spine", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
-    out_snap2 = snapshot_copy_folder.joinpath(out_snap.name) if snapshot_copy_folder is not None else out_snap
+    out_snap2 = Path(snapshot_copy_folder).joinpath(out_snap.name) if snapshot_copy_folder is not None else out_snap
     out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
     out_raw = out_vert.parent.joinpath(f"output_raw_{input_format}")
     out_spine_raw = img_ref.get_changed_path(
-        bids_format="msk", parent=derivative_name, info={"seg": "spine-raw", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "spine-raw", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_spine_raw = out_raw.joinpath(out_spine_raw.name)
     out_vert_raw = img_ref.get_changed_path(
-        bids_format="msk", parent=derivative_name, info={"seg": "vert-raw", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "vert-raw", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_vert_raw = out_raw.joinpath(out_vert_raw.name)
     out_unc = img_ref.get_changed_path(
-        bids_format="uncertainty", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="uncertainty",
+        parent=derivative_name,
+        info={"seg": "spine", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_unc = out_raw.joinpath(out_unc.name)
     out_logits = img_ref.get_changed_path(
@@ -569,6 +592,7 @@ def output_paths_from_input(
         parent=derivative_name,
         info={"seg": "spine", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_logits = out_raw.joinpath(out_logits.name)
     return {
