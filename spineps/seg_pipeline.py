@@ -38,7 +38,6 @@ def predict_centroids_from_both(
     seg_nii: NII,
     models: list[Segmentation_Model],
     parameter: dict[str, Any],
-    input_zms_pir: ZOOMS | None = None,
 ):
     """Calculates the centroids of each vertebra corpus by using both semantic and instance mask
 
@@ -65,7 +64,7 @@ def predict_centroids_from_both(
 
     models_repr = {}
     for idx, m in enumerate(models):
-        models_repr[idx] = m.dict_representation(input_zms_pir)
+        models_repr[idx] = m.dict_representation()
     ctd.info["source"] = "MRI Segmentation Pipeline"
     ctd.info["version"] = pipeline_version()
     ctd.info["models"] = models_repr

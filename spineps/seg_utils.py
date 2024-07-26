@@ -9,46 +9,6 @@ from spineps.seg_pipeline import logger
 Modality_Pair = tuple[list[Modality] | Modality, Acquisition]
 
 
-class InputPackage:
-    def __init__(self, mri_nii: NII, pad_size: int = 4) -> None:
-        self._zms = mri_nii.zoom
-        self._affine = mri_nii.affine
-        self._header = mri_nii.header
-        self._orientation = mri_nii.orientation
-        self._shape = mri_nii.shape
-        self.zms_pir = mri_nii.reorient().zoom
-        self.pad_size = pad_size
-
-    def sample_to_this(self, other_nii: NII, intermediate_nii: NII | None = None) -> NII:
-        other_nii = other_nii.copy()
-        other_nii.assert_affine(orientation=("P", "I", "R"))
-
-        if intermediate_nii is not None:
-            intermediate_nii.assert_affine(orientation=("P", "I", "R"))
-            other_nii.rescale_(voxel_spacing=intermediate_nii.zoom, verbose=logger).reorient_(intermediate_nii.orientation, verbose=logger)
-        other_nii.rescale_(voxel_spacing=self.zms_pir, verbose=logger).reorient_(self._orientation, verbose=logger)
-        # other_nii.reorient_(self._orientation, verbose=logger).rescale_(voxel_spacing=self._zms, verbose=logger)
-        if self.pad_size > 0:
-            other_nii = other_nii.pad_to(tuple(other_nii.shape[i] - (2 * self.pad_size) for i in range(3)))
-            # arr = other_nii.get_array()
-            # arr = arr[self.pad_size : -self.pad_size, self.pad_size : -self.pad_size, self.pad_size : -self.pad_size]
-            # other_nii.set_array_(arr)
-        other_nii.pad_to(self._shape, inplace=True)
-        assert_true = other_nii.assert_affine(
-            zoom=self._zms, orientation=self._orientation, shape=self._shape, raise_error=False, verbose=logger
-        )
-        assert assert_true, "sampled back to input did not meet affine criteria"
-        return other_nii
-
-    def make_nii_from_this(self, other_nii: NII) -> NII:
-        other_nii.assert_affine(shape=self._shape, orientation=self._orientation, zoom=self._zms)
-        other_nii.nii = nib.nifti1.Nifti1Image(other_nii.get_seg_array(), affine=self._affine, header=self._header)
-        return other_nii
-
-    def __str__(self) -> str:
-        return f"Input image, {self._zms}, {self._orientation}, {self._shape}"
-
-
 def find_best_matching_model(
     modality_pair: Modality_Pair,
     expected_resolution: ZOOMS | None,  # actual resolution here?

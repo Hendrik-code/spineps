@@ -130,11 +130,6 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
         except Exception as e:
             logger.print(f"Modelfolder '{model_folder_name}' ignored, caused by '{e}'", Log_Type.STRANGE, verbose=verbose)
             # raise e  #
-    if len(config_paths) == 0 or len(_modelid2folder_instance.keys()) == 0 or len(_modelid2folder_semantic.keys()) == 0:
-        logger.print(
-            "Automatic search for models did not find anything. Did you set the environment variable correctly? Did you download model weights and put them into the specified folder? Ignore this if you specified your model using an absolute path.",
-            Log_Type.FAIL,
-        )
 
     return _modelid2folder_semantic, _modelid2folder_instance
 

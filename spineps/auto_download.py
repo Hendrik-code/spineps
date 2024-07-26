@@ -15,6 +15,7 @@ instances: dict[str, Path | str] = {"instance": link + current_highest_version +
 semantic: dict[str, Path | str] = {
     "t2w": link + current_highest_version + "/t2w.zip",
     "t1w": link + current_highest_version + "/t1w.zip",
+    "vibe": link + current_highest_version + "/vibe.zip",
 }
 
 
@@ -22,6 +23,7 @@ download_names = {
     "instance": "instance_sagittal",
     "t2w": "T2w_semantic",
     "t1w": "T1w_semantic",
+    "vibe": "Vibe_semantic",
 }
 
 
