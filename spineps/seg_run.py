@@ -262,6 +262,7 @@ def process_img_nii(  # noqa: C901
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
+    vertebra_instance_labeling_offset=2,
     # Both
     proc_fill_3d_holes: bool = True,
     proc_assign_missing_cc: bool = True,
@@ -460,7 +461,7 @@ def process_img_nii(  # noqa: C901
                 seg_nii=seg_nii_back,
                 vert_nii=whole_vert_nii,
                 debug_data=debug_data_run,
-                labeling_offset=1,
+                labeling_offset=vertebra_instance_labeling_offset - 1,
                 proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                 proc_assign_missing_cc=proc_assign_missing_cc,
                 proc_vertebra_inconsistency=proc_vertebra_inconsistency,
