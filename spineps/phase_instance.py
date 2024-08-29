@@ -175,7 +175,7 @@ def get_corpus_coms(
     seg_nii.assert_affine(orientation=["P", "I", "R"])
     #
     # Extract Corpus region and try to find all coms naively (some skips shouldnt matter)
-    corpus_nii = seg_nii.extract_label(Location.Vertebra_Corpus_border.value)
+    corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
     corpus_nii.erode_msk_(mm=2, connectivity=2, verbose=False)
     if 1 in corpus_nii.unique() and corpus_size_cleaning > 0:
         corpus_nii.set_array_(
@@ -192,7 +192,7 @@ def get_corpus_coms(
         )
 
     if 1 not in corpus_nii.unique():
-        logger.print("No 1 in corpus nifty, cannot make vertebra mask", Log_Type.FAIL)
+        logger.print(f"No corpus found after get_corpus_coms post process, cannot make vertebra mask. {corpus_nii.unique()}", Log_Type.FAIL)
         return None
 
     if not process_detect_and_solve_merged_corpi:
@@ -256,19 +256,15 @@ def get_corpus_coms(
                 stats_by_height.pop(vl)
                 stats_by_height = dict(sorted(stats_by_height.items(), key=lambda x: x[1][0]))
                 stats_by_height_keys = list(stats_by_height.keys())
-                print(stats_by_height_keys)
                 continue
 
             logger.print("Merged corpi, try to fix it", verbose=verbose)
             neighbor_verts = {
                 stats_by_height_keys[idx + i]: stats_by_height[stats_by_height_keys[idx + i]]
                 for i in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
-                if (idx + i) in stats_by_height_keys and stats_by_height_keys[idx + i] < 99
+                if (idx + i) < len(stats_by_height_keys) and (idx + i) >= 0 and stats_by_height_keys[idx + i] < 99
             }
-            #    stats_by_height_keys[idx + i]
-            #    for i in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
-            #    if (idx + i) in stats_by_height_keys and stats_by_height_keys[idx + i] < 99
-            # ]  # (+-3)
+
             logger.print("neighbor_vert_labels", neighbor_verts, verbose=verbose)
             if len(neighbor_verts) == 0:
                 logger.print("Got no neighbor vert labels to fix", Log_Type.FAIL)
@@ -505,6 +501,7 @@ def collect_vertebra_predictions(
             47: 7,
             48: 8,
             49: 9,
+            50: 9,
             Location.Spinal_Cord.value: 0,
             Location.Spinal_Canal.value: 0,
             Location.Vertebra_Disc.value: 0,
