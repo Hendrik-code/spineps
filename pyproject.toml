@@ -16,6 +16,8 @@ exclude = ["models", "examples"]
 [tool.poetry.scripts]
 spineps = 'spineps.entrypoint:entry_point'
 
+spineps_ = 'spineps.entrypoint:entrypoint_no_checks'
+
 [tool.poetry.dependencies]
 python = "^3.10 || ^3.11"
 connected-components-3d = "^3.12.3"
@@ -30,7 +32,7 @@ tqdm = "^4.66.1"
 einops= "^0.6.1"
 nnunetv2 = "2.4.2"
 tptbox = "^0.1.4"
-antspyx = "*"
+antspyx = "0.4.2"
 rich = "^13.6.0"
 
 

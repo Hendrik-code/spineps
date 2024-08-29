@@ -4,7 +4,7 @@ from typing_extensions import Self
 
 
 class MetaEnum(EnumMeta):
-    def __contains__(cls, item):  # noqa: N805
+    def __contains__(cls, item):
         try:
             cls[item]
         except ValueError:
