@@ -255,6 +255,7 @@ def process_img_nii(  # noqa: C901
     override_postpair: bool = False,
     override_ctd: bool = False,
     proc_pad_size: int = 4,
+    proc_normalize_input: bool = True,
     # Processings
     # Semantic
     proc_sem_crop_input: bool = True,
@@ -385,6 +386,7 @@ def process_img_nii(  # noqa: C901
                 pad_size=input_package.pad_size,
                 debug_data=debug_data_run,
                 proc_crop_input=proc_sem_crop_input,
+                proc_normalize_input=proc_normalize_input,
                 proc_do_n4_bias_correction=proc_sem_n4_bias_correction,
                 verbose=verbose,
             )
