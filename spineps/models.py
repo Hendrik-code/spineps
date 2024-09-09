@@ -38,7 +38,7 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
     config_path = _modelid2folder_subreg[model_name]
     if str(config_path).startswith("http"):
         # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path)
+        config_path = download_if_missing(model_name, config_path, is_instance=False)
     return get_segmentation_model(config_path, **kwargs)
 
 
@@ -66,7 +66,7 @@ def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
     config_path = _modelid2folder_vert[model_name]
     if str(config_path).startswith("http"):
         # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path)
+        config_path = download_if_missing(model_name, config_path, is_instance=True)
 
     return get_segmentation_model(config_path, **kwargs)
 
