@@ -49,7 +49,10 @@ def load_inf_model(
     elif ddevice == "cuda":
         # multithreading in torch doesn't help nnU-Net if run on GPU
         torch.set_num_threads(1) if init_threads else None
-        torch.set_num_interop_threads(1) if init_threads else None
+        try:
+            torch.set_num_interop_threads(1) if init_threads else None
+        except RuntimeError:
+            pass
         device = torch.device("cuda")
     else:
         device = torch.device("mps")

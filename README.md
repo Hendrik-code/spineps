@@ -13,15 +13,30 @@ This is a segmentation pipeline to automatically, and robustly, segment the whol
 If you are using SPINEPS, please cite the following:
 
 ```
+SPINEPS:
+
 Hendrik Möller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Matan Atad, Anjany
 Sekuboyina, Felix Streckenbach, Hanna Schon, Florian Kofler, Thomas Kroencke, Ste-
 fanie Bette, Stefan Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Ende-
 mann, Bjoern Menze, Daniel Rueckert, and Jan S. Kirschke. Spineps – automatic whole
 spine segmentation of t2-weighted mr images using a two-phase approach to multi-class
 semantic and instance segmentation. arXiv preprint arXiv:2402.16368, 2024.
+
+Source of the T2w/T1w Segmentation:
+
+Robert Graf, Joachim Schmitt, Sarah Schlaeger, Hendrik Kristian Möller, Vasiliki 
+Sideri-Lampretsa, Anjany Sekuboyina, Sandro Manuel Krieg, Benedikt Wiestler, Bjoern 
+Menze, Daniel Rueckert, Jan Stefan Kirschke. Denoising diffusion-based MRI to CT image 
+translation enables automated spinal segmentation. Eur Radiol Exp 7, 70 (2023). 
+https://doi.org/10.1186/s41747-023-00385-2
 ```
+SPINEPS:
 
 ArXiv link: <a href="https://arxiv.org/abs/2402.16368">https://arxiv.org/abs/2402.16368</a>
+
+Source of the T2w/T1w Segmentation:
+
+Open Access link: <a href="https://doi.org/10.1186/s41747-023-00385-2">https://doi.org/10.1186/s41747-023-00385-2</a>
 
 BibTeX citation:
 ```
@@ -33,6 +48,17 @@ BibTeX citation:
     eprint={2402.16368},
     archivePrefix={arXiv},
     primaryClass={eess.IV},
+}
+
+@article{graf2023denoising,
+  title={Denoising diffusion-based MRI to CT image translation enables automated spinal segmentation},
+  author={Graf, Robert and Schmitt, Joachim and Schlaeger, Sarah and M{\"o}ller, Hendrik Kristian and Sideri-Lampretsa, Vasiliki and Sekuboyina, Anjany and Krieg, Sandro Manuel and Wiestler, Benedikt and Menze, Bjoern and Rueckert, Daniel and others},
+  journal={European Radiology Experimental},
+  volume={7},
+  number={1},
+  pages={70},
+  year={2023},
+  publisher={Springer}
 }
 ```
 

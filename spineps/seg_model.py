@@ -241,7 +241,7 @@ class Segmentation_Model(ABC):
             return name
         return self.inference_config.log_name
 
-    def dict_representation(self, input_zms: ZOOMS | None):
+    def dict_representation(self):
         info = {
             "name": self.modelid(),  # self.inference_config.__repr__()
             "model_path": str(self.model_folder),
@@ -249,9 +249,9 @@ class Segmentation_Model(ABC):
             "aquisition": str(self.acquisition()),
             "resolution_range": str(self.inference_config.resolution_range),
         }
-        if input_zms is not None:
-            proc_zms = self.calc_recommended_resampling_zoom(input_zms)
-            info["resolution_processed"] = str(proc_zms)
+        # if input_zms is not None:
+        #    proc_zms = self.calc_recommended_resampling_zoom(input_zms)
+        #    info["resolution_processed"] = str(proc_zms)
         return info
 
     def __str__(self):
