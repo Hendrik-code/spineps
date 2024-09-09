@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F  # noqa: N812
 from torch import from_numpy
 from TPTBox import NII, ZOOMS, Image_Reference, Log_Type, Logger, No_Logger, to_nii
 from typing_extensions import Self
@@ -340,11 +341,31 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         input_nii = input_nii[0]
 
         arr = input_nii.get_seg_array().astype(np.int16)
-        target = from_numpy(arr).to(torch.float32)
-        target /= 9
-        target = target.unsqueeze(0)
-        target = target.unsqueeze(0)
-        logits = self.predictor.forward(target.to(self.device))
+        target = from_numpy(arr)
+
+        target[target == 26] = 0
+
+        do_backup = False
+        # channel-wise
+        try:
+            targetc = target.to(torch.int64)
+            targetc = F.one_hot(targetc, num_classes=10)
+            targetc = targetc.permute(3, 0, 1, 2)
+            targetc = targetc.unsqueeze(0)
+            targetc = targetc.to(torch.float32)
+            logits = self.predictor.forward(targetc.to(self.device))
+        #
+        except Exception:
+            # print("Channel-wise model failed, try legacy version")
+            do_backup = True
+        #
+        if do_backup:
+            target = target.to(torch.float32)
+            target /= 9
+            target = target.unsqueeze(0)
+            target = target.unsqueeze(0)
+            logits = self.predictor.forward(target.to(self.device))
+        #
         pred_x = self.predictor.softmax(logits)
         _, pred_cls = torch.max(pred_x, 1)
         del logits
