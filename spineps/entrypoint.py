@@ -85,7 +85,7 @@ def entry_point():
         "-ms",
         # type=str.lower,
         default=None,
-        # required=True,
+        required=True,
         # choices=modelids_semantic,
         metavar="",
         help=f"The model used for the semantic segmentation. Choices are {modelids_semantic} or a string absolute path the model folder",
@@ -165,7 +165,7 @@ def entry_point():
 
 @citation_reminder
 def run_sample(opt: Namespace):
-    input_path = Path(opt.input)
+    input_path = Path(opt.input).absolute()
     dataset = str(input_path.parent)
     assert os.path.exists(dataset), f"-input parent does not exist, got {dataset}"  # noqa: PTH110
     assert dataset not in ("", "."), f"-input you only gave a filename, not a direction to the file, got {input_path}"

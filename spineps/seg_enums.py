@@ -4,7 +4,7 @@ from typing_extensions import Self
 
 
 class MetaEnum(EnumMeta):
-    def __contains__(cls, item):  # noqa: N805
+    def __contains__(cls, item):
         try:
             cls[item]
         except ValueError:
@@ -63,11 +63,11 @@ class Modality(Enum_Compare):
             elif modality == Modality.SEG:
                 result += ["msk", "seg"]
             elif modality == Modality.T1w:
-                result += ["T1w", "t1", "T1"]
+                result += ["T1w", "t1", "T1", "T1c"]
             elif modality == Modality.T2w:
-                result += ["T2w", "dixon", "mr", "t2", "T2"]
+                result += ["T2w", "dixon", "mr", "t2", "T2", "T2c"]
             elif modality == Modality.Vibe:
-                result += ["t1dixon", "vibe"]
+                result += ["t1dixon", "vibe", "mevibe", "GRE"]
             elif modality == Modality.MPR:
                 result += ["mpr", "MPR", "Mpr"]
             else:

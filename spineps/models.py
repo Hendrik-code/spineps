@@ -3,11 +3,11 @@ from pathlib import Path
 
 from TPTBox import Log_Type, No_Logger
 
-from spineps.auto_download import download_if_missing, instances, semantic
 from spineps.seg_enums import Modality
 from spineps.seg_model import Segmentation_Model, modeltype2class
-from spineps.seg_modelconfig import load_inference_config
+from spineps.utils.auto_download import download_if_missing, instances, semantic
 from spineps.utils.filepaths import get_mri_segmentor_models_dir, search_path
+from spineps.utils.seg_modelconfig import load_inference_config
 
 logger = No_Logger()
 logger.prefix = "Models"
@@ -38,7 +38,7 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
     config_path = _modelid2folder_subreg[model_name]
     if str(config_path).startswith("http"):
         # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path)
+        config_path = download_if_missing(model_name, config_path, is_instance=False)
     return get_segmentation_model(config_path, **kwargs)
 
 
@@ -66,7 +66,7 @@ def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
     config_path = _modelid2folder_vert[model_name]
     if str(config_path).startswith("http"):
         # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path)
+        config_path = download_if_missing(model_name, config_path, is_instance=True)
 
     return get_segmentation_model(config_path, **kwargs)
 
@@ -130,11 +130,6 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
         except Exception as e:
             logger.print(f"Modelfolder '{model_folder_name}' ignored, caused by '{e}'", Log_Type.STRANGE, verbose=verbose)
             # raise e  #
-    if len(config_paths) == 0 or len(_modelid2folder_instance.keys()) == 0 or len(_modelid2folder_semantic.keys()) == 0:
-        logger.print(
-            "Automatic search for models did not find anything. Did you set the environment variable correctly? Did you download model weights and put them into the specified folder? Ignore this if you specified your model using an absolute path.",
-            Log_Type.FAIL,
-        )
 
     return _modelid2folder_semantic, _modelid2folder_instance
 

@@ -17,13 +17,7 @@ from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger, predict_centroids_from_both
-from spineps.seg_utils import (
-    InputPackage,
-    Modality_Pair,
-    check_input_model_compatibility,
-    check_model_modality_acquisition,
-    find_best_matching_model,
-)
+from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition, find_best_matching_model
 from spineps.utils.citation_reminder import citation_reminder
 
 
@@ -250,6 +244,7 @@ def process_img_nii(  # noqa: C901
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_debug_data: bool = False,
+    save_raw: bool = True,
     override_semantic: bool = False,
     override_instance: bool = False,
     override_postpair: bool = False,
@@ -268,6 +263,7 @@ def process_img_nii(  # noqa: C901
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
+    vertebra_instance_labeling_offset=2,
     # Both
     proc_fill_3d_holes: bool = True,
     proc_assign_missing_cc: bool = True,
@@ -354,7 +350,6 @@ def process_img_nii(  # noqa: C901
         logger.print(f"{out_spine.name}: Outputs are all already created and no override set, will skip")
         return output_paths, ErrCode.ALL_DONE
 
-    out_raw.mkdir(parents=True, exist_ok=True)
     done_something = False
     debug_data_run: dict[str, NII] = {}
 
@@ -373,17 +368,15 @@ def process_img_nii(  # noqa: C901
         if verbose:
             model_semantic.logger.default_verbose = True
         input_nii = img_ref.open_nii()
-        input_package = InputPackage(
-            input_nii,
-            pad_size=proc_pad_size,
-        )
+        input_nii.seg = False
+        input_nii_ = input_nii.copy()
         logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
 
         # First stage
         if not out_spine_raw.exists() or override_semantic:
             input_preprocessed, errcode = preprocess_input(
                 input_nii,
-                pad_size=input_package.pad_size,
+                pad_size=proc_pad_size,
                 debug_data=debug_data_run,
                 proc_crop_input=proc_sem_crop_input,
                 proc_normalize_input=proc_normalize_input,
@@ -418,8 +411,8 @@ def process_img_nii(  # noqa: C901
             # Lambda Injection
             if lambda_semantic is not None:
                 seg_nii_modelres = lambda_semantic(seg_nii_modelres)
-
-            seg_nii_modelres.save(out_spine_raw, verbose=logger)
+            if save_raw:
+                seg_nii_modelres.save(out_spine_raw, verbose=logger)
             if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
                 save_nparray(softmax_logits, out_logits)
             done_something = True
@@ -447,7 +440,8 @@ def process_img_nii(  # noqa: C901
             assert whole_vert_nii is not None, "whole_vert_nii is None"
             whole_vert_nii = whole_vert_nii.copy()  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
             logger.print("vert_out", whole_vert_nii.zoom, whole_vert_nii.orientation, whole_vert_nii.shape, verbose=verbose)
-            whole_vert_nii.save(out_vert_raw, verbose=logger)
+            if save_raw:
+                whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
         else:
             logger.print("Vert Mask already exists. Set -override_vert to create it anew")
@@ -458,19 +452,18 @@ def process_img_nii(  # noqa: C901
             # back to input space
             #
             if not save_modelres_mask:
-                seg_nii_back = input_package.sample_to_this(seg_nii_modelres)
-                whole_vert_nii = input_package.sample_to_this(whole_vert_nii, intermediate_nii=seg_nii_modelres)
+                seg_nii_back = seg_nii_modelres.resample_from_to(input_nii_)
+                whole_vert_nii = whole_vert_nii.resample_from_to(input_nii_)
             else:
                 seg_nii_back = seg_nii_modelres
 
             seg_nii_back.assert_affine(other=input_nii)
-
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
                 seg_nii=seg_nii_back,
                 vert_nii=whole_vert_nii,
                 debug_data=debug_data_run,
-                labeling_offset=1,
+                labeling_offset=vertebra_instance_labeling_offset - 1,
                 proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                 proc_assign_missing_cc=proc_assign_missing_cc,
                 proc_vertebra_inconsistency=proc_vertebra_inconsistency,
@@ -496,9 +489,8 @@ def process_img_nii(  # noqa: C901
                 seg_nii_clean,
                 models=[model_semantic, model_instance],
                 parameter={l: v for l, v in arguments.items() if "proc_" in l},
-                input_zms_pir=input_package.zms_pir,
             )
-            ctd.rescale(input_package._zms, verbose=logger).reorient(input_package._orientation).save(out_ctd, verbose=logger)
+            ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
             done_something = True
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
@@ -511,7 +503,7 @@ def process_img_nii(  # noqa: C901
             else:
                 out_debug.parent.mkdir(parents=True, exist_ok=True)
                 for k, v in debug_data_run.items():
-                    v.reorient_(input_package._orientation).save(
+                    v.reorient_(input_nii_.orientation).save(
                         out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False
                     )
                 logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
@@ -536,15 +528,23 @@ def process_img_nii(  # noqa: C901
 def output_paths_from_input(
     img_ref: BIDS_FILE,
     derivative_name: str,
-    snapshot_copy_folder: Path | None,
+    snapshot_copy_folder: Path | str | None,
     input_format: str,
     non_strict_mode: bool = False,
 ):
     out_spine = img_ref.get_changed_path(
-        bids_format="msk", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "spine", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_vert = img_ref.get_changed_path(
-        bids_format="msk", parent=derivative_name, info={"seg": "vert", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "vert", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_snap = img_ref.get_changed_path(
         bids_format="snp",
@@ -552,6 +552,7 @@ def output_paths_from_input(
         parent=derivative_name,
         info={"seg": "spine", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_ctd = img_ref.get_changed_path(
         bids_format="ctd",
@@ -559,20 +560,33 @@ def output_paths_from_input(
         parent=derivative_name,
         info={"seg": "spine", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
-    out_snap2 = snapshot_copy_folder.joinpath(out_snap.name) if snapshot_copy_folder is not None else out_snap
+    out_snap2 = Path(snapshot_copy_folder).joinpath(out_snap.name) if snapshot_copy_folder is not None else out_snap
     out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
     out_raw = out_vert.parent.joinpath(f"output_raw_{input_format}")
     out_spine_raw = img_ref.get_changed_path(
-        bids_format="msk", parent=derivative_name, info={"seg": "spine-raw", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "spine-raw", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_spine_raw = out_raw.joinpath(out_spine_raw.name)
     out_vert_raw = img_ref.get_changed_path(
-        bids_format="msk", parent=derivative_name, info={"seg": "vert-raw", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "vert-raw", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_vert_raw = out_raw.joinpath(out_vert_raw.name)
     out_unc = img_ref.get_changed_path(
-        bids_format="uncertainty", parent=derivative_name, info={"seg": "spine", "mod": img_ref.format}, non_strict_mode=non_strict_mode
+        bids_format="uncertainty",
+        parent=derivative_name,
+        info={"seg": "spine", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_unc = out_raw.joinpath(out_unc.name)
     out_logits = img_ref.get_changed_path(
@@ -581,6 +595,7 @@ def output_paths_from_input(
         parent=derivative_name,
         info={"seg": "spine", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
+        make_parent=False,
     )
     out_logits = out_raw.joinpath(out_logits.name)
     return {

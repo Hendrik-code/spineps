@@ -9,6 +9,7 @@ spineps_environment_path_override = None  # Path(
 #    "/DATA/NAS/ongoing_projects/hendrik/mri_usage/models/"
 # )  # None  # You can put an absolute path to the model weights here instead of using environment variable
 spineps_environment_path_backup = Path(__file__).parent.parent.joinpath("models")  # EDIT this to use this instead of environment variable
+spineps_environment_path_backup.mkdir(exist_ok=True)
 
 
 def get_mri_segmentor_models_dir() -> Path:

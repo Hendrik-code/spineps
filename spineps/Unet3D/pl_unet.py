@@ -16,7 +16,7 @@ class PLNet(pl.LightningModule):
         nclass = Unet3D
 
         dim_mults = (1, 2, 4, 8)
-        dim = 8
+        dim = 16  # 16
 
         # if opt.high_res:
         #    dim = 16
@@ -26,6 +26,7 @@ class PLNet(pl.LightningModule):
             dim=dim,
             dim_mults=dim_mults,
             out_dim=4,
+            channels=10,  # 10,
         )
 
         self.opt = opt

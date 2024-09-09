@@ -10,11 +10,13 @@ from spineps.utils.filepaths import get_mri_segmentor_models_dir
 
 link = "https://github.com/Hendrik-code/spineps/releases/download/"
 current_highest_version = "v1.0.9"
+current_instance_highest_version = "v1.2.0"
 
-instances: dict[str, Path | str] = {"instance": link + current_highest_version + "/instance.zip"}
+instances: dict[str, Path | str] = {"instance": link + current_instance_highest_version + "/instance.zip"}
 semantic: dict[str, Path | str] = {
     "t2w": link + current_highest_version + "/t2w.zip",
     "t1w": link + current_highest_version + "/t1w.zip",
+    "vibe": link + current_highest_version + "/vibe.zip",
 }
 
 
@@ -22,11 +24,13 @@ download_names = {
     "instance": "instance_sagittal",
     "t2w": "T2w_semantic",
     "t1w": "T1w_semantic",
+    "vibe": "Vibe_semantic",
 }
 
 
-def download_if_missing(key, url):
-    out_path = Path(get_mri_segmentor_models_dir(), download_names[key] + "_" + current_highest_version)
+def download_if_missing(key, url, is_instance: bool):
+    version = current_highest_version if not is_instance else current_instance_highest_version
+    out_path = Path(get_mri_segmentor_models_dir(), download_names[key] + "_" + version)
     if not out_path.exists():
         download_weights(url, out_path)
 
