@@ -3,11 +3,11 @@ from pathlib import Path
 
 from TPTBox import Log_Type, No_Logger
 
-from spineps.auto_download import download_if_missing, instances, semantic
 from spineps.seg_enums import Modality
 from spineps.seg_model import Segmentation_Model, modeltype2class
-from spineps.seg_modelconfig import load_inference_config
+from spineps.utils.auto_download import download_if_missing, instances, semantic
 from spineps.utils.filepaths import get_mri_segmentor_models_dir, search_path
+from spineps.utils.seg_modelconfig import load_inference_config
 
 logger = No_Logger()
 logger.prefix = "Models"
