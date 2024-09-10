@@ -353,6 +353,9 @@ def process_img_nii(  # noqa: C901
     done_something = False
     debug_data_run: dict[str, NII] = {}
 
+    if Modality.CT in model_semantic.modalities():
+        proc_normalize_input = False  # Never normalize input if it is an CT
+
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     if not compatible:
         if not ignore_compatibility_issues:
