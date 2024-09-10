@@ -50,6 +50,7 @@ class Modality(Enum_Compare):
     CT = auto()
     SEG = auto()
     MPR = auto()
+    PD = auto()
 
     @classmethod
     def format_keys(cls, modalities: Self | list[Self]) -> list[str]:

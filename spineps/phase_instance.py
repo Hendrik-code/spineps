@@ -212,6 +212,7 @@ def get_corpus_coms(
 
     # Check against ivd order
     seg_sem = seg_nii.map_labels({Location.Endplate.value: Location.Vertebra_Disc.value}, verbose=False)
+    has_ivd: bool = Location.Vertebra_Disc.value in seg_sem.unique()
     subreg_cc, subreg_cc_n = seg_sem.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
     subreg_cc = subreg_cc[Location.Vertebra_Disc.value]
     subreg_cc[subreg_cc > 0] += 100
@@ -242,7 +243,7 @@ def get_corpus_coms(
             continue
 
         nkey = stats_by_height_keys[nidx]
-        if nkey in stats_by_height and stats_by_height[nkey][1] == is_ivd:
+        if nkey in stats_by_height and stats_by_height[nkey][1] == is_ivd and has_ivd:
             neighbor = stats_by_height[nkey]
             neighborheight = neighbor[0]
             logger.print(

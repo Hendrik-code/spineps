@@ -14,6 +14,7 @@ def preprocess_input(
     mri_nii: NII,
     debug_data: dict,  # noqa: ARG001
     pad_size: int = 4,
+    proc_normalize_input: bool = True,
     proc_do_n4_bias_correction: bool = True,
     proc_crop_input: bool = True,
     verbose: bool = False,
@@ -24,8 +25,15 @@ def preprocess_input(
         # Crop Down
         try:
             # Enforce to range [0, 1500]
-            mri_nii.normalize_to_range_(min_value=0, max_value=9000, verbose=logger)
-            crop = mri_nii.compute_crop(dist=0) if proc_crop_input else (slice(None, None), slice(None, None), slice(None, None))
+            if proc_normalize_input:
+                mri_nii.normalize_to_range_(min_value=0, max_value=9000, verbose=logger)
+                crop = mri_nii.compute_crop(dist=0) if proc_crop_input else (slice(None, None), slice(None, None), slice(None, None))
+            else:
+                crop = (
+                    mri_nii.compute_crop(minimum=mri_nii.min(), dist=0)
+                    if proc_crop_input
+                    else (slice(None, None), slice(None, None), slice(None, None))
+                )
         except ValueError:
             logger.print("Image Nifty is empty, skip this", Log_Type.FAIL)
             return None, ErrCode.EMPTY
@@ -40,7 +48,8 @@ def preprocess_input(
             logger.print(f"N4 Bias field correction done in {perf_counter() - n4_start} sec", verbose=True)
 
         # Enforce to range [0, 1500]
-        cropped_nii.normalize_to_range_(min_value=0, max_value=1500, verbose=logger)
+        if proc_normalize_input:
+            cropped_nii.normalize_to_range_(min_value=0, max_value=1500, verbose=logger)
 
         # Uncrop again
         # uncropped_input[crop] = cropped_nii.get_array()
