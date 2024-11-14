@@ -24,10 +24,10 @@ semantic and instance segmentation. arXiv preprint arXiv:2402.16368, 2024.
 
 Source of the T2w/T1w Segmentation:
 
-Robert Graf, Joachim Schmitt, Sarah Schlaeger, Hendrik Kristian Möller, Vasiliki 
-Sideri-Lampretsa, Anjany Sekuboyina, Sandro Manuel Krieg, Benedikt Wiestler, Bjoern 
-Menze, Daniel Rueckert, Jan Stefan Kirschke. Denoising diffusion-based MRI to CT image 
-translation enables automated spinal segmentation. Eur Radiol Exp 7, 70 (2023). 
+Robert Graf, Joachim Schmitt, Sarah Schlaeger, Hendrik Kristian Möller, Vasiliki
+Sideri-Lampretsa, Anjany Sekuboyina, Sandro Manuel Krieg, Benedikt Wiestler, Bjoern
+Menze, Daniel Rueckert, Jan Stefan Kirschke. Denoising diffusion-based MRI to CT image
+translation enables automated spinal segmentation. Eur Radiol Exp 7, 70 (2023).
 https://doi.org/10.1186/s41747-023-00385-2
 ```
 SPINEPS:
@@ -92,9 +92,10 @@ This should throw no errors and return True
 
 You have to install the package to use it, even if you just want to locally use the code.
 1. `cd` into the `spineps` folder and install it by running `pip install -e .` or using the `pyproject.toml` inside of the project folder.
-2. Download the model weights from https://syncandshare.lrz.de/getlink/fi16bYYmqpwPQZRGd1M4G6/
+2. If you want to use manual modelweights, download them from the corresponding release page.
 3. Extract the downloaded modelweights folders into a folder of your choice (the "spineps/spineps/models" folders will be used as default), from now on referred to as your models folder.
 This specified folder should have the following structure:
+4. You don't need this, SPINEPS will automatically download the newest weights for you.
 ```
 <models_folder>
 ├── <model_name 1>
