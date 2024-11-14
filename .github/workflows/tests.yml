@@ -45,7 +45,7 @@ jobs:
         pytest
         - name: Test with pytest and create coverage report
         run: |
-          python -m poetry run coverage run --source=spineps -m pytest
+          python -m poetry run coverage run --source=SPINEPS -m pytest
           python -m poetry run coverage xml
     - name: Upload coverage results to Codecov (Only on merge to main)
       # Only upload to Codecov after a merge to the main branch
