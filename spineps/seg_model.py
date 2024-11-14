@@ -355,8 +355,8 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
             targetc = targetc.to(torch.float32)
             logits = self.predictor.forward(targetc.to(self.device))
         #
-        except Exception:
-            # print("Channel-wise model failed, try legacy version")
+        except Exception as e:
+            print(f"Channel-wise model failed with {e}, try legacy version")
             do_backup = True
         #
         if do_backup:

@@ -151,6 +151,7 @@ ignore = [
     "N999","E741",
     "SIM118", # dictionay keys
     "N802", # function name lowercase
+    "PLR2044", # empty comment symbol
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
