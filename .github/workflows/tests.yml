@@ -12,7 +12,7 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, windows-latest]
     strategy:
       fail-fast: false
       matrix:
@@ -21,14 +21,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
+    - name: Configure python
       run: |
         python -m pip install --upgrade pip
+        python -m pip install poetry
         python -m pip install flake8 pytest
-        pip install -e .
+    - name: Install dependancies
+      run: |
+        python -m poetry install
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -38,3 +41,13 @@ jobs:
     - name: Test with pytest
       run: |
         pytest
+        - name: Test with pytest and create coverage report
+        run: |
+          python -m poetry run coverage run --source=TPTBox -m pytest
+          python -m poetry run coverage xml
+    - name: Upload coverage results to Codecov (Only on merge to main)
+      # Only upload to Codecov after a merge to the main branch
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}

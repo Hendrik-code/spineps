@@ -1,6 +1,10 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2402.16368.svg)](https://arxiv.org/pdf/2402.16368.pdf)
+[![Python Versions](https://img.shields.io/pypi/pyversions/spineps)](https://pypi.org/project/spineps/)
 [![PyPI version spineps](https://badge.fury.io/py/spineps.svg)](https://pypi.python.org/pypi/spineps/)
+[![Stable Version](https://img.shields.io/pypi/v/spineps?label=stable)](https://pypi.python.org/pypi/spineps/)
+[![codecov](https://codecov.io/gh/Hendrik-code/spineps/graph/badge.svg?token=A7FWUKO9Y4)](https://codecov.io/gh/Hendrik-code/spineps)
 [![tests](https://github.com/BrainLesion/panoptica/actions/workflows/tests.yml/badge.svg)](https://github.com/BrainLesion/panoptica/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 # SPINEPS – Automatic Whole Spine Segmentation of T2w MR images using a Two-Phase Approach to Multi-class Semantic and Instance Segmentation.
 
