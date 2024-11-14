@@ -39,6 +39,7 @@ rich = "^13.6.0"
 [tool.poetry.dev-dependencies]
 pytest = "^7.4.4"
 pre-commit = "*"
+tptbox = "^0.2.1"
 
 
 [tool.poetry-dynamic-versioning]
