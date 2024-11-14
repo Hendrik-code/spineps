@@ -168,7 +168,7 @@ def run_sample(opt: Namespace):
     input_path = Path(opt.input).absolute()
     dataset = str(input_path.parent)
     assert os.path.exists(dataset), f"-input parent does not exist, got {dataset}"  # noqa: PTH110
-    assert dataset not in ("", "."), f"-input you only gave a filename, not a direction to the file, got {input_path}"
+    assert dataset != "", f"-input you only gave a filename, not a direction to the file, got {input_path}"
     input_path = str(input_path)
     if not input_path.endswith(".nii.gz"):
         input_path += ".nii.gz"
