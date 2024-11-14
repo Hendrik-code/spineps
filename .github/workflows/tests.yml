@@ -25,6 +25,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: "pip"
     - name: Configure python
       run: |
         python -m pip install --upgrade pip
@@ -44,7 +45,7 @@ jobs:
         pytest
         - name: Test with pytest and create coverage report
         run: |
-          python -m poetry run coverage run --source=TPTBox -m pytest
+          python -m poetry run coverage run --source=spineps -m pytest
           python -m poetry run coverage xml
     - name: Upload coverage results to Codecov (Only on merge to main)
       # Only upload to Codecov after a merge to the main branch
