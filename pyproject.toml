@@ -31,7 +31,7 @@ torchmetrics = "^1.1.2"
 tqdm = "^4.66.1"
 einops= "^0.6.1"
 nnunetv2 = "2.4.2"
-tptbox = "^0.2.1"
+TPTBox = "^0.2.1"
 antspyx = "0.4.2"
 rich = "^13.6.0"
 
@@ -39,7 +39,6 @@ rich = "^13.6.0"
 [tool.poetry.dev-dependencies]
 pytest = "^7.4.4"
 pre-commit = "*"
-tptbox = "^0.2.1"
 
 
 [tool.poetry-dynamic-versioning]
