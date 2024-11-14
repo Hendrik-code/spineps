@@ -55,7 +55,7 @@ class Segmentation_Model(ABC):
             self.inference_config = inference_config
 
         self.default_verbose = default_verbose
-        self.logger.override_prefix = self.inference_config.log_name
+        self.logger.prefix = self.inference_config.log_name
         self.logger.default_verbose = self.default_verbose
         self.model_folder = str(model_folder)
         self.default_allow_tqdm = default_allow_tqdm

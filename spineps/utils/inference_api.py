@@ -9,8 +9,7 @@ from TPTBox.core import sitk_utils
 
 from spineps.utils.predictor import nnUNetPredictor
 
-logger = No_Logger()
-logger.override_prefix = "API"
+logger = No_Logger(prefix="API")
 
 
 # Adapted from https://github.com/MIC-DKFZ/nnUNet

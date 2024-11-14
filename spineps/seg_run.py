@@ -133,8 +133,7 @@ def process_dataset(
     # Activate logger
     args = locals()
     if save_log_data:
-        logger = Logger(dataset_path, log_filename="segmentation_pipeline", default_verbose=True, log_arguments=args)
-        logger.override_prefix = "SegPipeline"
+        logger = Logger(dataset_path, log_filename="segmentation_pipeline", default_verbose=True, log_arguments=args, prefix="SegPipeline")
     logger.print(f"Processing dataset in {dataset_path}", Log_Type.BOLD)
 
     # RUN
