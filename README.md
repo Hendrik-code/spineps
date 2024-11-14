@@ -19,7 +19,12 @@ If you are using SPINEPS, please cite the following:
 ```
 SPINEPS:
 
-Hendrik Möller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Hanna Schön, Matan Atad, Anjany Sekuboyina, Felix Streckenbach, Florian Kofler, Thomas Kroencke, Stefanie Bette, Stefan N. Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Endemann, Bjoern Menze, Daniel Rueckert, Jan S. Kirschke. SPINEPS—automatic whole spine segmentation of T2-weighted MR images using a two-phase approach to multi-class semantic and instance segmentation. Eur Radiol (2024). https://doi.org/10.1007/s00330-024-11155-y
+Hendrik Möller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Hanna Schön, Matan Atad,
+Anjany Sekuboyina, Felix Streckenbach, Florian Kofler, Thomas Kroencke, Stefanie Bette,
+Stefan N. Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Endemann, Bjoern Menze,
+Daniel Rueckert, Jan S. Kirschke. SPINEPS—automatic whole spine segmentation of
+T2-weighted MR images using a two-phase approach to multi-class semantic and instance segmentation.
+Eur Radiol (2024). https://doi.org/10.1007/s00330-024-11155-y
 
 Source of the T2w/T1w Segmentation:
 
