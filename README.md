@@ -1,4 +1,4 @@
-[![arXiv](https://img.shields.io/badge/Paper-2402.16368-blue)](https://arxiv.org/pdf/2402.16368.pdf)
+[![arXiv](https://img.shields.io/badge/Paper-10.1007-blue)](https://link.springer.com/article/10.1007/s00330-024-11155-y)
 [![Python Versions](https://img.shields.io/pypi/pyversions/spineps)](https://pypi.org/project/spineps/)
 [![PyPI version spineps](https://badge.fury.io/py/spineps.svg)](https://pypi.python.org/pypi/spineps/)
 [![Stable Version](https://img.shields.io/pypi/v/spineps?label=stable)](https://pypi.python.org/pypi/spineps/)
@@ -19,12 +19,7 @@ If you are using SPINEPS, please cite the following:
 ```
 SPINEPS:
 
-Hendrik Möller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Matan Atad, Anjany
-Sekuboyina, Felix Streckenbach, Hanna Schon, Florian Kofler, Thomas Kroencke, Ste-
-fanie Bette, Stefan Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Ende-
-mann, Bjoern Menze, Daniel Rueckert, and Jan S. Kirschke. Spineps – automatic whole
-spine segmentation of t2-weighted mr images using a two-phase approach to multi-class
-semantic and instance segmentation. arXiv preprint arXiv:2402.16368, 2024.
+Hendrik Möller, Robert Graf, Joachim Schmitt, Benjamin Keinert, Hanna Schön, Matan Atad, Anjany Sekuboyina, Felix Streckenbach, Florian Kofler, Thomas Kroencke, Stefanie Bette, Stefan N. Willich, Thomas Keil, Thoralf Niendorf, Tobias Pischon, Beate Endemann, Bjoern Menze, Daniel Rueckert, Jan S. Kirschke. SPINEPS—automatic whole spine segmentation of T2-weighted MR images using a two-phase approach to multi-class semantic and instance segmentation. Eur Radiol (2024). https://doi.org/10.1007/s00330-024-11155-y
 
 Source of the T2w/T1w Segmentation:
 
@@ -36,7 +31,7 @@ https://doi.org/10.1186/s41747-023-00385-2
 ```
 SPINEPS:
 
-ArXiv link: <a href="https://arxiv.org/abs/2402.16368">https://arxiv.org/abs/2402.16368</a>
+Paper link: <a href="https://link.springer.com/article/10.1007/s00330-024-11155-y#citeas">https://link.springer.com/article/10.1007/s00330-024-11155-y#citeas</a>
 
 Source of the T2w/T1w Segmentation:
 
@@ -44,15 +39,21 @@ Open Access link: <a href="https://doi.org/10.1186/s41747-023-00385-2">https://d
 
 BibTeX citation:
 ```
-@article{moeller2024,
-      title={SPINEPS -- Automatic Whole Spine Segmentation of T2-weighted MR images using a Two-Phase Approach to Multi-class Semantic and Instance Segmentation},
-      author={Hendrik Möller and Robert Graf and Joachim Schmitt and Benjamin Keinert and Matan Atad and Anjany Sekuboyina and Felix Streckenbach and Hanna Schön and Florian Kofler and Thomas Kroencke and Stefanie Bette and Stefan Willich and Thomas Keil and Thoralf Niendorf and Tobias Pischon and Beate Endemann and Bjoern Menze and Daniel Rueckert and Jan S. Kirschke},
-    journal={arXiv preprint arXiv:2402.16368},
-    year={2024},
-    eprint={2402.16368},
-    archivePrefix={arXiv},
-    primaryClass={eess.IV},
+@article{moller_spinepsautomatic_2024,
+	title = {{SPINEPS}—automatic whole spine segmentation of T2-weighted {MR} images using a two-phase approach to multi-class semantic and instance segmentation},
+	issn = {1432-1084},
+	url = {https://doi.org/10.1007/s00330-024-11155-y},
+	doi = {10.1007/s00330-024-11155-y},
+	abstract = {Introducing {SPINEPS}, a deep learning method for semantic and instance segmentation of 14 spinal structures (ten vertebra substructures, intervertebral discs, spinal cord, spinal canal, and sacrum) in whole-body sagittal T2-weighted turbo spin echo images.},
+	journaltitle = {European Radiology},
+	shortjournal = {Eur Radiol},
+	author = {Möller, Hendrik and Graf, Robert and Schmitt, Joachim and Keinert, Benjamin and Schön, Hanna and Atad, Matan and Sekuboyina, Anjany and Streckenbach, Felix and Kofler, Florian and Kroencke, Thomas and Bette, Stefanie and Willich, Stefan N. and Keil, Thomas and Niendorf, Thoralf and Pischon, Tobias and Endemann, Beate and Menze, Bjoern and Rueckert, Daniel and Kirschke, Jan S.},
+	urldate = {2024-11-14},
+	date = {2024-10-29},
+	langid = {english},
+	keywords = {Deep learning, Intervertebral disc, Magnetic resonance imaging, Spine, Vertebral body},
 }
+
 
 @article{graf2023denoising,
   title={Denoising diffusion-based MRI to CT image translation enables automated spinal segmentation},
