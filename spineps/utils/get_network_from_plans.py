@@ -14,6 +14,7 @@ def get_network_from_plans(
     dataset_json: dict,
     configuration_manager: ConfigurationManager,
     num_input_channels: int,
+    num_output_channels: int,
     deep_supervision: bool = True,
 ):
     """
@@ -22,6 +23,14 @@ def get_network_from_plans(
     num_input_channels can differ depending on whether we do cascade. Its best to make this info available in the
     trainer rather than inferring it again from the plans here.
     """
+    if "architecture" in configuration_manager.configuration:
+        from nnunetv2.utilities.get_network_from_plans import get_network_from_plans as plans
+
+        class_name = configuration_manager.configuration["architecture"]["network_class_name"]
+        kwargs = configuration_manager.configuration["architecture"]["arch_kwargs"]
+        _kw_requires_import = configuration_manager.configuration["architecture"]["_kw_requires_import"]
+
+        return plans(class_name, kwargs, _kw_requires_import, num_input_channels, num_output_channels, deep_supervision=deep_supervision)
     num_stages = len(configuration_manager.conv_kernel_sizes)
 
     dim = len(configuration_manager.conv_kernel_sizes[0])

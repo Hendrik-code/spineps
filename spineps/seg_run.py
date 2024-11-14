@@ -250,6 +250,7 @@ def process_img_nii(  # noqa: C901
     override_postpair: bool = False,
     override_ctd: bool = False,
     proc_pad_size: int = 4,
+    proc_normalize_input: bool = True,
     # Processings
     # Semantic
     proc_sem_crop_input: bool = True,
@@ -352,6 +353,9 @@ def process_img_nii(  # noqa: C901
     done_something = False
     debug_data_run: dict[str, NII] = {}
 
+    if Modality.CT in model_semantic.modalities():
+        proc_normalize_input = False  # Never normalize input if it is an CT
+
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     if not compatible:
         if not ignore_compatibility_issues:
@@ -378,6 +382,7 @@ def process_img_nii(  # noqa: C901
                 pad_size=proc_pad_size,
                 debug_data=debug_data_run,
                 proc_crop_input=proc_sem_crop_input,
+                proc_normalize_input=proc_normalize_input,
                 proc_do_n4_bias_correction=proc_sem_n4_bias_correction,
                 verbose=verbose,
             )

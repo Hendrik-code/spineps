@@ -4,7 +4,7 @@ from typing_extensions import Self
 
 
 class MetaEnum(EnumMeta):
-    def __contains__(cls, item):  # noqa: N805
+    def __contains__(cls, item):
         try:
             cls[item]
         except ValueError:
@@ -50,6 +50,7 @@ class Modality(Enum_Compare):
     CT = auto()
     SEG = auto()
     MPR = auto()
+    PD = auto()
 
     @classmethod
     def format_keys(cls, modalities: Self | list[Self]) -> list[str]:

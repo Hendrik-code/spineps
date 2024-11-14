@@ -33,7 +33,7 @@ class Segmentation_Model_Dummy(Segmentation_Model):
             acquisition="sag",
             log_name="DummySegModel",
             modeltype="unet",
-            model_expected_orientation=["P", "I", "R"],
+            model_expected_orientation=("P", "I", "R"),
             available_folds=1,
             inference_augmentation=False,
             resolution_range=[0.75, 0.75, 1.65],
@@ -65,10 +65,7 @@ class Test_Semantic_Phase(unittest.TestCase):
             preprossed_input, errcode = preprocess_input(mri, debug_data={}, pad_size=pad_size, verbose=True)
             print(mri)
             print(preprossed_input)
-
-            # backchanged_origin = tuple(preprossed_input.origin[idx] + origin_diff[idx] for idx in range(3))
-            self.assertTrue(preprossed_input.assert_affine(origin=mri.origin, error_tolerance=origin_diff))
-            # affine=mri.affine,
+            self.assertTrue(preprossed_input.assert_affine(origin=mri.origin, origin_tolerance=origin_diff))
             self.assertTrue(preprossed_input.assert_affine(rotation=mri.rotation, orientation=mri.orientation, zoom=mri.zoom))
             self.assertEqual(errcode, ErrCode.OK)
             for idx, s in enumerate(mri.shape):

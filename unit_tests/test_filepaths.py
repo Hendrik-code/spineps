@@ -41,7 +41,7 @@ class Test_filepaths(unittest.TestCase):
         print(package_path)
         predictor_search = search_path(package_path, query="seg_*.py")
         print(predictor_search)
-        self.assertTrue(len(predictor_search) == 6)
+        self.assertTrue(len(predictor_search) == 5, predictor_search)
         # self.assertEqual(predictor_search[0], package_path.joinpath("utils", "predictor.py"))
 
     def test_env_path(self):
