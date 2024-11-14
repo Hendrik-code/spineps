@@ -176,7 +176,7 @@ def get_corpus_coms(
     #
     # Extract Corpus region and try to find all coms naively (some skips shouldnt matter)
     corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
-    corpus_nii.erode_msk_(mm=2, connectivity=2, verbose=False)
+    corpus_nii.erode_msk_(2, connectivity=2, verbose=False)
     if 1 in corpus_nii.unique() and corpus_size_cleaning > 0:
         corpus_nii.set_array_(
             clean_cc_artifacts(
