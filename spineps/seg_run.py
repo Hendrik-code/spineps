@@ -11,6 +11,7 @@ from TPTBox.core.np_utils import np_count_nonzero
 from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 
 from spineps.phase_instance import predict_instance_mask
+from spineps.phase_labeling import perform_labeling_step
 from spineps.phase_post import phase_postprocess_combined
 from spineps.phase_pre import preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
@@ -476,6 +477,8 @@ def process_img_nii(  # noqa: C901
             vert_nii_clean.assert_affine(other=input_nii)
             # input_package.make_nii_from_this(seg_nii_clean)
             # input_package.make_nii_from_this(vert_nii_clean)
+
+            vert_nii_clean = perform_labeling_step(input_nii, vert_nii_clean)
 
             seg_nii_clean.save(out_spine, verbose=logger)
             vert_nii_clean.save(out_vert, verbose=logger)

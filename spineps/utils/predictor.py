@@ -99,6 +99,8 @@ class nnUNetPredictor(object):
         # restore network
         num_input_channels = determine_num_input_channels(plans_manager, configuration_manager, dataset_json)
         num_output_channels = len(dataset_json["labels"])
+        if "ignore" in dataset_json["labels"]:
+            num_output_channels -= 1
         # num_input_channels = 1
         network = get_network_from_plans(
             plans_manager,

@@ -10,7 +10,7 @@ import time  # noqa: E402
 import numpy as np  # noqa: E402
 from TPTBox import BIDS_FILE, NII, POI, BIDS_Global_info, No_Logger  # noqa: E402
 
-from spineps.models import get_instance_model, get_semantic_model  # noqa: E402
+from spineps.get_models import get_instance_model, get_semantic_model  # noqa: E402
 from spineps.seg_run import ErrCode, process_img_nii  # noqa: E402
 
 # INPUT

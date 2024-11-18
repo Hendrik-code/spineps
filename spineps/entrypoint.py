@@ -7,13 +7,20 @@ from time import perf_counter
 
 from TPTBox import BIDS_FILE, Log_Type, No_Logger
 
-from spineps.models import get_instance_model, get_segmentation_model, get_semantic_model, modelid2folder_instance, modelid2folder_semantic
+from spineps.get_models import (
+    get_instance_model,
+    get_segmentation_model,
+    get_semantic_model,
+    modelid2folder_instance,
+    modelid2folder_semantic,
+)
 from spineps.seg_run import process_dataset, process_img_nii
 from spineps.utils.citation_reminder import citation_reminder
 
 logger = No_Logger(prefix="Init")
 
 
+# TODO replace with Class_to_ArgParse and then load only from config files!
 def parser_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("-der_name", "-dn", type=str, default="derivatives_seg", metavar="", help="Name of the derivatives folder")
     parser.add_argument("-save_debug", "-sd", action="store_true", help="Saves a lot of debug data and intermediate results")
