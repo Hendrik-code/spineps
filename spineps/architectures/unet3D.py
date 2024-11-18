@@ -99,21 +99,21 @@ class Unet3D(nn.Module):
         t = None
 
         h = []
-        ö = "-"
+        o = "-"
         for block1, block2, downsample in self.downs:  # type: ignore
             x = block1(x, t)
             x = block2(x, t)
             h.append(x)
             x = downsample(x)
             if self.first_forward:
-                ö += "-"
-                print(ö, x.shape, "\t")
+                o += "-"
+                print(o, x.shape, "\t")
 
         x = self.mid_block1(x, t)
         x = self.mid_block2(x, t)
         if self.first_forward:
-            print(ö, x.shape)
-            ö = ö[:-1]
+            print(o, x.shape)
+            o = o[:-1]
 
         for block1, block2, upsample in self.ups:  # type: ignore
             x = 0.5 * (x + h.pop())
@@ -121,8 +121,8 @@ class Unet3D(nn.Module):
             x = block2(x, t)
             x = upsample(x)
             if self.first_forward:
-                print(ö, x.shape, "\t")
-                ö = ö[:-1]
+                print(o, x.shape, "\t")
+                o = o[:-1]
 
         x = torch.cat((x, r), dim=1)
 

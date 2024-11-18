@@ -111,7 +111,7 @@ class PLNet(pl.LightningModule):
 
     def _shared_metric_step(self, loss, _, gt, pred_cls):
         dice = mF.dice(pred_cls, gt, num_classes=self.n_classes)
-        diceFG = mF.dice(pred_cls, gt, num_classes=self.n_classes, ignore_index=0)  # noqa: N806, N806
+        diceFG = mF.dice(pred_cls, gt, num_classes=self.n_classes, ignore_index=0)  # noqa: N806
         dice_p_cls = mF.dice(pred_cls, gt, average=None, num_classes=self.n_classes)
         return {"loss": loss.detach().cpu(), "dice": dice, "diceFG": diceFG, "dice_p_cls": dice_p_cls}
 
