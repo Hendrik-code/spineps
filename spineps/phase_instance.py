@@ -474,8 +474,8 @@ def collect_vertebra_predictions(
     n_corpus_coms = len(corpus_coms)
 
     if n_corpus_coms < 3:
-        logger.print(f"Too few vertebra semantically segmented ({n_corpus_coms})", Log_Type.FAIL)
-        return None, [], 0
+        logger.print(f"Too few vertebra semantically segmented ({n_corpus_coms}), might have bad result", Log_Type.WARNING)
+        # return None, [], 0
 
     shp = (
         # n_corpus_coms,
