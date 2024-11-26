@@ -87,8 +87,11 @@ def phase_postprocess_combined(
         if model_labeling is not None:
             whole_vert_nii_cleaned = perform_labeling_step(model=model_labeling, img_nii=img_nii, vert_nii=whole_vert_nii_cleaned)
         logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
-        vert_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
-        vert_arr_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
+        whole_vert_nii_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
+        vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
+        cur_segarr = seg_nii_cleaned.get_seg_array()
+        cur_segarr[cur_segarr == Location.Endplate.value] = seg_arr_cleaned[cur_segarr == Location.Endplate.value]
+        seg_nii_cleaned.set_array_(cur_segarr)
         ###############
         # Uncrop
 
@@ -305,9 +308,51 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
         subreg_ep += 200
         subreg_ep[subreg_ep == 200] = 0
         vert_arr[subreg_arr == Location.Endplate.value] = subreg_ep[subreg_arr == Location.Endplate.value]
+        vert_t.set_array_(vert_arr)
+
+        # divide into upper and lower endplate
+        out = seg_nii * 0
+        pref = 1
+        old_vol = -1
+        for dil in range(1, 10):
+            curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
+            new_vol = curr.sum()
+            total = seg_nii.extract_label(Location.Endplate.value).sum()
+            logger.print(
+                rf"{new_vol/total*100:.2f}% endplates detected",
+            )
+            if old_vol == new_vol and old_vol != 0:
+                break
+            old_vol = new_vol
+            if total == new_vol:
+                print("Found all Endplates")
+                break
+            for i in vert_t.unique():
+                if i >= 40:
+                    break
+                curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
+                v = vert_t.extract_label(i).dilate_msk(dil, verbose=False)
+                end = seg_nii.extract_label(Location.Endplate.value) * v
+                end *= -curr + 1  # type: ignore
+                plates = vert_t * end
+                plates.map_labels_(
+                    {
+                        i + 200: Location.Vertebral_Body_Endplate_Inferior.value,
+                        pref + 200: Location.Vertebral_Body_Endplate_Superior.value,
+                    },
+                    verbose=False,
+                )
+                out += plates
+                pref = i
+        curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
+        end = seg_nii.extract_label(Location.Endplate.value)
+        end *= -curr + 1
+        # end += end.dilate_msk(3)
+        out += end * Location.Endplate.value
+        seg_nii = out
 
     logger.print(f"Labeled {n_ivds} IVDs ({n_ivd_unique} unique), and {n_eps} Endplates ({n_eps_unique} unique)")
-    return vert_t.set_array_(vert_arr).reorient_(orientation).get_seg_array()
+    return vert_t.set_array_(vert_arr).reorient_(orientation).get_seg_array(), seg_nii.reorient_(orientation).get_seg_array()
 
 
 def find_nearest_lower(seq, x):
