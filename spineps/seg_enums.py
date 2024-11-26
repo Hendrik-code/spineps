@@ -4,7 +4,7 @@ from typing_extensions import Self
 
 
 class MetaEnum(EnumMeta):
-    def __contains__(cls, item):
+    def __contains__(cls, item):  # noqa: N805
         try:
             cls[item]
         except ValueError:
@@ -107,9 +107,16 @@ class Acquisition(Enum_Compare):
             raise NotImplementedError(acquisition)
 
 
+class SpinepsPhase(Enum_Compare):
+    SEMANTIC = auto()
+    INSTANCE = auto()
+    LABELING = auto()
+
+
 class ModelType(Enum_Compare):
     nnunet = auto()
     unet = auto()
+    classifier = auto()
 
 
 class InputType(Enum_Compare):

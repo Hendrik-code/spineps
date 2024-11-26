@@ -643,18 +643,6 @@ def create_prediction_couples(
     n_predictions = hierarchical_predictions.shape[0]
 
     coupled_predictions = {}
-
-    # TODO LANGSAMER!!! multiprocessing Pool verwenden?
-    # task = []
-    # for idx in range(0, n_predictions):
-    #    for pred in range(3):
-    #        task.append(
-    #            delayed(find_prediction_couple)(
-    #                idx, pred, hierarchical_predictions, hierarchical_existing_predictions, n_predictions, verbose
-    #            )
-    #        )
-    # result = Parallel(n_jobs=5)(task)
-
     # TODO try to calculate list of candidates here, take the predictions and then parallelize the find_prediction_couple
 
     for idx in range(n_predictions):
@@ -668,24 +656,6 @@ def create_prediction_couples(
                 coupled_predictions[couple] = [agreement]
             else:
                 coupled_predictions[couple].append(agreement)
-    # with get_context("spawn").Pool() as pool:
-    #    instance_pairs = [
-    #        (idx, pred, hierarchical_predictions.copy(), hierarchical_existing_predictions, n_predictions)
-    #        for idx in range(0, n_predictions)
-    #        for pred in range(3)
-    #    ]
-
-    #    result = pool.starmap(find_prediction_couple, instance_pairs)
-
-    # for r in result:
-    #    couple = r[0]
-    #    agreement = r[1]
-    #    if couple is None:
-    #        continue
-    #    if couple not in coupled_predictions:
-    #        coupled_predictions[couple] = [agreement]
-    #    else:
-    #        coupled_predictions[couple].append(agreement)
     coupled_predictions = {i: sum(v) / len(v) for i, v in coupled_predictions.items()}
     coupled_predictions = dict(
         sorted(

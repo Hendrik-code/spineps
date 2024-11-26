@@ -1,22 +1,33 @@
+import os
 from pathlib import Path
 
 import numpy as np
 import torch
 from monai.transforms import CenterSpatialCropd, Compose, NormalizeIntensityd, ToTensor
 from TPTBox import NII, Log_Type, No_Logger, np_utils
+from typing_extensions import Self
 
 from spineps.architectures.pl_densenet import PLClassifier
+from spineps.seg_enums import OutputType
+from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model
+from spineps.utils.filepaths import search_path
 
 logger = No_Logger(prefix="VertLabelingClassifier")
 
 
-class VertLabelingClassifier:
-    def __init__(self, model: PLClassifier):
-        self.model: PLClassifier = model
+class VertLabelingClassifier(Segmentation_Model):
+    def __init__(
+        self,
+        model_folder: str | Path,
+        inference_config: Segmentation_Inference_Config | None = None,  # type:ignore
+        use_cpu: bool = False,
+        default_verbose: bool = False,
+        default_allow_tqdm: bool = True,
+    ):
+        super().__init__(model_folder, inference_config, use_cpu, default_verbose, default_allow_tqdm)
+        assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
+        # self.model: PLClassifier = model
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        model.to(self.device)
-        self.model.eval()
-        self.model.net.eval()
         final_size: tuple[int, int, int] = (152, 168, 32)
         self.totensor = ToTensor()
         self.transform = Compose(
@@ -26,30 +37,44 @@ class VertLabelingClassifier:
             ]
         )
 
+    def load(self, folds: tuple[str, ...] | None = None) -> Self:  # noqa: ARG002
+        assert os.path.exists(self.model_folder)  # noqa: PTH110
+
+        chktpath = search_path(self.model_folder, "**/*val_f1=*valf1-weights.ckpt")
+        assert len(chktpath) >= 1, chktpath
+        model = PLClassifier.load_from_checkpoint(checkpoint_path=chktpath[-1])
+        model.eval()
+        model.net.eval()
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() and not self.use_cpu else "cpu")
+        model.to(self.device)
+        self.predictor = model
+        self.print("Model loaded from", self.model_folder, verbose=True)
+        return self
+
+    def run(
+        self,
+        input_nii: list[NII],
+        verbose: bool = False,
+    ) -> dict[OutputType, NII | None]:
+        raise NotImplementedError("Doesnt make sense")
+
+    def segment_scan(*args, **kwargs):
+        raise NotImplementedError("Doesnt make sense")
+
     @classmethod
     def from_modelfolder(cls, model_folder: str | Path):
         raise NotImplementedError()
-        # pass  # find checkpoint yourself, then load from checkpoitn path
+        # find checkpoint yourself, then load from checkpoitn path
 
     @classmethod
     def from_checkpoint_path(cls, checkpoint_path: str | Path):
         if isinstance(checkpoint_path, str):
             checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f"Checkpoint path does not exist: {checkpoint_path}"
-        model = PLClassifier.load_from_checkpoint(
-            str(checkpoint_path),
-            # opt=ARGS_MODEL(),
-            # objectives=Objectives(
-            #    [
-            #        Target.VERT,
-            #        Target.REGION,
-            #        Target.VERTREL,
-            #        Target.FULLYVISIBLE,
-            #    ]
-            # ),
-        )
-        # print("weight", model.classification_heads["REGION"].weight[:5])
-        d = cls(model)
+        # model = PLClassifier.load_from_checkpoint(
+        #    str(checkpoint_path),
+        # )
+        d = cls(checkpoint_path.parent.parent)
         logger.print("Model loaded from", checkpoint_path, verbose=True)
         return d
 
@@ -117,8 +142,8 @@ class VertLabelingClassifier:
         model_input = model_input.to(torch.float32)
         model_input = model_input.to(self.device)
 
-        self.model.eval()
-        logits_dict = self.model.forward(model_input)
-        logits_soft = {k: self.model.softmax(v)[0].detach().cpu().numpy() for k, v in logits_dict.items()}
+        self.predictor.eval()
+        logits_dict = self.predictor.forward(model_input)
+        logits_soft = {k: self.predictor.softmax(v)[0].detach().cpu().numpy() for k, v in logits_dict.items()}
         pred_cls = {k: np.argmax(v, 0) for k, v in logits_soft.items()}
         return logits_soft, pred_cls

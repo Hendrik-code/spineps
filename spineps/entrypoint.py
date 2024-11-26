@@ -8,10 +8,12 @@ from time import perf_counter
 from TPTBox import BIDS_FILE, Log_Type, No_Logger
 
 from spineps.get_models import (
+    get_actual_model,
     get_instance_model,
-    get_segmentation_model,
+    get_labeling_model,
     get_semantic_model,
     modelid2folder_instance,
+    modelid2folder_labeling,
     modelid2folder_semantic,
 )
 from spineps.seg_run import process_dataset, process_img_nii
@@ -74,6 +76,7 @@ def parser_arguments(parser: argparse.ArgumentParser):
 def entry_point():
     modelids_semantic = list(modelid2folder_semantic().keys())
     modelids_instance = list(modelid2folder_instance().keys())
+    modelids_labeling = [*list(modelid2folder_labeling().keys()), "none"]
     ###########################
     ###########################
     main_parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -107,6 +110,16 @@ def entry_point():
         metavar="",
         help=f"The model used for the vertebra instance segmentation. Choices are {modelids_instance} or a string absolute path the model folder",
     )
+    parser_sample.add_argument(
+        "-model_labeling",
+        "-ml",
+        # type=str.lower,
+        default="labeling",
+        # required=True,
+        # choices=modelids_instance,
+        metavar="",
+        help=f"The model used for the vertebra labeling classification. Choices are {modelids_labeling} or a string absolute path the model folder",
+    )
     parser_sample = parser_arguments(parser_sample)
 
     ###########################
@@ -134,6 +147,16 @@ def entry_point():
         # choices=model_vert_choices,
         metavar="",
         help=f"The model used for the vertebra segmentation. Choices are {model_vert_choices} or a string absolute path the model folder",
+    )
+    parser_dataset.add_argument(
+        "-model_labeling",
+        "-ml",
+        # type=str.lower,
+        default="labeling",
+        # required=True,
+        # choices=modelids_instance,
+        metavar="",
+        help=f"The model used for the vertebra labeling classification. Choices are {modelids_labeling} or a string absolute path the model folder",
     )
     parser_dataset.add_argument(
         "-ignore_bids_filter",
@@ -180,16 +203,23 @@ def run_sample(opt: Namespace):
     if not input_path.endswith(".nii.gz"):
         input_path += ".nii.gz"
     assert os.path.isfile(input_path), f"-input does not exist or is not a file, got {input_path}"  # noqa: PTH113
-
+    # model semantic
     if "/" in str(opt.model_semantic):
-        # given path
-        model_semantic = get_segmentation_model(opt.model_semantic, use_cpu=opt.cpu).load()
+        model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
+    # model instance
     if "/" in str(opt.model_instance):
-        model_instance = get_segmentation_model(opt.model_instance, use_cpu=opt.cpu).load()
+        model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
         model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
+    # model labeling
+    if opt.model_labeling == "none":
+        model_labeling = None
+    elif "/" in str(opt.model_labeling):
+        model_labeling = get_actual_model(opt.model_labeling, use_cpu=opt.cpu).load()
+    else:
+        model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
 
     bids_sample = BIDS_FILE(input_path, dataset=dataset, verbose=True)
 
@@ -197,6 +227,7 @@ def run_sample(opt: Namespace):
         "img_ref": bids_sample,
         "model_semantic": model_semantic,
         "model_instance": model_instance,
+        "model_labeling": model_labeling,
         "derivative_name": opt.der_name,
         #
         # "save_uncertainty_image": opt.save_unc_img,
@@ -245,7 +276,7 @@ def run_dataset(opt: Namespace):
     if opt.model_semantic == "auto":
         model_semantic = None
     elif "/" in str(opt.model_semantic):
-        model_semantic = get_segmentation_model(opt.model_semantic, use_cpu=opt.cpu).load()
+        model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
 
@@ -253,9 +284,17 @@ def run_dataset(opt: Namespace):
     if opt.model_instance == "auto":
         model_instance = None
     elif "/" in str(opt.model_instance):
-        model_instance = get_segmentation_model(opt.model_instance, use_cpu=opt.cpu).load()
+        model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
         model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
+
+    # Model Labeling
+    if opt.model_labeling == "none":
+        model_labeling = None
+    elif "/" in str(opt.model_labeling):
+        model_labeling = get_actual_model(opt.model_labeling, use_cpu=opt.cpu).load()
+    else:
+        model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
 
     assert model_instance is not None, "-model_vert was None"
 
@@ -263,6 +302,7 @@ def run_dataset(opt: Namespace):
         "dataset_path": input_dir,
         "model_semantic": model_semantic,
         "model_instance": model_instance,
+        "model_labeling": model_labeling,
         "rawdata_name": opt.raw_name,
         "derivative_name": opt.der_name,
         #

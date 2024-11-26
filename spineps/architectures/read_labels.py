@@ -195,30 +195,3 @@ def flatten(a: list[str | int | list[str] | list[int]]):
     else:
         for b in a:
             yield from flatten(b)
-
-
-###
-
-# Eval-pipeline zuerst
-# sensitivity, recall, AUC, ROC, F1, MCC
-# dann MONAI baseline bauen mit Resnet, Densenet, ViT
-if __name__ == "__main__":
-    objectives = Objectives(
-        [
-            Target.FULLYVISIBLE,
-            Target.REGION,
-            Target.VERTREL,
-            Target.VERT,
-        ],
-        as_group=True,
-    )
-
-    entry_dict = {
-        "vert_exact": VertExact.L1,
-        "vert_region": VertRegion.LWS,
-        "vert_rel": VertRel.FIRST_LWK,
-        "vert_cut": True,
-    }
-
-    label = objectives(entry_dict)
-    print(label)

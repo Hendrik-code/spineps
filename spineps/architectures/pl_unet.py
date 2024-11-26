@@ -124,8 +124,6 @@ class PLNet(pl.LightningModule):
     def _shared_cat_metrics(self, outputs):
         results = {}
         for m, v in outputs.items():
-            # v = np.asarray(v)
-            # print(m, v.shape)
             stacked = torch.stack(v)
             results[m] = torch.mean(stacked) if m != "dice_p_cls" else torch.mean(stacked, dim=0)
         return results

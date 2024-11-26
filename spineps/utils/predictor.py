@@ -85,6 +85,7 @@ class nnUNetPredictor(object):
             checkpoint = torch.load(
                 join(model_training_output_dir, f"fold_{f}", checkpoint_name),
                 map_location=torch.device("cpu"),
+                weights_only=False,
             )
             if i == 0:
                 trainer_name = checkpoint["trainer_name"]

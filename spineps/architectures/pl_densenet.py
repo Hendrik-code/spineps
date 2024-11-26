@@ -9,8 +9,6 @@ from monai.networks.nets import DenseNet169
 from torch import nn
 from TypeSaveArgParse import Class_to_ArgParse
 
-from spineps.architectures.read_labels import Objectives
-
 
 @dataclass
 class ARGS_MODEL(Class_to_ArgParse):

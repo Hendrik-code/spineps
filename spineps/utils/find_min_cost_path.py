@@ -22,6 +22,12 @@ def c_to_region_idx(c: int, regions: list[int]):
     return len(regions) - 1
 
 
+def internal_to_real_path(p):
+    pat = sorted(p, key=lambda x: x[0])
+    pat = [x[1] for x in pat]
+    return pat
+
+
 def find_most_probably_sequence(  # noqa: C901
     cost: np.ndarray | list[int],
     #
@@ -43,7 +49,7 @@ def find_most_probably_sequence(  # noqa: C901
     allow_skip_at_region: list[int] | None = None,
     punish_skip_at_region_sequence: float = 0.2,
 ) -> tuple[float, list[int]]:
-    # convert to np arrays
+    # default mutable arguments
     if allow_skip_at_region is None:
         allow_skip_at_region = [0]
     if allow_skip_at_class is None:
@@ -52,6 +58,7 @@ def find_most_probably_sequence(  # noqa: C901
         allow_multiple_at_class = [18, 23]
     if regions is None:
         regions = [0, 7, 19]
+    # convert to np arrays
     if isinstance(cost, list):
         cost = np.asarray(cost)
     if region_rel_cost is not None and isinstance(region_rel_cost, list):
@@ -66,7 +73,7 @@ def find_most_probably_sequence(  # noqa: C901
     regions_ranges = None
     if region_rel_cost is not None:
         if n_classes < regions[-1]:
-            warn(f"n_classes < defined regions, got {n_classes} and {regions}", stacklevel=2)
+            warn(f"n_classes < defined regions, got {n_classes} and {regions}", stacklevel=3)
         regions.append(n_classes)
         regions_ranges = [(regions[i], regions[i + 1] - 1) for i in range(len(regions) - 1)]
         region_rel_shape = region_rel_cost.shape
@@ -93,7 +100,9 @@ def find_most_probably_sequence(  # noqa: C901
         # start point
         if c == -1 and r == -1:
             # go over each possible start column
-            options = [minCostAlgo(r=0, c=cc) for cc in range(min_start_class, n_classes)]
+            options = []
+            for cc in range(min_start_class, n_classes):
+                options.append(minCostAlgo(r=0, c=cc))  # noqa: PERF401
             minidx, minval = argmin([o[0] for o in options])
             return minval, options[minidx][1]
         # stepped over the line
@@ -157,12 +166,12 @@ def find_most_probably_sequence(  # noqa: C901
             # print(f"Setting {r}, {c} to {cost_value}, {p}")
             return min_costs_path[r][c]
 
-    def rel_cost(r, c, pnext, _, region_cur):
+    def rel_cost(r, c, pnext, p, region_cur):  # noqa: ARG001
         # transition cost of vertrel
         # first is just equal to that specific vertebra
         # last is dependant on next in path
         # classes are always first, last in order of regions
-        cost_value = 0
+        cost_add = 0
         if region_rel_cost is not None:
             # for ridx in range(len(regions) - 1):
             for last in [0, 1]:
@@ -173,48 +182,15 @@ def find_most_probably_sequence(  # noqa: C901
                 if rel_cost == 0:
                     continue
                 if last == 0 and c == regions_ranges[region_cur][0]:
-                    # print(f"Added F {rel_cost} to {r}, {c}, {p}")
-                    cost_value += rel_cost
+                    # print(f"Added F {rel_cost} to {r}, {c}, {internal_to_real_path(p)}")
+                    cost_add += rel_cost
                     # break
                 elif last == 1 and c_to_region_idx(pnext[-1][1], regions) >= region_cur + 1:
-                    # print(f"Added L {rel_cost} to {r}, {c}, {p}")
-                    cost_value += rel_cost
-        return cost_value
+                    # print(f"Added L {rel_cost} to {r}, {c}, {internal_to_real_path(p)}")
+                    cost_add += rel_cost
+        return cost_add
 
     fcost, fpath = minCostAlgo(-1, -1)
     fpath.reverse()
     fpath = [f[1] for f in fpath]
-    return fcost / len(fpath), fpath
-
-
-if __name__ == "__main__":
-    cost = np.array(
-        [
-            # colum lables
-            # rows predictions
-            [0, 10, 0, 0, 0],
-            [0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
-        ],
-        dtype=int,
-    )
-    rel_cost = np.array(
-        [
-            # nothing, last0, first1, last2
-            [0, 0, 0, 0],
-            [0, 10, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 11, 0],
-        ],
-        dtype=int,
-    )
-    rel_cost = -rel_cost
-    fcost, fpath, _ = find_most_probably_sequence(
-        cost,
-        region_rel_cost=rel_cost,
-        regions=[0, 3],
-    )
-    print()
-    print("Path cost", round(fcost, 3))
-    print("Path", fpath)
+    return fcost / len(fpath), fpath, min_costs_path
