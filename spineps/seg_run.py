@@ -470,8 +470,10 @@ def process_img_nii(  # noqa: C901
             seg_nii_back.assert_affine(other=input_nii)
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
+                img_nii=input_nii_,
                 seg_nii=seg_nii_back,
                 vert_nii=whole_vert_nii,
+                model_labeling=model_labeling,
                 debug_data=debug_data_run,
                 labeling_offset=vertebra_instance_labeling_offset - 1,
                 proc_clean_inst_by_sem=proc_clean_inst_by_sem,
@@ -484,10 +486,6 @@ def process_img_nii(  # noqa: C901
             vert_nii_clean.assert_affine(other=input_nii)
             # input_package.make_nii_from_this(seg_nii_clean)
             # input_package.make_nii_from_this(vert_nii_clean)
-
-            if model_labeling is not None:
-                vert_nii_clean = perform_labeling_step(model=model_labeling, img_nii=input_nii, vert_nii=vert_nii_clean)
-
             seg_nii_clean.save(out_spine, verbose=logger)
             vert_nii_clean.save(out_vert, verbose=logger)
             done_something = True

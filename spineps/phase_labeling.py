@@ -33,6 +33,7 @@ def perform_labeling_step(model: VertLabelingClassifier, img_nii: NII, vert_nii:
         model.load()
     # run model
     labelmap = run_model_for_vert_labeling(model, img_nii, vert_nii)[0]
+
     # relabel according to labelmap
     return vert_nii.map_labels_(labelmap)
 
@@ -64,6 +65,7 @@ def run_model_for_vert_labeling(
     )
     assert len(orig_label) == len(fpath_post), f"{len(orig_label)} != {len(fpath_post)}"
     labelmap = {orig_label[idx]: fpath_post[idx] for idx in range(len(orig_label))}
+
     return labelmap, fcost, fpath, fpath_post, costlist, min_costs_path, predictions
 
 

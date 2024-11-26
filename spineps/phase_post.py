@@ -17,13 +17,16 @@ from TPTBox.core.np_utils import (
     np_volume,
 )
 
+from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
 from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 
 
 def phase_postprocess_combined(
+    img_nii: NII,
     seg_nii: NII,
     vert_nii: NII,
+    model_labeling: VertLabelingClassifier | None,
     debug_data: dict | None,
     labeling_offset: int = 0,
     proc_assign_missing_cc: bool = True,
@@ -36,6 +39,7 @@ def phase_postprocess_combined(
 ) -> tuple[NII, NII]:
     logger.print("Post process", Log_Type.STAGE)
     with logger:
+        img_nii.assert_affine(other=seg_nii)
         seg_nii.assert_affine(other=vert_nii)
         # Post process semantic mask
         ###################
@@ -54,6 +58,7 @@ def phase_postprocess_combined(
         seg_uncropped = seg_nii.copy()
 
         # Crop down
+        img_nii.apply_crop_(crop_slices)
         vert_nii.apply_crop_(crop_slices)
         seg_nii.apply_crop_(crop_slices)
 
@@ -79,8 +84,8 @@ def phase_postprocess_combined(
 
         # Label vertebra top -> down
         whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned, labeling_offset=labeling_offset)
-        # if labeling_offset != 0:
-        #    whole_vert_nii_cleaned.map_labels_({i: i + 1 for i in vert_labels if i != 0}, verbose=verbose)
+        if model_labeling is not None:
+            whole_vert_nii_cleaned = perform_labeling_step(model=model_labeling, img_nii=img_nii, vert_nii=whole_vert_nii_cleaned)
         logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
         vert_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
         vert_arr_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
