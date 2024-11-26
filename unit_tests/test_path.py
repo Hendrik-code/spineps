@@ -42,7 +42,7 @@ class Test_PathLabeling(unittest.TestCase):
             dtype=int,
         )
         rel_cost = -rel_cost
-        fcost, fpath = find_most_probably_sequence(
+        fcost, fpath, min_costs_path = find_most_probably_sequence(
             cost,
             region_rel_cost=rel_cost,
             regions=[0, 3],

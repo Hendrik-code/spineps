@@ -16,7 +16,7 @@ class Test_Post_Processing(unittest.TestCase):
     def test_phase_postprocess(self):
         mri, subreg, vert, label = get_test_mri()
         print(vert.unique())
-        subreg_cleaned, vert_cleaned = phase_postprocess_combined(subreg, vert, debug_data={})
+        subreg_cleaned, vert_cleaned = phase_postprocess_combined(mri, subreg, vert, model_labeling=None, debug_data={})
         self.assertTrue(subreg_cleaned.assert_affine(other=vert_cleaned))
 
         vert_labels = vert_cleaned.unique()
