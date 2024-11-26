@@ -73,11 +73,21 @@ def check_model_modality_acquisition(
     return compatible
 
 
+ignored_text = " (IGNORED)."
+len_ignored_text = len(ignored_text)
+
+
+def add_ignore_text(logger_texts: list[str]):
+    logger_texts[-1] = logger_texts[-1][:-1]
+    logger_texts[-1] += ignored_text
+
+
 def check_input_model_compatibility(
     img_ref: BIDS_FILE,
     model: Segmentation_Model,
     ignore_modality: bool = False,
     ignore_acquisition: bool = False,
+    ignore_labelkey: bool = False,
     verbose: bool = True,
 ) -> bool:
     """Checks if a model is compatible with a specified input
@@ -108,36 +118,44 @@ def check_input_model_compatibility(
     input_acquisition = img_ref.info.get("acq", None)
     is_debug = "debug" in file_dir.name or "debug" in file_dir.parent.name
 
-    logger_texts = [f"{filename} input incompatible with model"]
+    logger_texts = [f"{filename} is incompatible with the selected model."]
 
     if input_format not in allowed_format:
-        logger_texts.append(f"- Input format '{input_format}', model expected {allowed_format}")
+        logger_texts.append(f"Input format '{input_format}' incompatible, model expected {allowed_format}.")
         if not ignore_modality:
             compatible = False
+        else:
+            add_ignore_text(logger_texts)
     if has_seg_key and allowed_format not in Modality.format_keys(Modality.SEG):
-        logger_texts.append("- Input acquisition not segmentation, but found a 'seg'-key")
+        logger_texts.append("Input acquisition not segmentation, but found a 'seg'-key.")
         if not ignore_modality:
             compatible = False
+        else:
+            add_ignore_text(logger_texts)
 
     if input_acquisition is not None and input_acquisition not in allowed_acq:
-        logger_texts.append(f"- Input acquisition '{input_acquisition}', model expected {allowed_acq}")
+        logger_texts.append(f"Input acquisition '{input_acquisition}' incompatible, model expected {allowed_acq}.")
         if not ignore_acquisition:
             compatible = False
+        else:
+            add_ignore_text(logger_texts)
 
     if has_label_key:
-        logger_texts.append("- Found 'label' key, which is not expected")
-        compatible = False
+        logger_texts.append("Found 'label' key in filename, which is not expected.")
+        if not ignore_labelkey:
+            compatible = False
+        else:
+            add_ignore_text(logger_texts)
 
     if is_debug:
-        logger_texts.append("- probably a debug file (debug in name or parent)")
+        logger_texts.append("Probably a debug file (debug in name or parent).")
         compatible = False
 
     img_nii = img_ref.open_nii()
     if img_nii.get_plane() not in ["iso", *allowed_acq]:
-        logger_texts.append(f"- get_plane() is not 'iso' or expected {allowed_acq}, skip")
+        logger_texts.append(f"input get_plane() is not 'iso' or one of the expected {allowed_acq}.")
         compatible = False
 
     if len(logger_texts) > 1:
-        for l in logger_texts:
-            logger.print(l, Log_Type.WARNING, verbose=verbose)
+        logger.print(*logger_texts, Log_Type.WARNING, verbose=verbose)
     return compatible

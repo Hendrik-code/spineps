@@ -14,6 +14,7 @@ from spineps.phase_pre import preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model
+from spineps.seg_utils import check_input_model_compatibility, check_model_modality_acquisition
 
 logger = No_Logger()
 
@@ -57,6 +58,32 @@ class Segmentation_Model_Dummy(Segmentation_Model):
 
 
 class Test_Semantic_Phase(unittest.TestCase):
+    def test_compatibility(self):
+        from TPTBox import BIDS_FILE
+        from TPTBox.tests.test_utils import get_tests_dir
+
+        from spineps.seg_enums import Acquisition, InputType, Modality
+
+        mri, subreg, vert, label = get_test_mri()
+        input_path = get_tests_dir().joinpath("sample_mri", "sub-mri_label-6_T2w.nii.gz")
+        model = Segmentation_Model_Dummy()
+
+        print(input_path)
+        bf = BIDS_FILE(input_path, dataset=input_path.parent)
+        compatible = check_input_model_compatibility(bf, model)
+        self.assertFalse(compatible)
+
+        compatible = check_input_model_compatibility(bf, model, ignore_labelkey=True)
+        self.assertTrue(compatible)
+
+        # change model artifically
+        print(mri.get_plane())
+        # mri.get_plane = MagicMock(return_value="sag")
+        model.inference_config.acquisition = Acquisition.ax
+        model.inference_config.modalities = [Modality.CT]
+        compatible = check_input_model_compatibility(bf, model, ignore_labelkey=True)
+        self.assertFalse(compatible)
+
     def test_phase_preprocess(self):
         mri, subreg, vert, label = get_test_mri()
         for pad_size in range(7):
