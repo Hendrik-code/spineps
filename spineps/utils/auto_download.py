@@ -26,7 +26,7 @@ semantic: dict[str, Path | str] = {
     "t1w": link + current_highest_version + "/t1w.zip",
     "vibe": link + current_highest_version + "/vibe.zip",
 }
-labeling: dict[str, Path | str] = {"t2w_labeling": link + current_instance_highest_version + "/t2w_labeling.zip"}
+labeling: dict[str, Path | str] = {"t2w_labeling": link + current_labeling_highest_version + "/labeling.zip"}
 
 
 download_names = {
