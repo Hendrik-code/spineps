@@ -30,7 +30,7 @@ def perform_labeling_step(model: VertLabelingClassifier, img_nii: NII, vert_nii:
         model = get_actual_model(
             in_config=Path(check_dir + model_p),
         )
-        model.load()
+    model.load()
     # run model
     labelmap = run_model_for_vert_labeling(model, img_nii, vert_nii)[0]
 
