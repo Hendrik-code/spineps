@@ -45,12 +45,12 @@ def run_model_for_vert_labeling(
     verbose: bool = False,
 ):
     # reorient
-    img = img_nii.reorient(model.inference_config.model_expected_orientation, verbose=logger)
-    vert = vert_nii.reorient(model.inference_config.model_expected_orientation, verbose=logger)
-    zms_pir = img.zoom
+    img = img_nii.reorient(model.inference_config.model_expected_orientation, verbose=False)
+    vert = vert_nii.reorient(model.inference_config.model_expected_orientation, verbose=False)
+    # zms_pir = img.zoom
     # rescale
-    img.rescale_(model.calc_recommended_resampling_zoom(zms_pir), verbose=logger)
-    vert.rescale_(model.calc_recommended_resampling_zoom(zms_pir), verbose=logger)
+    # img.rescale_(model.calc_recommended_resampling_zoom(zms_pir), verbose=False)
+    # vert.rescale_(model.calc_recommended_resampling_zoom(zms_pir), verbose=False)
     #
     img.assert_affine(other=vert)
     # extract vertebrae
