@@ -202,7 +202,7 @@ def modeltype2class(modeltype: ModelType):
         raise NotImplementedError(modeltype)
 
 
-def get_actual_model(in_config: str | Path, **kwargs) -> Segmentation_Model | VertLabelingClassifier:
+def get_actual_model(in_config: str | Path, use_cpu: bool = False, **kwargs) -> Segmentation_Model | VertLabelingClassifier:
     """Creates the Model class from given path
 
     Args:
@@ -236,4 +236,4 @@ def get_actual_model(in_config: str | Path, **kwargs) -> Segmentation_Model | Ve
 
     inference_config = load_inference_config(str(in_dir))
     modeltype: type[Segmentation_Model] = modeltype2class(inference_config.modeltype)
-    return modeltype(model_folder=in_config, inference_config=inference_config, **kwargs)
+    return modeltype(model_folder=in_config, inference_config=inference_config, use_cpu=use_cpu, **kwargs)
