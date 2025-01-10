@@ -36,7 +36,7 @@ vertebra_subreg_labels = [
 def predict_centroids_from_both(
     vert_nii_cleaned: NII,
     seg_nii: NII,
-    models: list[Segmentation_Model],
+    models: list[Segmentation_Model | None],
     parameter: dict[str, Any],
 ):
     """Calculates the centroids of each vertebra corpus by using both semantic and instance mask
@@ -64,7 +64,10 @@ def predict_centroids_from_both(
 
     models_repr = {}
     for idx, m in enumerate(models):
-        models_repr[idx] = m.dict_representation()
+        if m is not None:
+            models_repr[idx] = m.dict_representation()
+        else:
+            models_repr[idx] = {"name": "No Model"}
     ctd.info["source"] = "MRI Segmentation Pipeline"
     ctd.info["version"] = pipeline_version()
     ctd.info["models"] = models_repr
@@ -73,9 +76,6 @@ def predict_centroids_from_both(
     for pname, pvalue in parameter.items():
         ctd.info[pname] = str(pvalue)
     return ctd
-
-
-# TODO make automatic version of this repo (below is the repo the code is called from... -.-)
 
 
 def pipeline_version():

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 import spineps
-from spineps.models import Segmentation_Model, get_segmentation_model
+from spineps.get_models import Segmentation_Model, get_actual_model
 from spineps.utils.filepaths import (
     filepath_model,
     get_mri_segmentor_models_dir,

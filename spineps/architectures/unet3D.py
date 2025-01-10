@@ -1,7 +1,8 @@
-import torch
-import torch.nn as nn
-from einops import rearrange
 from functools import partial
+
+import torch
+from einops import rearrange
+from torch import nn
 
 
 class Unet3D(nn.Module):
@@ -29,8 +30,8 @@ class Unet3D(nn.Module):
         init_dim = default(init_dim, dim)
         self.init_conv = nn.Conv3d((channels + conditional_dimensions), init_dim, 7, padding=3)
 
-        dims = [init_dim, *map(lambda m: int(dim * m), dim_mults)]
-        in_out = list(zip(dims[:-1], dims[1:]))
+        dims = [init_dim, *(int(dim * m) for m in dim_mults)]
+        in_out = list(zip(dims[:-1], dims[1:], strict=True))  # noqa: RUF007
 
         block_klass = partial(ResnetBlock3D, groups=resnet_block_groups)
         time_dim = None
@@ -76,7 +77,7 @@ class Unet3D(nn.Module):
         self.final_conv = nn.Conv3d(dim, self.out_dim, 1)
         self.first_forward = False
 
-    def forward(self, x, time=None, label=None, embedding=None) -> torch.Tensor:  # time
+    def forward(self, x, time=None, label=None, embedding=None) -> torch.Tensor:  # time  # noqa: ARG002
         down_factor = 2 ** (len(self.downs) - 1)
         shape = x.shape
         assert shape[-1] % down_factor == 0, f"dimensions are not dividable by {down_factor}, {shape}, {shape[-1]}"
@@ -98,21 +99,21 @@ class Unet3D(nn.Module):
         t = None
 
         h = []
-        ö = "-"
+        o = "-"
         for block1, block2, downsample in self.downs:  # type: ignore
             x = block1(x, t)
             x = block2(x, t)
             h.append(x)
             x = downsample(x)
             if self.first_forward:
-                ö += "-"
-                print(ö, x.shape, "\t")
+                o += "-"
+                print(o, x.shape, "\t")
 
         x = self.mid_block1(x, t)
         x = self.mid_block2(x, t)
         if self.first_forward:
-            print(ö, x.shape)
-            ö = ö[:-1]
+            print(o, x.shape)
+            o = o[:-1]
 
         for block1, block2, upsample in self.ups:  # type: ignore
             x = 0.5 * (x + h.pop())
@@ -120,8 +121,8 @@ class Unet3D(nn.Module):
             x = block2(x, t)
             x = upsample(x)
             if self.first_forward:
-                print(ö, x.shape, "\t")
-                ö = ö[:-1]
+                print(o, x.shape, "\t")
+                o = o[:-1]
 
         x = torch.cat((x, r), dim=1)
 

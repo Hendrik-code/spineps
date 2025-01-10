@@ -11,6 +11,7 @@ from TPTBox.core.np_utils import np_count_nonzero
 from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 
 from spineps.phase_instance import predict_instance_mask
+from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
 from spineps.phase_post import phase_postprocess_combined
 from spineps.phase_pre import preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
@@ -26,6 +27,8 @@ def process_dataset(
     dataset_path: Path,
     model_instance: Segmentation_Model,
     model_semantic: list[Segmentation_Model] | Segmentation_Model | None = None,
+    model_labeling: VertLabelingClassifier | None = None,
+    #
     rawdata_name: str = "rawdata",
     derivative_name: str = "derivatives_seg",
     modalities: list[Modality_Pair] | Modality_Pair = [(Modality.T2w, Acquisition.sag)],  # noqa: B006
@@ -125,6 +128,7 @@ def process_dataset(
     compatible = True
     for idx, mp in enumerate(modalities):
         compatible = False if not check_model_modality_acquisition(model_semantic[idx], mp) else compatible
+        compatible = False if model_labeling is not None and not check_model_modality_acquisition(model_labeling, mp) else compatible
     del idx, mp
 
     if not compatible and not ignore_model_compatibility:
@@ -173,6 +177,8 @@ def process_dataset(
                     img_ref=s,
                     model_semantic=model,
                     model_instance=model_instance,
+                    model_labeling=model_labeling,
+                    #
                     derivative_name=derivative_name,
                     #
                     # save_uncertainty_image=save_uncertainty_image,
@@ -237,6 +243,7 @@ def process_img_nii(  # noqa: C901
     img_ref: BIDS_FILE,
     model_semantic: Segmentation_Model,
     model_instance: Segmentation_Model,
+    model_labeling: VertLabelingClassifier | None = None,
     derivative_name: str = "derivatives_seg",
     #
     # save_uncertainty_image: bool = False,
@@ -356,7 +363,8 @@ def process_img_nii(  # noqa: C901
         proc_normalize_input = False  # Never normalize input if it is an CT
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
-    if not compatible:
+    compatible_labeling = check_input_model_compatibility(img_ref, model=model_labeling) if model_labeling is not None else True
+    if not (compatible and compatible_labeling):
         if not ignore_compatibility_issues:
             return output_paths, ErrCode.COMPATIBILITY
         else:
@@ -462,8 +470,10 @@ def process_img_nii(  # noqa: C901
             seg_nii_back.assert_affine(other=input_nii)
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
+                img_nii=input_nii_,
                 seg_nii=seg_nii_back,
                 vert_nii=whole_vert_nii,
+                model_labeling=model_labeling,
                 debug_data=debug_data_run,
                 labeling_offset=vertebra_instance_labeling_offset - 1,
                 proc_clean_inst_by_sem=proc_clean_inst_by_sem,
@@ -476,7 +486,6 @@ def process_img_nii(  # noqa: C901
             vert_nii_clean.assert_affine(other=input_nii)
             # input_package.make_nii_from_this(seg_nii_clean)
             # input_package.make_nii_from_this(vert_nii_clean)
-
             seg_nii_clean.save(out_spine, verbose=logger)
             vert_nii_clean.save(out_vert, verbose=logger)
             done_something = True
@@ -489,7 +498,7 @@ def process_img_nii(  # noqa: C901
             ctd = predict_centroids_from_both(
                 vert_nii_clean,
                 seg_nii_clean,
-                models=[model_semantic, model_instance],
+                models=[model_semantic, model_instance, model_labeling],  # TODO add labeling info and parameters
                 parameter={l: v for l, v in arguments.items() if "proc_" in l},
             )
             ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)

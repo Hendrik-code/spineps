@@ -9,8 +9,8 @@ from torch import from_numpy
 from TPTBox import NII, ZOOMS, Image_Reference, Log_Type, Logger, No_Logger, to_nii
 from typing_extensions import Self
 
+from spineps.architectures.pl_unet import PLNet
 from spineps.seg_enums import Acquisition, InputType, Modality, ModelType, OutputType
-from spineps.Unet3D.pl_unet import PLNet
 from spineps.utils.citation_reminder import citation_reminder
 from spineps.utils.filepaths import search_path
 from spineps.utils.inference_api import load_inf_model, run_inference
@@ -374,23 +374,3 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         seg_nii: NII = input_nii.set_array(pred_cls)
         self.print("out", seg_nii.zoom, seg_nii.orientation, seg_nii.shape) if verbose else None
         return {OutputType.seg: seg_nii}
-
-
-def modeltype2class(modeltype: ModelType):
-    """Maps ModelType to actual Segmentation_Model Subclass
-
-    Args:
-        type (ModelType): _description_
-
-    Raises:
-        NotImplementedError: _description_
-
-    Returns:
-        _type_: _description_
-    """
-    if modeltype == ModelType.nnunet:
-        return Segmentation_Model_NNunet
-    elif modeltype == ModelType.unet:
-        return Segmentation_Model_Unet3D
-    else:
-        raise NotImplementedError(modeltype)

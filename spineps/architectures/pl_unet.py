@@ -1,15 +1,16 @@
 from typing import Any
+
 import pytorch_lightning as pl
 import torch
-import torch.nn as nn
+import torchmetrics.functional as mF  # noqa: N812
+from torch import nn
 from torch.optim import lr_scheduler
-import torchmetrics.functional as mF
 
-from spineps.Unet3D.unet3D import Unet3D
+from spineps.architectures.unet3D import Unet3D
 
 
 class PLNet(pl.LightningModule):
-    def __init__(self, opt=None, do2D: bool = False, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, opt=None, do2D: bool = False, *args: Any, **kwargs: Any) -> None:  # noqa: N803, ARG002
         super().__init__()
         self.save_hyperparameters()
 
@@ -63,7 +64,7 @@ class PLNet(pl.LightningModule):
             self.logger.experiment.add_text("train_dice_p_cls", str(metrics["dice_p_cls"].tolist()), self.current_epoch)
         self.train_step_outputs.clear()
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, _):
         loss, logits, gt, pred_cls = self._shared_step(batch["target"], batch["class"], detach2cpu=True)
         loss = loss.detach().cpu()
         metrics = self._shared_metric_step(loss, logits, gt, pred_cls)
@@ -90,7 +91,7 @@ class PLNet(pl.LightningModule):
         return {"optimizer": optimizer}
 
     def loss(self, logits, gt):
-        return 0.0  # TODO don't use this for training
+        return logits, gt  # TODO don't use this for training
 
     def _shared_step(self, target, gt, detach2cpu: bool = False):
         logits = self.forward(target)
@@ -108,9 +109,9 @@ class PLNet(pl.LightningModule):
                 pred_cls = pred_cls.detach().cpu()
         return loss, logits, gt, pred_cls
 
-    def _shared_metric_step(self, loss, logits, gt, pred_cls):
+    def _shared_metric_step(self, loss, _, gt, pred_cls):
         dice = mF.dice(pred_cls, gt, num_classes=self.n_classes)
-        diceFG = mF.dice(pred_cls, gt, num_classes=self.n_classes, ignore_index=0)
+        diceFG = mF.dice(pred_cls, gt, num_classes=self.n_classes, ignore_index=0)  # noqa: N806
         dice_p_cls = mF.dice(pred_cls, gt, average=None, num_classes=self.n_classes)
         return {"loss": loss.detach().cpu(), "dice": dice, "diceFG": diceFG, "dice_p_cls": dice_p_cls}
 
@@ -123,8 +124,6 @@ class PLNet(pl.LightningModule):
     def _shared_cat_metrics(self, outputs):
         results = {}
         for m, v in outputs.items():
-            # v = np.asarray(v)
-            # print(m, v.shape)
             stacked = torch.stack(v)
             results[m] = torch.mean(stacked) if m != "dice_p_cls" else torch.mean(stacked, dim=0)
         return results

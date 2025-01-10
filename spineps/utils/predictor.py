@@ -85,6 +85,7 @@ class nnUNetPredictor(object):
             checkpoint = torch.load(
                 join(model_training_output_dir, f"fold_{f}", checkpoint_name),
                 map_location=torch.device("cpu"),
+                weights_only=False,
             )
             if i == 0:
                 trainer_name = checkpoint["trainer_name"]
@@ -99,6 +100,8 @@ class nnUNetPredictor(object):
         # restore network
         num_input_channels = determine_num_input_channels(plans_manager, configuration_manager, dataset_json)
         num_output_channels = len(dataset_json["labels"])
+        if "ignore" in dataset_json["labels"]:
+            num_output_channels -= 1
         # num_input_channels = 1
         network = get_network_from_plans(
             plans_manager,

@@ -6,11 +6,19 @@ from pathlib import Path
 from TPTBox import Print_Logger
 from tqdm import tqdm
 
+from spineps.seg_enums import SpinepsPhase
 from spineps.utils.filepaths import get_mri_segmentor_models_dir
 
 link = "https://github.com/Hendrik-code/spineps/releases/download/"
 current_highest_version = "v1.0.9"
 current_instance_highest_version = "v1.2.0"
+current_labeling_highest_version = "v1.3.0"
+
+phase_to_version: dict[SpinepsPhase, str] = {
+    SpinepsPhase.SEMANTIC: current_highest_version,
+    SpinepsPhase.INSTANCE: current_instance_highest_version,
+    SpinepsPhase.LABELING: current_labeling_highest_version,
+}
 
 instances: dict[str, Path | str] = {"instance": link + current_instance_highest_version + "/instance.zip"}
 semantic: dict[str, Path | str] = {
@@ -18,6 +26,7 @@ semantic: dict[str, Path | str] = {
     "t1w": link + current_highest_version + "/t1w.zip",
     "vibe": link + current_highest_version + "/vibe.zip",
 }
+labeling: dict[str, Path | str] = {"t2w_labeling": link + current_labeling_highest_version + "/labeling.zip"}
 
 
 download_names = {
@@ -25,11 +34,12 @@ download_names = {
     "t2w": "T2w_semantic",
     "t1w": "T1w_semantic",
     "vibe": "Vibe_semantic",
+    "t2w_labeling": "T2w_labeling",
 }
 
 
-def download_if_missing(key, url, is_instance: bool):
-    version = current_highest_version if not is_instance else current_instance_highest_version
+def download_if_missing(key, url, phase: SpinepsPhase):
+    version = phase_to_version[phase]
     out_path = Path(get_mri_segmentor_models_dir(), download_names[key] + "_" + version)
     if not out_path.exists():
         download_weights(url, out_path)

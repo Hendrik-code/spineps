@@ -17,13 +17,16 @@ from TPTBox.core.np_utils import (
     np_volume,
 )
 
+from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
 from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 
 
 def phase_postprocess_combined(
+    img_nii: NII,
     seg_nii: NII,
     vert_nii: NII,
+    model_labeling: VertLabelingClassifier | None,
     debug_data: dict | None,
     labeling_offset: int = 0,
     proc_assign_missing_cc: bool = True,
@@ -36,6 +39,7 @@ def phase_postprocess_combined(
 ) -> tuple[NII, NII]:
     logger.print("Post process", Log_Type.STAGE)
     with logger:
+        img_nii.assert_affine(other=seg_nii)
         seg_nii.assert_affine(other=vert_nii)
         # Post process semantic mask
         ###################
@@ -54,6 +58,7 @@ def phase_postprocess_combined(
         seg_uncropped = seg_nii.copy()
 
         # Crop down
+        img_nii.apply_crop_(crop_slices)
         vert_nii.apply_crop_(crop_slices)
         seg_nii.apply_crop_(crop_slices)
 
@@ -79,11 +84,14 @@ def phase_postprocess_combined(
 
         # Label vertebra top -> down
         whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned, labeling_offset=labeling_offset)
-        # if labeling_offset != 0:
-        #    whole_vert_nii_cleaned.map_labels_({i: i + 1 for i in vert_labels if i != 0}, verbose=verbose)
+        if model_labeling is not None:
+            whole_vert_nii_cleaned = perform_labeling_step(model=model_labeling, img_nii=img_nii, vert_nii=whole_vert_nii_cleaned)
         logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
-        vert_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
-        vert_arr_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
+        whole_vert_nii_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
+        vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
+        cur_segarr = seg_nii_cleaned.get_seg_array()
+        cur_segarr[cur_segarr == Location.Endplate.value] = seg_arr_cleaned[cur_segarr == Location.Endplate.value]
+        seg_nii_cleaned.set_array_(cur_segarr)
         ###############
         # Uncrop
 
@@ -208,14 +216,13 @@ def assign_missing_cc(
     return target_arr, reference_arr, deletion_map
 
 
-def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
+def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
     # PIR
     orientation = whole_vert_nii.orientation
     vert_t = whole_vert_nii.reorient()
     seg_t = seg_nii.reorient()
     vert_labels = vert_t.unique()  # without zero
     vert_arr = vert_t.get_seg_array()
-
     subreg_arr = seg_t.get_seg_array()
 
     coms_vert_dict = {}
@@ -273,7 +280,6 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
         subreg_ivd += 100
         subreg_ivd[subreg_ivd == 100] = 0
         vert_arr[subreg_arr == Location.Vertebra_Disc.value] = subreg_ivd[subreg_arr == Location.Vertebra_Disc.value]
-
     n_eps = 0
     n_eps_unique = 0
     if Location.Endplate.value in seg_t.unique():
@@ -300,9 +306,49 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII):
         subreg_ep += 200
         subreg_ep[subreg_ep == 200] = 0
         vert_arr[subreg_arr == Location.Endplate.value] = subreg_ep[subreg_arr == Location.Endplate.value]
+        vert_t.set_array_(vert_arr)
+
+        # divide into upper and lower endplate
+        out = seg_t * 0
+        pref = 1
+        old_vol = -1
+        for dil in range(1, 10):
+            curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
+            new_vol = curr.sum()
+            total = seg_t.extract_label(Location.Endplate.value).sum()
+            logger.print(rf"{new_vol/total*100:.2f}% endplates detected", end="\r") if verbose else None
+            if old_vol == new_vol and old_vol != 0:
+                break
+            old_vol = new_vol
+            if total == new_vol:
+                logger.print("Found all Endplates                                      ")
+                break
+            for i in vert_t.unique():
+                if i >= 40:
+                    break
+                curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
+                v = vert_t.extract_label(i).dilate_msk(dil, verbose=False)
+                end = seg_t.extract_label(Location.Endplate.value) * v
+                end *= -curr + 1  # type: ignore
+                plates = vert_t * end
+                plates.map_labels_(
+                    {
+                        i + 200: Location.Vertebral_Body_Endplate_Inferior.value,
+                        pref + 200: Location.Vertebral_Body_Endplate_Superior.value,
+                    },
+                    verbose=False,
+                )
+                out += plates
+                pref = i
+        curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
+        end = seg_t.extract_label(Location.Endplate.value)
+        end *= -curr + 1
+        # end += end.dilate_msk(3)
+        out += end * Location.Endplate.value
+        seg_t = out
 
     logger.print(f"Labeled {n_ivds} IVDs ({n_ivd_unique} unique), and {n_eps} Endplates ({n_eps_unique} unique)")
-    return vert_t.set_array_(vert_arr).reorient_(orientation).get_seg_array()
+    return vert_t.set_array_(vert_arr).reorient_(orientation).get_seg_array(), seg_t.reorient_(orientation).get_seg_array()
 
 
 def find_nearest_lower(seq, x):
