@@ -1,4 +1,6 @@
-import sys  # noqa: INP001
+from __future__ import annotations
+
+import sys # noqa: INP001
 from pathlib import Path
 
 file = Path(__file__).resolve()

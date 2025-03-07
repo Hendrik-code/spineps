@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # from utils.predictor import nnUNetPredictor
 import subprocess
 from typing import Any
