@@ -9,10 +9,11 @@ import pytorch_lightning as pl
 import torch
 from monai.networks.nets import DenseNet169
 from torch import nn
+from TypeSaveArgParse import Class_to_ArgParse
 
 
 @dataclass
-class ARGS_MODEL:
+class ARGS_MODEL(Class_to_ArgParse):
     classification_conv: bool = False
     classification_linear: bool = True
     #
