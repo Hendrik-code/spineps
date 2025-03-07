@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import partial
 
 import torch
@@ -31,7 +33,7 @@ class Unet3D(nn.Module):
         self.init_conv = nn.Conv3d((channels + conditional_dimensions), init_dim, 7, padding=3)
 
         dims = [init_dim, *(int(dim * m) for m in dim_mults)]
-        in_out = list(zip(dims[:-1], dims[1:], strict=True))  # noqa: RUF007
+        in_out = list(zip(dims[:-1], dims[1:]))  # noqa: RUF007
 
         block_klass = partial(ResnetBlock3D, groups=resnet_block_groups)
         time_dim = None

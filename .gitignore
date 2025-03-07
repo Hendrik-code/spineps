@@ -157,3 +157,4 @@ lightning_logs/
 test.txt
 derivatives_seg
 robert_test.py
+poetry.lock

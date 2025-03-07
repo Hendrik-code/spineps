@@ -1,6 +1,8 @@
 # Adapted from https://github.com/MIC-DKFZ/nnUNet
 # Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring
 # method for deep learning-based biomedical image segmentation. Nature methods, 18(2), 203-211.
+from __future__ import annotations
+
 from dynamic_network_architectures.architectures.unet import PlainConvUNet, ResidualEncoderUNet
 from dynamic_network_architectures.building_blocks.helper import get_matching_instancenorm, convert_dim_to_conv_op
 from dynamic_network_architectures.initialization.weight_init import init_last_bn_before_add_to_0

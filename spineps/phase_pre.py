@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # from utils.predictor import nnUNetPredictor
 from time import perf_counter
 

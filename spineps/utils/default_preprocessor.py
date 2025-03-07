@@ -7,7 +7,7 @@ import numpy as np
 
 # from acvl_utils.miscellaneous.ptqdm import ptqdm
 from batchgenerators.utilities.file_and_folder_operations import *
-from acvl_utils.cropping_and_padding.bounding_boxes import get_bbox_from_mask, crop_to_bbox, bounding_box_to_slice
+from acvl_utils.cropping_and_padding.bounding_boxes import get_bbox_from_mask, bounding_box_to_slice
 
 import nnunetv2
 from nnunetv2.utilities.find_class_by_name import recursive_find_python_class

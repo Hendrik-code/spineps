@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 # from utils.predictor import nnUNetPredictor
+from typing import Union
+
 import nibabel as nib
 from TPTBox import BIDS_FILE, NII, ZOOMS, Log_Type
 
@@ -6,7 +10,7 @@ from spineps.seg_enums import Acquisition, Modality
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger
 
-Modality_Pair = tuple[list[Modality] | Modality, Acquisition]
+Modality_Pair = tuple[Union[list[Modality], Modality], Acquisition]
 
 
 def find_best_matching_model(
