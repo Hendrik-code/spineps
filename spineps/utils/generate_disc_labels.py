@@ -11,6 +11,7 @@ from pathlib import Path
 import cc3d
 import numpy as np
 
+from spineps.utils.compat import zip_strict
 from spineps.utils.image import Image
 
 DISCS_MAP = {2:1, 102: 3, 103: 4, 104: 5,
@@ -198,7 +199,7 @@ def closest_point_seg_to_line(discs_seg, centerline, bounding_boxes):
         # Loop on all the pixels of the segmentation
         min_dist = np.inf
         nonzero = np.where(zer>0)
-        for u, v, w in zip(nonzero[0], nonzero[1], nonzero[2]):
+        for u, v, w in zip_strict(nonzero[0], nonzero[1], nonzero[2]):
             _, dist = project_point_on_line(np.array([u, v, w]), centerline)
             if dist < min_dist:
                 min_dist = dist

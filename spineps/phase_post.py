@@ -21,6 +21,7 @@ from TPTBox.core.np_utils import (
 
 from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
+from spineps.utils.compat import zip_strict
 from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 
 
@@ -365,7 +366,7 @@ def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0):
     vert_nii.reorient_()
     vert_arr = vert_nii.get_seg_array()
     com_i = np_center_of_mass(vert_arr)
-    comb_l = list(zip(com_i.keys(), com_i.values()))
+    comb_l = list(zip_strict(com_i.keys(), com_i.values()))
     comb_l.sort(key=lambda a: a[1][1])  # PIR
     com_map = {comb_l[idx][0]: idx + 1 + labeling_offset for idx in range(len(comb_l))}
 
