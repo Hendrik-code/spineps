@@ -85,7 +85,12 @@ def phase_postprocess_combined(
         # Label vertebra top -> down
         whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned, labeling_offset=labeling_offset)
         if model_labeling is not None:
-            whole_vert_nii_cleaned = perform_labeling_step(model=model_labeling, img_nii=img_nii, vert_nii=whole_vert_nii_cleaned)
+            whole_vert_nii_cleaned = perform_labeling_step(
+                model=model_labeling,
+                img_nii=img_nii,
+                vert_nii=whole_vert_nii_cleaned,
+                subreg_nii=seg_nii_cleaned,
+            )
         logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
         whole_vert_nii_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
         vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)

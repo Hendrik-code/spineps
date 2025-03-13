@@ -28,12 +28,12 @@ class VertLabelingClassifier(Segmentation_Model):
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
         # self.model: PLClassifier = model
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        final_size: tuple[int, int, int] = (152, 168, 32)
+        self.final_size: tuple[int, int, int] = (152, 168, 32)
         self.totensor = ToTensor()
         self.transform = Compose(
             [
                 NormalizeIntensityd(keys=["img"], nonzero=True, channel_wise=False),
-                CenterSpatialCropd(keys=["img", "seg"], roi_size=final_size),
+                CenterSpatialCropd(keys=["img", "seg"], roi_size=self.final_size),
             ]
         )
 
@@ -43,11 +43,20 @@ class VertLabelingClassifier(Segmentation_Model):
         chktpath = search_path(self.model_folder, "**/*val_f1=*valf1-weights.ckpt")
         assert len(chktpath) >= 1, chktpath
         model = PLClassifier.load_from_checkpoint(checkpoint_path=chktpath[-1])
+        if hasattr(model.opt, "final_size"):
+            self.final_size = model.opt.final_size
+            self.transform = Compose(
+                [
+                    NormalizeIntensityd(keys=["img"], nonzero=True, channel_wise=False),
+                    CenterSpatialCropd(keys=["img", "seg"], roi_size=self.final_size),
+                ]
+            )
         model.eval()
         model.net.eval()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() and not self.use_cpu else "cpu")
         model.to(self.device)
         self.predictor = model
+        self.cutout_size = model.opt.final_size
         self.print("Model loaded from", self.model_folder, verbose=True)
         return self
 
@@ -117,7 +126,7 @@ class VertLabelingClassifier(Segmentation_Model):
         arr_cut, cutout_coords_slices, padding = np_utils.np_calc_crop_around_centerpoint(
             center_pos,
             arr,
-            (152, 168, 32),
+            self.cutout_size,
         )
         # sem_cut = np.pad(vert_v.get_seg_array()[cutout_coords_slices], padding)
         return self._run_array(arr_cut)  # sem_cut
@@ -126,6 +135,14 @@ class VertLabelingClassifier(Segmentation_Model):
         # TODO check resolution
         # TODO check size
         return self._run_array(img_nii.get_array())
+
+    def run_all_arrays(self, img_arrays: dict[int, np.ndarray]) -> dict[int, dict[str, np.ndarray]]:
+        # TODO assert order of seg labels are order from top to bottom
+        predictions = {}
+        for v, arr in img_arrays.items():
+            logits_soft, pred_cls = self._run_array(arr)
+            predictions[v] = {"soft": logits_soft, "pred": pred_cls}
+        return predictions
 
     def _run_array(self, img_arr: np.ndarray):  # , seg_arr: np.ndarray):
         assert img_arr.ndim == 3, f"Dimension mismatch, {img_arr.shape}, expected 3 dimensions"
