@@ -370,8 +370,11 @@ def flatten(a: list[str | int | list[str] | list[int]]):
 @dataclass
 class SubjectInfo:
     subject_name: int
+    has_anomaly_entry: bool
     anomaly_entry: dict
+    deleted_label: list[int]
     labelmap: dict
+    is_remove: bool
     actual_labels: list[int]
     last_lwk: int
     last_bwk: int
@@ -379,6 +382,10 @@ class SubjectInfo:
     first_bwk: int = 8
     first_lwk: int = 20
     double_entries: list[int] = field(default_factory=list)
+
+    @property
+    def block(self) -> int:
+        return int(str(self.subject_name)[:3])
 
 
 # Get labels
@@ -390,11 +397,17 @@ def get_subject_info(
 ):
     double_entries = []
     labelmap = {}
+    has_anomaly_entry = False
     anomaly_entry = {}
+    deleted_label = []
+    is_remove = False
     if int(subject_name) in anomaly_dict:
         anomaly_entry = anomaly_dict[subject_name]
+        has_anomaly_entry = True
+        if anomaly_entry["DeleteLabel"] is not None:
+            deleted_label = [anomaly_entry["DeleteLabel"]]
         if bool(anomaly_entry["Remove"]):
-            return None
+            is_remove = True
 
         if bool(anomaly_entry["T11"]):
             labelmap = {i: i + 1 for i in range(19, 26)}
@@ -414,8 +427,11 @@ def get_subject_info(
     last_lwk = max([v for v in actual_labels if 22 < v < 26]) if max(actual_labels) >= 23 else None
     return SubjectInfo(
         subject_name=int(subject_name),
+        has_anomaly_entry=has_anomaly_entry,
         anomaly_entry=anomaly_entry,
         actual_labels=actual_labels,
+        deleted_label=deleted_label,
+        is_remove=is_remove,
         labelmap=labelmap,
         last_lwk=last_lwk,
         last_bwk=last_bwk,
