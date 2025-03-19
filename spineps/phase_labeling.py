@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
-from TPTBox import NII, Log_Type, No_Logger, Location
+from TPTBox import NII, Location, Log_Type, No_Logger
 
 from spineps.architectures.read_labels import (
     VertExact,
@@ -43,9 +43,13 @@ def perform_labeling_step(model: VertLabelingClassifier, img_nii: NII, vert_nii:
     if subreg_nii is not None:
         # crop for corpus instead of whole vertebra
         corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border))
-        vert_nii = vert_nii * corpus_nii
+        vert_nii_c = vert_nii * corpus_nii
     # run model
-    labelmap = run_model_for_vert_labeling(model, img_nii, vert_nii)[0]
+    labelmap = run_model_for_vert_labeling(model, img_nii, vert_nii_c)[0]
+    # TODO make all vertebrae without visible corpus to visibility 0 but take into account for labeling
+    for i in vert_nii.unique():
+        if i not in labelmap:
+            labelmap[i] = 0
 
     # relabel according to labelmap
     return vert_nii.map_labels_(labelmap)
@@ -167,7 +171,7 @@ def prepare_vertgrp(
 
 def prepare_visible(predictions: dict, visible_w: float = 1.0, gaussian_sigma: float = 0.8, gaussian_radius: int = 2):
     # has soft and FULLYVISIBLE key
-    predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())
+    predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())  # noqa: RUF015
     if "FULLYVISIBLE" in predict_keys:
         visible_chain = np.asarray([k["soft"]["FULLYVISIBLE"][1] for v, k in predictions.items()])
     else:
@@ -256,7 +260,7 @@ def find_vert_path_from_predictions(
     relative_cost_matrix = np.zeros((n_vert, 6))  # TODO 6 fix?
     visible_chain = prepare_visible(predictions, visible_w)
 
-    predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())
+    predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())  # noqa: RUF015
     assert (
         "VERT" in predict_keys or "VERTEXACT" in predict_keys or "VERTGRP" in predict_keys
     ), f"No vital classification head found, got {predict_keys}"
@@ -295,7 +299,7 @@ def find_vert_path_from_predictions(
 
     #
     for idx, (_, k) in enumerate(predictions.items()):
-        vert_softmax_output = k["soft"]["VERT"] if "VERT" in predict_keys else np.zeros((len(VertExact)))
+        vert_softmax_output = k["soft"]["VERT"] if "VERT" in predict_keys else np.zeros(len(VertExact))
         vert_values = np.multiply(
             prepare_vert(
                 vert_softmax_output,
@@ -305,7 +309,7 @@ def find_vert_path_from_predictions(
             vert_w,
         )
 
-        vertgrp_softmax_output = k["soft"]["VERTGRP"] if "VERTGRP" in predict_keys else np.zeros((len(VertGroup)))
+        vertgrp_softmax_output = k["soft"]["VERTGRP"] if "VERTGRP" in predict_keys else np.zeros(len(VertGroup))
         vertgrp_values = np.multiply(
             prepare_vertgrp(
                 vertgrp_softmax_output,
@@ -316,7 +320,7 @@ def find_vert_path_from_predictions(
         )
 
         # if "REGION" in k["soft"] else np.zeros((4, *vert_softmax_output.shape[1:]))
-        region_softmax_output = k["soft"]["REGION"] if "REGION" in predict_keys else np.zeros((len(VertRegion)))
+        region_softmax_output = k["soft"]["REGION"] if "REGION" in predict_keys else np.zeros(len(VertRegion))
         region_values = np.multiply(
             prepare_region(
                 region_softmax_output,

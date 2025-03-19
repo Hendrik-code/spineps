@@ -58,7 +58,6 @@ class PLClassifier(pl.LightningModule):
         self.cross_entropy = nn.CrossEntropyLoss()
         self.mse = nn.MSELoss(reduction="none")
         self.l2_reg_w = opt.l2_regularization_w
-        print(f"{self._get_name()} loaded with", opt)
 
     def forward(self, x):
         features = self.net(x)

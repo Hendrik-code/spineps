@@ -3,7 +3,15 @@ import numpy as np
 from ants.utils.convert_nibabel import from_nibabel
 from scipy.ndimage import center_of_mass
 from TPTBox import NII, Location, Logger_Interface
-from TPTBox.core.np_utils import np_bbox_binary, np_count_nonzero, np_dilate_msk, np_unique, np_unique_withoutzero, np_volume
+from TPTBox.core.np_utils import (
+    np_bbox_binary,
+    np_connected_components_per_label,
+    np_count_nonzero,
+    np_dilate_msk,
+    np_unique,
+    np_unique_withoutzero,
+    np_volume,
+)
 from tqdm import tqdm
 
 
@@ -120,7 +128,7 @@ def clean_cc_artifacts(
                 # dilated mask nothing in original mask, just delete it
                 result_arr[mask_cc_l != 0] = 0
                 continue
-            dilated_m = np_dilate_msk(mask_cc_l, mm=1)
+            dilated_m = np_dilate_msk(mask_cc_l, n_pixel=1)
             dilated_m[mask_cc_l != 0] = 0
             neighbor_voxel_count = np_count_nonzero(dilated_m)
             # print(subreg_cc_stats[label])
@@ -148,7 +156,7 @@ def clean_cc_artifacts(
     return result_arr
 
 
-def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbose: bool = False) -> tuple[dict, dict]:
+def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbose: bool = False) -> tuple[dict, dict]:  # noqa: ARG001
     """Applies 3d connected components
 
     Args:
@@ -159,26 +167,11 @@ def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbo
     Returns:
 
     """
-    assert 2 <= mask_image.ndim <= 3, f"expected 2D or 3D, but got {mask_image.ndim}"
-    assert 1 <= connectivity <= 3, f"expected connectivity in [1,3], but got {connectivity}"
-    if mask_image.ndim == 2:  # noqa: SIM108
-        connectivity = min(connectivity * 2, 8)  # 1:4, 2:8, 3:8
-    else:
-        connectivity = 6 if connectivity == 1 else 18 if connectivity == 2 else 26
-
-    subreg_cc = {}
-    subreg_cc_stats = {}
-    regions = np_unique(mask_image)[1:]
-    for subreg in regions:
-        img_subreg = mask_image.copy()
-        img_subreg[img_subreg != subreg] = 0
-        # labels_out = cc3d.dust(img_subreg, threshold=400, in_place=False)
-        labels_out, n = cc3d.connected_components(img_subreg, connectivity=connectivity, return_N=True)
-        # labels_out, N = cc3d.largest_k(img_subreg, k=10, return_N=True)
-        subreg_cc[subreg] = labels_out
-        subreg_cc_stats[subreg] = cc3d.statistics(labels_out)
-        if (n) != 1:  # zero is a label
-            print(f"subreg {subreg} does not have one CC (not counting zeros), got {n}") if verbose else None
+    subreg_cc = np_connected_components_per_label(
+        mask_image,
+        connectivity=connectivity,
+    )
+    subreg_cc_stats = {k: cc3d.statistics(v) for k, v in subreg_cc.items()}
     return subreg_cc, subreg_cc_stats
 
 
@@ -199,7 +192,7 @@ def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger) -> N
         # sem_vert = seg_sem.apply_mask(inst_vert)
 
         # Check if multiple CC exist
-        inst_vert_cc = inst_vert.get_largest_k_segmentation_connected_components(3, return_original_labels=False)
+        inst_vert_cc: NII = inst_vert.filter_connected_components(max_count_component=3, keep_label=False)
         inst_vert_cc_n = int(inst_vert_cc.max())
         if inst_vert_cc_n == 1:
             continue

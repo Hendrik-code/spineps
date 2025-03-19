@@ -57,7 +57,7 @@ class VertLabelingClassifier(Segmentation_Model):
         model.to(self.device)
         self.predictor = model
         self.cutout_size = model.opt.final_size
-        self.print("Model loaded from", self.model_folder, verbose=True)
+        self.print("Model loaded from", self.model_folder, Log_Type.OK, verbose=True)
         return self
 
     def run(
