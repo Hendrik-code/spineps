@@ -74,9 +74,6 @@ def parser_arguments(parser: argparse.ArgumentParser):
 
 @citation_reminder
 def entry_point():
-    modelids_semantic = list(modelid2folder_semantic().keys())
-    modelids_instance = list(modelid2folder_instance().keys())
-    modelids_labeling = [*list(modelid2folder_labeling().keys()), "none"]
     ###########################
     ###########################
     main_parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -98,7 +95,7 @@ def entry_point():
         required=True,
         # choices=modelids_semantic,
         metavar="",
-        help=f"The model used for the semantic segmentation. Choices are {modelids_semantic} or a string absolute path the model folder",
+        help="The model used for the semantic segmentation. You can also pass an absolute path the model folder",
     )
     parser_sample.add_argument(
         "-model_instance",
@@ -108,7 +105,7 @@ def entry_point():
         # required=True,
         # choices=modelids_instance,
         metavar="",
-        help=f"The model used for the vertebra instance segmentation. Choices are {modelids_instance} or a string absolute path the model folder",
+        help="The model used for the vertebra instance segmentation. You can also pass an absolute path the model folder",
     )
     parser_sample.add_argument(
         "-model_labeling",
@@ -118,14 +115,13 @@ def entry_point():
         # required=True,
         # choices=modelids_instance,
         metavar="",
-        help=f"The model used for the vertebra labeling classification. Choices are {modelids_labeling} or a string absolute path the model folder",
+        help="The model used for the vertebra labeling classification. You can also pass an absolute path the model folder",
     )
     parser_sample = parser_arguments(parser_sample)
 
     ###########################
     #
-    model_subreg_choices = ["auto", *modelids_semantic]
-    model_vert_choices = ["auto", *modelids_instance]
+    #
     parser_dataset.add_argument(
         "-directory", "-i", "-d", required=True, type=str, help="path to the input directory, preferably a BIDS dataset"
     )
@@ -137,7 +133,7 @@ def entry_point():
         default="auto",
         # choices=model_subreg_choices,
         metavar="",
-        help=f"The model used for the subregion segmentation. Choices are {model_subreg_choices} or a string absolute path the model folder",
+        help="The model used for the subregion segmentation. You can also pass an absolute path the model folder",
     )
     parser_dataset.add_argument(
         "-model_instance",
@@ -146,7 +142,7 @@ def entry_point():
         default="auto",
         # choices=model_vert_choices,
         metavar="",
-        help=f"The model used for the vertebra segmentation. Choices are {model_vert_choices} or a string absolute path the model folder",
+        help="The model used for the vertebra segmentation. You can also pass an absolute path the model folder",
     )
     parser_dataset.add_argument(
         "-model_labeling",
@@ -156,7 +152,7 @@ def entry_point():
         # required=True,
         # choices=modelids_instance,
         metavar="",
-        help=f"The model used for the vertebra labeling classification. Choices are {modelids_labeling} or a string absolute path the model folder",
+        help="The model used for the vertebra labeling classification. You can also pass an absolute path the model folder",
     )
     parser_dataset.add_argument(
         "-ignore_bids_filter",
@@ -184,6 +180,7 @@ def entry_point():
     ###########################
     opt = main_parser.parse_args()
     print(opt)
+    print()
     # print(opt)
     if opt.cmd == "sample":
         run_sample(opt)

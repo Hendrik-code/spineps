@@ -8,12 +8,14 @@ from TPTBox.core.np_utils import (
     np_bbox_binary,
     np_center_of_mass,
     np_connected_components,
+    np_connected_components_per_label,
     np_contacts,
     np_count_nonzero,
     np_dilate_msk,
     np_extract_label,
     np_map_labels,
     np_unique,
+    np_unique_withoutzero,
     np_volume,
 )
 
@@ -84,11 +86,22 @@ def phase_postprocess_combined(
 
         # Label vertebra top -> down
         whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned, labeling_offset=labeling_offset)
-        if model_labeling is not None:
-            whole_vert_nii_cleaned = perform_labeling_step(model=model_labeling, img_nii=img_nii, vert_nii=whole_vert_nii_cleaned)
         logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
+        if model_labeling is not None:
+            whole_vert_nii_cleaned = perform_labeling_step(
+                model=model_labeling,
+                img_nii=img_nii,
+                vert_nii=whole_vert_nii_cleaned,
+                subreg_nii=seg_nii_cleaned,
+            )
+
+        logger.print("vert_nii", whole_vert_nii_cleaned.unique(), whole_vert_nii_cleaned.volumes())
+        logger.print("seg_nii", seg_nii_cleaned.unique())
+
         whole_vert_nii_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
         vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
+        #
+        #
         cur_segarr = seg_nii_cleaned.get_seg_array()
         cur_segarr[cur_segarr == Location.Endplate.value] = seg_arr_cleaned[cur_segarr == Location.Endplate.value]
         seg_nii_cleaned.set_array_(cur_segarr)
@@ -97,6 +110,9 @@ def phase_postprocess_combined(
 
         vert_uncropped[crop_slices] = vert_arr_cleaned
         seg_uncropped[crop_slices] = seg_nii_cleaned.get_seg_array()
+
+        logger.print("vert_uncropped", vert_uncropped.unique(), vert_uncropped.volumes())
+        logger.print("seg_uncropped", seg_uncropped.unique())
 
         # subreg_nii_cleaned = vert_nii_cleaned.set_array(subreg_arr_cleaned, verbose=False)
         logger.print(
@@ -174,13 +190,13 @@ def assign_missing_cc(
         logger.print("No CC had to be assigned", Log_Type.OK, verbose=verbose)
         return target_arr, reference_arr, deletion_map
     # subreg_arr_vert_rest is not hit pixels bei vertebra prediction
-    subreg_cc, _ = np_connected_components(subreg_arr_vert_rest, connectivity=2)
+    subreg_cc = np_connected_components_per_label(subreg_arr_vert_rest, connectivity=2)
     loop_counts = 0
     # for label, for each cc
     for label, subreg_cc_map in subreg_cc.items():
         if label == 0:
             continue
-        cc_labels = np_unique(subreg_cc_map)[1:]
+        cc_labels = np_unique_withoutzero(subreg_cc_map)
         loop_counts += len(cc_labels)
         # print(cc_labels)
         for cc_l in cc_labels:
@@ -192,7 +208,7 @@ def assign_missing_cc(
             cc_map_c[cc_map_c != 0] = 1
             # print("cc_map_c\n", cc_map_c)
             # print("vert_arr_c\n", vert_arr_c)
-            cc_map_dilated = np_dilate_msk(cc_map_c, 1, mm=1, connectivity=2)
+            cc_map_dilated = np_dilate_msk(cc_map_c, 1, n_pixel=1, connectivity=2)
             # cc_map_dilated[vert_arr_c == 0] = 0
             # print("cc_map_dilated\n", cc_map_dilated)
             # majority voting
@@ -243,18 +259,17 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
     n_ivd_unique = 0
     if Location.Vertebra_Disc.value in seg_t.unique():
         # Map IVDS
-        subreg_cc, subreg_cc_n = seg_t.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
-        subreg_cc = subreg_cc[Location.Vertebra_Disc.value]
-        cc_labelset = list(range(1, subreg_cc_n[Location.Vertebra_Disc.value] + 1))
+        subreg_cc = seg_t.get_connected_components(labels=Location.Vertebra_Disc.value)
+        subreg_cc_n = len(subreg_cc.unique())
+        subreg_cc = subreg_cc.get_seg_array()
+        cc_labelset = list(range(1, subreg_cc_n + 1))
         mapping_cc_to_vert_label = {}
 
         coms_ivd_dict = {}
         for c in cc_labelset:
             if c == 0:
                 continue
-            c_l = subreg_cc.copy()
-            c_l[c_l != c] = 0
-            com_y = np_center_of_mass(c_l)[c][1]  # center_of_mass(c_l)[1]
+            com_y = np_center_of_mass(subreg_cc == c)[1][1]  # center_of_mass(c_l)[1]
 
             if com_y < min(coms_vert_y):
                 label = min(coms_vert_labels) - 1
@@ -284,17 +299,16 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
     n_eps_unique = 0
     if Location.Endplate.value in seg_t.unique():
         # MAP Endplate
-        ep_cc, ep_cc_n = seg_t.get_segmentation_connected_components(labels=Location.Endplate.value)
-        ep_cc = ep_cc[Location.Endplate.value]
-        cc_ep_labelset = list(range(1, ep_cc_n[Location.Endplate.value] + 1))
+        ep_cc = seg_t.get_connected_components(labels=Location.Endplate.value)
+        ep_cc_n = len(ep_cc.unique())
+        ep_cc = ep_cc.get_seg_array()
+        cc_ep_labelset = list(range(1, ep_cc_n + 1))
         mapping_ep_cc_to_vert_label = {}
         coms_ivd_dict = {}
         for c in cc_ep_labelset:
             if c == 0:
                 continue
-            c_l = ep_cc.copy()
-            c_l[c_l != c] = 0
-            com_y = np_center_of_mass(c_l)[c][1]  # center_of_mass(c_l)[1]
+            com_y = np_center_of_mass(ep_cc == c)[1][1]  # center_of_mass(c_l)[1]
             nearest_lower = find_nearest_lower(coms_vert_y, com_y)
             label = next(i for i in coms_vert_dict if coms_vert_dict[i] == nearest_lower)
             mapping_ep_cc_to_vert_label[c] = label
@@ -312,7 +326,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
         out = seg_t * 0
         pref = 1
         old_vol = -1
-        for dil in range(1, 10):
+        for dil in range(1, 15):
             curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
             new_vol = curr.sum()
             total = seg_t.extract_label(Location.Endplate.value).sum()
@@ -345,7 +359,9 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
         end *= -curr + 1
         # end += end.dilate_msk(3)
         out += end * Location.Endplate.value
-        seg_t = out
+        seg_t = out.extract_label(
+            [Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value, Location.Endplate.value]
+        )
 
     logger.print(f"Labeled {n_ivds} IVDs ({n_ivd_unique} unique), and {n_eps} Endplates ({n_eps_unique} unique)")
     return vert_t.set_array_(vert_arr).reorient_(orientation).get_seg_array(), seg_t.reorient_(orientation).get_seg_array()
@@ -429,12 +445,11 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII):
 
     stats = {}
     # Map IVDS
-    subreg_cc, subreg_cc_n = seg_sem.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
-    subreg_cc = subreg_cc[Location.Vertebra_Disc.value] + 100
-    subreg_cc_n = subreg_cc_n[Location.Vertebra_Disc.value]
+    subreg_cc: NII = seg_sem.get_connected_components(labels=Location.Vertebra_Disc.value)
+    subreg_cc += 100
 
-    coms = np_center_of_mass(subreg_cc)
-    volumes = np_volume(subreg_cc)
+    coms = subreg_cc.center_of_masses()
+    volumes = subreg_cc.volumes()
     stats = {i: (g[1], True, volumes[i]) for i, g in coms.items()}
 
     vert_coms = vert_nii.center_of_masses()

@@ -46,11 +46,14 @@ class Test_PathLabeling(unittest.TestCase):
             cost,
             region_rel_cost=rel_cost,
             regions=[0, 3],
+            softmax_temp=0,
+            softmax_cost=False,
         )
+        fcost_avg = fcost / len(fpath)
         print()
         print("Path cost", round(fcost, 3))
         print("Path", fpath)
-        self.assertEqual(round(fcost, 3), -5.0)
+        self.assertEqual(round(fcost_avg, 3), -5.0)
         self.assertEqual(fpath, [1, 2, 3, 4])
 
     def test_search_path_relativeonly(self):

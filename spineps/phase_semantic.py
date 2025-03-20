@@ -16,7 +16,7 @@ def predict_semantic_mask(
     debug_data: dict,
     proc_fill_3d_holes: bool = True,
     proc_clean_beyond_largest_bounding_box: bool = True,
-    proc_remove_inferior_beyond_canal: bool = True,
+    proc_remove_inferior_beyond_canal: bool = False,
     proc_clean_small_cc_artifacts: bool = True,
     verbose: bool = False,
 ) -> tuple[NII | None, NII | None, np.ndarray | None, ErrCode]:
@@ -51,7 +51,7 @@ def predict_semantic_mask(
 
         debug_data["sem_raw"] = seg_nii.copy()
 
-        if len(seg_nii.unique()) == 0:
+        if seg_nii.is_empty:
             logger.print("Subregion mask is empty, skip this", Log_Type.FAIL)
             return seg_nii, softmax_logits, ErrCode.EMPTY
 
@@ -97,6 +97,9 @@ def predict_semantic_mask(
 
         if proc_fill_3d_holes:
             seg_nii = seg_nii.fill_holes_(fill_holes_labels, verbose=logger)
+            # seg_fh = seg_nii.extract_label(fill_holes_labels, keep_label=True)
+            # seg_fh = seg_fh.fill_holes_global_with_majority_voting(verbose=logger)
+            # seg_nii[seg_nii == 0] = seg_fh[seg_nii == 0]
 
     return seg_nii, softmax_logits, ErrCode.OK
 
@@ -116,8 +119,8 @@ def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
 def semantic_bounding_box_clean(seg_nii: NII):
     ori = seg_nii.orientation
     seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
-    seg_bin_largest_k_cc_nii = seg_binary.get_largest_k_segmentation_connected_components(
-        k=None, labels=1, connectivity=3, return_original_labels=False
+    seg_bin_largest_k_cc_nii: NII = seg_binary.filter_connected_components(
+        max_count_component=None, labels=1, connectivity=3, keep_label=False
     )
     max_k = int(seg_bin_largest_k_cc_nii.max())
     if max_k > 3:

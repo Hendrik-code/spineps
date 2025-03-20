@@ -289,7 +289,7 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         threads_started = True
         self.predictor.allow_tqdm = self.default_allow_tqdm
         self.predictor.verbose = False
-        self.print("Model loaded from", self.model_folder, verbose=True)
+        self.print("Model loaded from", self.model_folder, Log_Type.OK, verbose=True)
         return self
 
     def run(
@@ -329,7 +329,7 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() and not self.use_cpu else "cpu")
         model.to(self.device)
         self.predictor = model
-        self.print("Model loaded from", self.model_folder, verbose=True)
+        self.print("Model loaded from", self.model_folder, Log_Type.OK, verbose=True)
         return self
 
     def run(
