@@ -4,18 +4,29 @@
 # coverage html
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
 
-from TPTBox import NII, No_Logger
-from TPTBox.tests.test_utils import get_test_mri
+from TPTBox import No_Logger
 from typing_extensions import Self
 
-from spineps.phase_labeling import VertLabelingClassifier
-from spineps.phase_pre import preprocess_input
-from spineps.phase_semantic import predict_semantic_mask
-from spineps.seg_enums import ErrCode, OutputType
+from spineps.architectures.pl_densenet import ARGS_MODEL, PLClassifier
+from spineps.architectures.pl_unet import PLNet
+from spineps.architectures.read_labels import (
+    BinaryLabelTypeDummy,
+    EnumLabelType,
+    Objectives,
+    Target,
+    VertExact,
+    VertExactClass,
+    VertGroup,
+    VertRegion,
+    VertRel,
+    VertT13,
+    get_subject_info,
+    get_vert_entry,
+    vertgrp_sequence_to_class,
+)
+from spineps.phase_labeling import VertLabelingClassifier, fpath_post_processing, is_valid_vertebra_sequence
 from spineps.seg_model import Segmentation_Inference_Config
-from spineps.seg_utils import check_input_model_compatibility, check_model_modality_acquisition
 
 logger = No_Logger()
 
@@ -50,23 +61,47 @@ class Test_Labeling_Model_Dummy(VertLabelingClassifier):
         return self
 
 
-class Test_Labeling_Read_Labels(unittest.TestCase):
-    def test_simple_testing_case(self):
-        from spineps.architectures.read_labels import (
-            Objectives,
-            Target,
-            VertExact,
-            VertExactClass,
-            VertGroup,
-            VertRegion,
-            VertRel,
-            VertT13,
-            get_subject_info,
-            get_vert_entry,
-            vertgrp_sequence_to_class,
-        )
-        from spineps.phase_labeling import fpath_post_processing, is_valid_vertebra_sequence
+class Test_Densenet(unittest.TestCase):
+    def test_init_classifier(self):
+        model = PLClassifier(ARGS_MODEL(num_classes=3), group_2_n_channel={"Test": 3})
+        self.assertTrue(model is not None)
 
+
+class Test_Unet(unittest.TestCase):
+    def test_init_unet(self):
+        model = PLNet()
+        self.assertTrue(model is not None)
+
+
+class Test_Labeling_Read_Labels(unittest.TestCase):
+    def test_EnumLabelType(self):
+        from enum import Enum
+
+        class CDE(Enum):
+            NULL = 0
+            ONE = 1
+
+        cde_type = EnumLabelType(CDE, column_name="test")
+
+        entry = {"test": CDE.NULL, "test2": CDE.ONE, "Test3": CDE.NULL}
+        result = cde_type(entry)
+        print(result)
+
+    def test_binaryEnumLabelType(self):
+        from enum import Enum
+
+        cde_type = BinaryLabelTypeDummy(column_name="test")
+
+        entry = {"test": True, "test2": "true", "Test3": False}
+        result = cde_type(entry)
+        print(result)
+        self.assertTrue(result)
+
+        cde_type = BinaryLabelTypeDummy(column_name="test2")
+        result = cde_type(entry)
+        self.assertTrue(result)
+
+    def test_simple_testing_case(self):
         objectives = Objectives(
             [
                 # Target.FULLYVISIBLE,

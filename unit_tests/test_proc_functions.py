@@ -40,3 +40,35 @@ class Test_proc_functions(unittest.TestCase):
         l3_cleaned_volumes = l3_cleaned.volumes()
         for a, b in zip(l3_volumes.values(), l3_cleaned_volumes.values(), strict=True):
             self.assertEqual(a, b)
+
+    def test_clean_artifacts_no_zeros(self):
+        mri, subreg, vert, label = get_test_mri()
+        l3 = vert.extract_label(label)
+        l3[l3 == 0] = 1
+        l3_volumes = l3.volumes()
+        l3_cleaned = clean_cc_artifacts(l3, logger=logger, labels=[41, 42, 43, 44, 45, 46, 47, 48, 49])
+        l3_cleaned = l3.set_array(l3_cleaned)
+        l3_cleaned_volumes = l3_cleaned.volumes()
+        for a, b in zip(l3_volumes.values(), l3_cleaned_volumes.values(), strict=True):
+            self.assertEqual(a, b)
+
+    def test_clean_artifacts_zeros(self):
+        mri, subreg, vert, label = get_test_mri()
+        l3 = vert.extract_label(label)
+        l3 = subreg.apply_mask(l3) * 0
+        l3_volumes = l3.volumes()
+
+        for ignore_missing_labels in [False, True]:
+            if ignore_missing_labels:
+                l3_cleaned = clean_cc_artifacts(
+                    l3, logger=logger, labels=[41, 42, 43, 44, 45, 46, 47, 48, 49], ignore_missing_labels=ignore_missing_labels
+                )
+                l3_cleaned = l3.set_array(l3_cleaned)
+                l3_cleaned_volumes = l3_cleaned.volumes()
+                for a, b in zip(l3_volumes.values(), l3_cleaned_volumes.values(), strict=True):
+                    self.assertEqual(a, b)
+            else:
+                with self.assertRaises(AssertionError):
+                    l3_cleaned = clean_cc_artifacts(
+                        l3, logger=logger, labels=[41, 42, 43, 44, 45, 46, 47, 48, 49], ignore_missing_labels=ignore_missing_labels
+                    )
