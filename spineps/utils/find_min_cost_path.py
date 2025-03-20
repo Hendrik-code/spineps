@@ -115,7 +115,7 @@ def find_most_probably_sequence(  # noqa: C901
             options = []
             for cc in range(min_start_class, n_classes):
                 add_option_path(options, 0, cc, 0)
-                # options.append(minCostAlgo(r=0, c=cc))  # noqa: PERF401
+                # options.append(minCostAlgo(r=0, c=cc))
             minidx, minval = argmin([o[0] for o in options])
             return minval, options[minidx][1]
         # stepped over the line
@@ -193,7 +193,7 @@ def find_most_probably_sequence(  # noqa: C901
                 cost_add += vt13_cost
         return cost_add
 
-    def rel_cost(r, c, pnext, region_cur):  # noqa: ARG001
+    def rel_cost(r, c, pnext, region_cur):
         # transition cost of vertrel
         # first is just equal to that specific vertebra
         # last is dependant on next in path
