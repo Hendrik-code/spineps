@@ -46,53 +46,6 @@ class PLNet(pl.LightningModule):
     def forward(self, x):
         return self.network(x)
 
-    def training_step(self, batch):
-        target = batch["target"]
-        gt = batch["class"]
-        loss, logits, gt, pred_cls = self._shared_step(target, gt, detach2cpu=True)
-        metrics = self._shared_metric_step(loss, logits, gt, pred_cls)
-        self.log("train_loss", loss.detach().cpu(), batch_size=target.shape[0], prog_bar=True)
-        self._shared_metric_append(metrics, self.train_step_outputs)
-        return loss
-
-    def on_train_epoch_end(self) -> None:
-        if len(self.train_step_outputs) > 0:
-            metrics = self._shared_cat_metrics(self.train_step_outputs)
-
-            self.log("train_dice", metrics["dice"], on_epoch=True)
-            self.log("train_diceFG", metrics["diceFG"], on_epoch=True)
-            self.logger.experiment.add_text("train_dice_p_cls", str(metrics["dice_p_cls"].tolist()), self.current_epoch)
-        self.train_step_outputs.clear()
-
-    def validation_step(self, batch, _):
-        loss, logits, gt, pred_cls = self._shared_step(batch["target"], batch["class"], detach2cpu=True)
-        loss = loss.detach().cpu()
-        metrics = self._shared_metric_step(loss, logits, gt, pred_cls)
-        self._shared_metric_append(metrics, self.val_step_outputs)
-
-    def on_validation_epoch_end(self):
-        if len(self.val_step_outputs) > 0:
-            metrics = self._shared_cat_metrics(self.val_step_outputs)
-
-            self.log("val_loss", metrics["loss"], on_epoch=True)
-
-            self.log("val_dice", metrics["dice"], on_epoch=True)
-            self.log("val_diceFG", metrics["diceFG"], on_epoch=True)
-            self.logger.experiment.add_text("val_dice_p_cls", str(metrics["dice_p_cls"].tolist()), self.current_epoch)
-        self.val_step_outputs.clear()
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.start_lr)
-        scheduler = lr_scheduler.LinearLR(
-            optimizer=optimizer, start_factor=1.0, end_factor=self.linear_end_factor, total_iters=self.n_epoch
-        )
-        if scheduler is not None:
-            return {"optimizer": optimizer, "lr_scheduler": scheduler}
-        return {"optimizer": optimizer}
-
-    def loss(self, logits, gt):
-        return logits, gt  # TODO don't use this for training
-
     def _shared_step(self, target, gt, detach2cpu: bool = False):
         logits = self.forward(target)
         loss = self.loss(logits, gt)

@@ -63,38 +63,6 @@ class PLClassifier(pl.LightningModule):
         features = self.net(x)
         return {k: v(features) for k, v in self.classification_heads.items()}
 
-    def training_step(self, batch, _):
-        img, logits, logits_soft, pred_cls, label_onehot, label, losses, loss = self._shared_step(batch)
-        # Log
-        self.log("loss/train_loss", loss, batch_size=img.shape[0], prog_bar=True)
-        #
-        for k, v in losses.items():
-            for kk, kv in v.items():
-                self.log(f"loss_train_{k}/{kk}", kv.item(), batch_size=img.shape[0], prog_bar=False)
-        # self._shared_metric_append({"pred": pred_cls, "gt": label}, self.train_step_outputs)
-        self.train_step_outputs.append({"preds": pred_cls, "labels": label})
-        return loss
-
-    def validation_step(self, batch, _):
-        img, logits, logits_soft, pred_cls, label_onehot, label, losses, loss = self._shared_step(batch)
-        self.log("loss/val_loss", loss)
-        self.val_step_outputs.append({"preds": pred_cls, "labels": label})
-        return loss
-
-    def _shared_step(self, batch):
-        img = batch["img"]
-        label = batch["label"]  # onehot
-        #
-        gt_label = {k: torch.max(v, 1)[1] for k, v in label.items()}
-        logits = self.forward(img)
-        #
-        logits_soft = {k: self.softmax(v) for k, v in logits.items()}
-        pred_cls = {k: torch.max(v, 1)[1] for k, v in logits_soft.items()}
-
-        losses = {k: self.loss(logits[k], label[k]) for k in label.keys()}
-        loss = self.loss_merge(losses)
-        return img, logits, logits_soft, pred_cls, label, gt_label, losses, loss
-
     def build_classification_heads(self, linear_in: int, convolution_first: bool, fully_connected: bool):
         def construct_one_head(output_classes: int):
             modules = []
