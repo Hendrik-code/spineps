@@ -19,10 +19,6 @@ from spineps.get_models import get_actual_model
 from spineps.lab_model import VertLabelingClassifier
 from spineps.utils.find_min_cost_path import find_most_probably_sequence
 
-check_dir = "/DATA/NAS/ongoing_projects/hendrik/nako-segmentation/code/classifier/lightning_logs/"
-model_p = "densenet169_v2_multilabel_img_a17_tr100-101-102-103-104_valtr_ad3_withFCN/version_0"
-# "densenet169_v2_multilabel_img_a17_tr100-101-102-103-104_valtr_ad3_withFCN/version_0/"
-
 logger = No_Logger(prefix="LabelingPhase")
 
 VERT_CLASSES = 24
@@ -34,10 +30,6 @@ DIVIDE_BY_ZERO_OFFSET = 1e-8
 
 
 def perform_labeling_step(model: VertLabelingClassifier, img_nii: NII, vert_nii: NII, subreg_nii: NII | None = None):
-    if model is None:
-        model = get_actual_model(
-            in_config=Path(check_dir + model_p),
-        )
     model.load()
 
     if subreg_nii is not None:

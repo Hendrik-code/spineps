@@ -108,7 +108,7 @@ def clean_cc_artifacts(
     cc_to_clean = {}
     for lidx, label in enumerate(tqdm(labels, desc=f"{logger._get_logger_prefix()} cleaning...", disable=not verbose)):
         # print(l, subreg_cc_stats[l]["voxel_counts"])
-        idx = [i for i, v in enumerate(subreg_cc_stats[label]["voxel_counts"]) if v < cc_size_threshold[lidx]]
+        idx = [i for i, v in enumerate(subreg_cc_stats[label]["voxel_counts"]) if v < cc_size_threshold[lidx] and v > 0]
         if len(idx) > 0:
             cc_to_clean[label] = idx
 

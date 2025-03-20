@@ -1,9 +1,7 @@
-import sys
-from pathlib import Path
-
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from abc import abstractmethod, ABC
+
 import numpy as np
 
 TRUE_KEYS = [True, "True", "true", 1, "wahr", "Wahr", "Ja", "ja", "-", "1?"]
@@ -221,7 +219,7 @@ def vertgrp_sequence_to_class(vertgrp: list[VertGroup]) -> list[VertExact]:
 
 
 class LabelType(ABC):
-    def __init__(self, column_name: str | list[str], *args, **kwargs) -> None:
+    def __init__(self, column_name: str | list[str], *args, **kwargs) -> None:  # noqa: ARG002
         if not isinstance(column_name, list):
             column_name = [column_name]
         self.column_name = column_name
@@ -247,7 +245,7 @@ class LabelType(ABC):
 
 
 class EnumLabelType(LabelType):
-    def __init__(self, enum: Enum, column_name: str, *args, **kwargs) -> None:
+    def __init__(self, enum: Enum, column_name: str, *args, **kwargs) -> None:  # noqa: ARG002
         super().__init__(column_name)
         self.enum = enum
         self.n_channel = len(enum)
@@ -277,7 +275,7 @@ class BinaryLabelTypeDummy(LabelType):
             return [1, 0]
         elif entry in FALSE_KEYS:
             return [0, 1]
-        assert False, f"entry {entry} not defined as BinaryLabel"
+        raise AssertionError(f"entry {entry} not defined as BinaryLabel")
 
 
 class Target(Enum):
@@ -292,7 +290,7 @@ class Target(Enum):
     FULLYVISIBLE = BinaryLabelTypeDummy, "vert_cut", "vert_cut"
 
 
-TARGET_COLUMN_OPTIONS = list([s.value[1] for s in Target])
+TARGET_COLUMN_OPTIONS = [s.value[1] for s in Target]
 
 
 class Objectives:
@@ -418,7 +416,7 @@ def get_subject_info(
         elif anomaly_factor_condition == 0:
             double_entries = [18, 19, 20, 21]
 
-    actual_labels = [v if v not in labelmap else labelmap[v] for v in vert_subfolders_int]
+    actual_labels = [labelmap.get(v, v) for v in vert_subfolders_int]
     #
     # last_hwk = 7
     # first_bwk = 8
@@ -442,7 +440,7 @@ def get_subject_info(
 def get_vert_entry(v: int, subject_info: SubjectInfo) -> tuple[int, dict]:
     entry: dict = {}
 
-    v_actual = v if v not in subject_info.labelmap else subject_info.labelmap[v]
+    v_actual = subject_info.labelmap.get(v, v)
     entry["subject_name"] = subject_info.subject_name
     entry["vert_rel"] = vert_label_to_vertrel(
         v_actual,
@@ -459,58 +457,3 @@ def get_vert_entry(v: int, subject_info: SubjectInfo) -> tuple[int, dict]:
     entry["vert_region"] = vert_class_to_region(entry["vert_exact"])
     entry["vert_t13"] = VertT13.T13 if v_actual == 28 else VertT13.Normal
     return v_actual, entry
-
-
-if __name__ == "__main__":
-    objectives = Objectives(
-        [
-            # Target.FULLYVISIBLE,
-            Target.REGION,
-            Target.VERTREL,
-            Target.VERT,
-            Target.VERTGRP,
-            Target.VERTEX,
-            Target.VT13,
-        ],
-        as_group=True,
-    )
-
-    entry_dict = {
-        "vert_exact": VertExact.L1,
-        "vert_region": VertRegion.LWS,
-        "vert_rel": VertRel.FIRST_LWK,
-        "vert_cut": True,
-        "vert_group": VertGroup.L12,
-        "vert_exact2": VertExactClass.T13,
-        "vert_t13": VertT13.T13,
-    }
-
-    label = objectives(entry_dict)
-    print(label)
-
-    print()
-    print()
-
-    vertgrp = [VertGroup.C12, VertGroup.C345, VertGroup.C345, VertGroup.C345, VertGroup.L12]
-    print(vertgrp)
-    vert_sequ = vertgrp_sequence_to_class(vertgrp)
-    vert_sequ = [i.value for i in vert_sequ]
-    vert_sequ = fpath_post_processing(vert_sequ)
-    print(vert_sequ)
-    print(is_valid_vertebra_sequence(vert_sequ))
-
-    print()
-    print()
-
-    vert_subfolders_int = [18, 19, 28, 20, 21, 22, 23, 24, 25]
-    subject_info = get_subject_info(
-        subject_name=1337,
-        anomaly_dict={},
-        vert_subfolders_int=vert_subfolders_int,
-        anomaly_factor_condition=1,
-    )
-
-    for v in vert_subfolders_int:
-        _, entry = get_vert_entry(v, subject_info)
-        label = objectives(entry)
-        print(v, label)
