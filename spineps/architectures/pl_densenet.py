@@ -102,14 +102,14 @@ class PLClassifier(pl.LightningModule):
             n_channel_next = linear_in
             if convolution_first:
                 n_channel_next = n_channel // 2
-                modules.append(nn.Conv3d(n_channel, n_channel_next, kernel_size=(3, 3, 3), device="cuda:0"))
+                modules.append(nn.Conv3d(n_channel, n_channel_next, kernel_size=(3, 3, 3), device=self.device))
                 n_channel = n_channel_next
             if fully_connected:
                 n_channel_next = n_channel // 2
-                modules.append(nn.Linear(n_channel, n_channel_next, device="cuda:0"))
+                modules.append(nn.Linear(n_channel, n_channel_next, device=self.device))
                 modules.append(nn.ReLU())
                 n_channel = n_channel_next
-            modules.append(nn.Linear(n_channel, output_classes, device="cuda:0"))
+            modules.append(nn.Linear(n_channel, output_classes, device=self.device))
 
             return nn.Sequential(*modules)
 

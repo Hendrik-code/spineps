@@ -160,6 +160,7 @@ class VertLabelingClassifier(Segmentation_Model):
         model_input = model_input.to(self.device)
 
         self.predictor.eval()
+        self.predictor.to(self.device)
         logits_dict = self.predictor.forward(model_input)
         logits_soft = {k: self.predictor.softmax(v)[0].detach().cpu().numpy() for k, v in logits_dict.items()}
         pred_cls = {k: np.argmax(v, 0) for k, v in logits_soft.items()}
