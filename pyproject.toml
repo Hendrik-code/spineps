@@ -35,6 +35,7 @@ TPTBox = "^0.4.0"
 antspyx = "0.4.2"
 rich = "^13.6.0"
 monai="^1.3.0"
+acvl_utils = "^0.2"
 TypeSaveArgParse="^1.0.1"
 
 
