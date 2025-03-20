@@ -51,7 +51,7 @@ def predict_centroids_from_both(
         _type_: _description_
     """
     vert_nii_4_centroids = vert_nii_cleaned.copy()
-    labelmap = {i: 0 for i in range(100, 134)}
+    labelmap = dict.fromkeys(range(100, 134), 0)
     for i in range(200, 234):
         labelmap[i] = 0
     vert_nii_4_centroids.map_labels_(labelmap, verbose=False)
