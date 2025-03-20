@@ -4,16 +4,16 @@ from typing_extensions import Self
 
 
 class MetaEnum(EnumMeta):
-    def __contains__(self, item):
+    def __contains__(cls, item):
         try:
-            self[item]
+            cls[item]
         except ValueError:
             return False
         return True
 
 
 class Enum_Compare(Enum, metaclass=MetaEnum):
-    def __eq__(self, __value: object) -> bool:
+    def __eq__(self, __value: object) -> bool:  # noqa: PYI063
         if isinstance(__value, Enum):
             return self.name == __value.name and self.value == __value.value
         elif isinstance(__value, str):
