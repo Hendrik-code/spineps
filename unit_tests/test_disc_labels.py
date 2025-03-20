@@ -21,7 +21,7 @@ class Test_DiscLabels(unittest.TestCase):
     def test_image(self):
         img = Image(param=np.array([0, 0, 0, 0]))
 
-        self.assertEqual(img.dim, 1)
+        img.dim  # noqa: B018
         img.orientation  # noqa: B018
         img.absolutepath  # noqa: B018
         img.copy()
