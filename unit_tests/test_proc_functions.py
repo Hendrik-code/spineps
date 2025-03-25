@@ -52,7 +52,7 @@ class Test_proc_functions(unittest.TestCase):
         l3_cleaned = clean_cc_artifacts(l3, logger=logger, labels=[41, 42, 43, 44, 45, 46, 47, 48, 49])
         l3_cleaned = l3.set_array(l3_cleaned)
         l3_cleaned_volumes = l3_cleaned.volumes()
-        for a, b in zip(l3_volumes.values(), l3_cleaned_volumes.values(), strict=True):
+        for a, b in zip_strict(l3_volumes.values(), l3_cleaned_volumes.values()):
             self.assertEqual(a, b)
 
     def test_clean_artifacts_zeros(self):
@@ -68,7 +68,7 @@ class Test_proc_functions(unittest.TestCase):
                 )
                 l3_cleaned = l3.set_array(l3_cleaned)
                 l3_cleaned_volumes = l3_cleaned.volumes()
-                for a, b in zip(l3_volumes.values(), l3_cleaned_volumes.values(), strict=True):
+                for a, b in zip_strict(l3_volumes.values(), l3_cleaned_volumes.values()):
                     self.assertEqual(a, b)
             else:
                 with self.assertRaises(AssertionError):
