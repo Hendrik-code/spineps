@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Optional, Union
 
 from TPTBox import Log_Type, No_Logger
 from tqdm import tqdm
@@ -104,9 +105,9 @@ def get_labeling_model(model_name: str, **kwargs) -> VertLabelingClassifier:
     return get_actual_model(config_path, **kwargs)
 
 
-_modelid2folder_semantic: dict[str, Path | str] | None = None
-_modelid2folder_instance: dict[str, Path | str] | None = None
-_modelid2folder_labeling: dict[str, Path | str] | None = None
+_modelid2folder_semantic: Optional[dict[str, Union[Path, str]]] = None
+_modelid2folder_instance: Optional[dict[str, Union[Path, str]]] = None
+_modelid2folder_labeling: Optional[dict[str, Union[Path, str]]] = None
 
 
 def modelid2folder_semantic() -> dict[str, Path | str]:

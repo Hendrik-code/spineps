@@ -103,7 +103,7 @@ def run_inference(
         assert input_nii.endswith(".nii.gz"), f"input file is not a .nii.gz! Got {input_nii}"
         input_nii = NII.load(input_nii, seg=False)
 
-    assert isinstance(input_nii, NII | list), f"input must be a NII or str or list[NII], got {type(input_nii)}"
+    assert isinstance(input_nii, (NII, list)), f"input must be a NII or str or list[NII], got {type(input_nii)}"
     if isinstance(input_nii, NII):
         input_nii = [input_nii]
     orientation = input_nii[0].orientation
