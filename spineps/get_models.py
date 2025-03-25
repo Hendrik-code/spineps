@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from TPTBox import Log_Type, No_Logger
+from tqdm import tqdm
 
 from spineps.lab_model import VertLabelingClassifier
 from spineps.seg_enums import Modality, ModelType, SpinepsPhase
@@ -164,7 +165,7 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
     _modelid2folder_semantic = semantic  # id to model_folder
     _modelid2folder_instance = instances  # id to model_folder
     _modelid2folder_labeling = labeling
-    for cp in config_paths:
+    for cp in tqdm(config_paths, desc="Checking models"):
         model_folder = cp.parent
         model_folder_name = model_folder.name.lower()
         try:
@@ -204,7 +205,11 @@ def modeltype2class(modeltype: ModelType):
         raise NotImplementedError(modeltype)
 
 
-def get_actual_model(in_config: str | Path, use_cpu: bool = False, **kwargs) -> Segmentation_Model | VertLabelingClassifier:
+def get_actual_model(
+    in_config: str | Path,
+    use_cpu: bool = False,
+    **kwargs,
+) -> Segmentation_Model | VertLabelingClassifier:
     """Creates the Model class from given path
 
     Args:

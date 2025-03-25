@@ -14,7 +14,7 @@ from spineps.utils.filepaths import get_mri_segmentor_models_dir
 link = "https://github.com/Hendrik-code/spineps/releases/download/"
 current_highest_version = "v1.0.9"
 current_instance_highest_version = "v1.2.0"
-current_labeling_highest_version = "v1.3.0"
+current_labeling_highest_version = "v1.4.0"
 
 phase_to_version: dict[SpinepsPhase, str] = {
     SpinepsPhase.SEMANTIC: current_highest_version,

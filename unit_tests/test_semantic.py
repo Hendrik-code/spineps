@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import numpy as np
 from TPTBox import NII, No_Logger
 from TPTBox.tests.test_utils import get_test_mri
 from typing_extensions import Self
@@ -15,10 +16,18 @@ from typing_extensions import Self
 from spineps.phase_pre import preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model
+from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model, run_inference
 from spineps.seg_utils import check_input_model_compatibility, check_model_modality_acquisition
 
 logger = No_Logger()
+
+
+class DummyPredictor:
+    def __init__(self) -> None:
+        pass
+
+    def predict_single_npy_array(self, arr: np.ndarray):
+        return arr
 
 
 class Segmentation_Model_Dummy(Segmentation_Model):
@@ -47,7 +56,7 @@ class Segmentation_Model_Dummy(Segmentation_Model):
 
     def load(self, folds: tuple[str, ...] | None = None) -> Self:  # noqa: ARG002
         self.print("Model loaded from", self.model_folder, verbose=True)
-        self.predictor = object()
+        self.predictor = DummyPredictor()
         return self
 
     def run(
@@ -78,6 +87,9 @@ class Test_Semantic_Phase(unittest.TestCase):
         compatible = check_input_model_compatibility(bf, model, ignore_labelkey=True)
         self.assertTrue(compatible)
 
+        compatible = check_model_modality_acquisition(model, mod_pair=(Modality.CT, Acquisition.ax))
+        self.assertTrue(not compatible)
+
         # change model artifically
         print(mri.get_plane())
         # mri.get_plane = MagicMock(return_value="sag")
@@ -106,7 +118,12 @@ class Test_Semantic_Phase(unittest.TestCase):
         model.run = MagicMock(return_value={OutputType.seg: subreg, OutputType.softmax_logits: None})
         debug_data = {}
         seg_nii, softmax_logits, errcode = predict_semantic_mask(
-            mri, model, debug_data=debug_data, verbose=True, proc_clean_small_cc_artifacts=False
+            mri,
+            model,
+            debug_data=debug_data,
+            verbose=True,
+            proc_clean_small_cc_artifacts=False,
+            proc_remove_inferior_beyond_canal=True,
         )
         predicted_volumes = seg_nii.volumes()
         ref_volumes = subreg.volumes()
@@ -115,3 +132,30 @@ class Test_Semantic_Phase(unittest.TestCase):
         for i, v in ref_volumes.items():
             self.assertEqual(v, predicted_volumes[i])
         self.assertEqual(errcode, ErrCode.OK)
+
+    def test_run_inference(self):
+        mri, subreg, vert, label = get_test_mri()
+        model = Segmentation_Model_Dummy().load()
+        s_arr = subreg.get_seg_array()
+        model.predictor.predict_single_npy_array = MagicMock(return_value=(s_arr, s_arr[np.newaxis, :]))
+
+        seg_arr, _ = run_inference(mri, model.predictor)
+        seg_nii = subreg.set_array(seg_arr)
+        # debug_data = {}
+        predicted_volumes = seg_nii.volumes()
+        ref_volumes = subreg.volumes()
+        print(predicted_volumes)
+        print(ref_volumes)
+        for i, v in ref_volumes.items():
+            self.assertEqual(v, predicted_volumes[i])
+
+
+#
+# seg_nii = model.run([mri])[OutputType.seg]
+#
+# predicted_volumes = seg_nii.volumes()
+# ref_volumes = subreg.volumes()
+# print(predicted_volumes)
+# print(ref_volumes)
+# for i, v in ref_volumes.items():
+#    self.assertEqual(v, predicted_volumes[i])
