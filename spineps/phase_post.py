@@ -31,6 +31,7 @@ def phase_postprocess_combined(
     model_labeling: VertLabelingClassifier | None,
     debug_data: dict | None,
     labeling_offset: int = 0,
+    proc_lab_force_no_tl_anomaly: bool = False,
     proc_assign_missing_cc: bool = True,
     proc_clean_inst_by_sem: bool = True,
     n_vert_bodies: int | None = None,
@@ -93,6 +94,7 @@ def phase_postprocess_combined(
                 img_nii=img_nii,
                 vert_nii=whole_vert_nii_cleaned,
                 subreg_nii=seg_nii_cleaned,
+                proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
             )
 
         logger.print("vert_nii", whole_vert_nii_cleaned.unique(), whole_vert_nii_cleaned.volumes())
@@ -330,7 +332,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
             curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
             new_vol = curr.sum()
             total = seg_t.extract_label(Location.Endplate.value).sum()
-            logger.print(rf"{new_vol/total*100:.2f}% endplates detected", end="\r") if verbose else None
+            logger.print(rf"{new_vol / total * 100:.2f}% endplates detected", end="\r") if verbose else None
             if old_vol == new_vol and old_vol != 0:
                 break
             old_vol = new_vol

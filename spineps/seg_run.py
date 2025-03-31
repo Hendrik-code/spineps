@@ -55,6 +55,8 @@ def process_dataset(
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
+    # Labeling
+    proc_lab_force_no_tl_anomaly: bool = False,
     # Both
     proc_fill_3d_holes: bool = True,
     proc_assign_missing_cc: bool = True,
@@ -153,7 +155,7 @@ def process_dataset(
 
     for s_idx, (name, subject) in enumerate(bids_ds.enumerate_subjects(sort=True)):
         logger.print()
-        logger.print(f"Processing {s_idx+1} / {n_subjects} subject: {name}", Log_Type.ITALICS)
+        logger.print(f"Processing {s_idx + 1} / {n_subjects} subject: {name}", Log_Type.ITALICS)
         subject_scan_processed = 0
         if name == "unsorted" and not ignore_bids_filter:
             logger.print("Unsorted, will skip")
@@ -203,6 +205,7 @@ def process_dataset(
                     proc_assign_missing_cc=proc_assign_missing_cc,
                     proc_inst_largest_k_cc=proc_inst_largest_k_cc,
                     proc_clean_inst_by_sem=proc_clean_inst_by_sem,
+                    proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
                     proc_vertebra_inconsistency=proc_vertebra_inconsistency,
                     snapshot_copy_folder=snapshot_copy_folder,
                     ignore_bids_filter=ignore_bids_filter,
@@ -220,7 +223,7 @@ def process_dataset(
                 else:
                     not_properly_processed.append((errcode, str(s.file["nii.gz"])))
         if subject_scan_processed == 0:
-            logger.print(f"Subject {s_idx+1}: {name} had no scans to be processed")
+            logger.print(f"Subject {s_idx + 1}: {name} had no scans to be processed")
 
     logger.print()
     logger.print(f"Processed {processed_seen_counter} scans with {modalities}", Log_Type.BOLD)
@@ -272,6 +275,8 @@ def process_img_nii(  # noqa: C901
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
     vertebra_instance_labeling_offset=2,
+    # Labeling
+    proc_lab_force_no_tl_anomaly: bool = False,
     # Both
     proc_fill_3d_holes: bool = True,
     proc_assign_missing_cc: bool = True,
@@ -480,6 +485,7 @@ def process_img_nii(  # noqa: C901
                 vert_nii=whole_vert_nii,
                 model_labeling=model_labeling,
                 debug_data=debug_data_run,
+                proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
                 labeling_offset=vertebra_instance_labeling_offset - 1,
                 proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                 proc_assign_missing_cc=proc_assign_missing_cc,

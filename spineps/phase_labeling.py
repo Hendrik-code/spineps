@@ -29,7 +29,13 @@ LUMB = slice(19, None)  # 19 to end (23)
 DIVIDE_BY_ZERO_OFFSET = 1e-8
 
 
-def perform_labeling_step(model: VertLabelingClassifier, img_nii: NII, vert_nii: NII, subreg_nii: NII | None = None):
+def perform_labeling_step(
+    model: VertLabelingClassifier,
+    img_nii: NII,
+    vert_nii: NII,
+    subreg_nii: NII | None = None,
+    proc_lab_force_no_tl_anomaly: bool = False,
+):
     model.load()
 
     if subreg_nii is not None:
@@ -37,7 +43,12 @@ def perform_labeling_step(model: VertLabelingClassifier, img_nii: NII, vert_nii:
         corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border))
         vert_nii_c = vert_nii * corpus_nii
     # run model
-    labelmap = run_model_for_vert_labeling(model, img_nii, vert_nii_c)[0]
+    labelmap = run_model_for_vert_labeling(
+        model,
+        img_nii,
+        vert_nii_c,
+        proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
+    )[0]
     # TODO make all vertebrae without visible corpus to visibility 0 but take into account for labeling
     for i in vert_nii.unique():
         if i not in labelmap:
@@ -52,6 +63,7 @@ def run_model_for_vert_labeling(
     img_nii: NII,
     vert_nii: NII,
     verbose: bool = False,
+    proc_lab_force_no_tl_anomaly: bool = False,
 ):
     # reorient
     img = img_nii.reorient(model.inference_config.model_expected_orientation, verbose=False)
@@ -71,6 +83,7 @@ def run_model_for_vert_labeling(
 
     fcost, fpath, fpath_post, costlist, min_costs_path, args = find_vert_path_from_predictions(
         predictions=predictions,
+        proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
         verbose=verbose,
     )
     assert len(orig_label) == len(fpath_post), f"{len(orig_label)} != {len(fpath_post)}"
@@ -236,6 +249,7 @@ def find_vert_path_from_predictions(
     vertrel_gaussian_sigma: float = 0.6,  # 0.6 # 0 means no gaussian
     #
     argmax_combined_cost_matrix_instead_of_path_algorithm: bool = False,
+    proc_lab_force_no_tl_anomaly: bool = False,
     #
     verbose: bool = False,
 ):
@@ -253,9 +267,9 @@ def find_vert_path_from_predictions(
     visible_chain = prepare_visible(predictions, visible_w)
 
     predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())  # noqa: RUF015
-    assert (
-        "VERT" in predict_keys or "VERTEXACT" in predict_keys or "VERTGRP" in predict_keys
-    ), f"No vital classification head found, got {predict_keys}"
+    assert "VERT" in predict_keys or "VERTEXACT" in predict_keys or "VERTGRP" in predict_keys, (
+        f"No vital classification head found, got {predict_keys}"
+    )
 
     # VertRel normalize over labels
     if "VERTREL" in predict_keys:
@@ -351,6 +365,8 @@ def find_vert_path_from_predictions(
         min_costs_path = [[]]
         fpath = list(np.argmax(cost_matrix, axis=1))
     else:
+        allow_multiple_at_class = [18, 23] if not proc_lab_force_no_tl_anomaly else [23]  # T12 and L5
+        allow_skip_at_class = [17] if not proc_lab_force_no_tl_anomaly else []  # T11
         fcost, fpath, min_costs_path = find_most_probably_sequence(
             # input
             cost_matrix,
@@ -363,8 +379,8 @@ def find_vert_path_from_predictions(
             punish_skip_sequence=punish_skip_sequence,
             # no touch
             regions=[0, 7, 19],
-            allow_multiple_at_class=[18, 23],  # T12 and L5
-            allow_skip_at_class=[17],  # T11
+            allow_multiple_at_class=allow_multiple_at_class,  # T12 and L5
+            allow_skip_at_class=allow_skip_at_class,  # T11
             #
             allow_skip_at_region=[0] if allow_cervical_skip else [],
             punish_skip_at_region_sequence=0.2 if allow_cervical_skip else 0.0,
