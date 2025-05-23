@@ -11,6 +11,7 @@ from TPTBox.core.np_utils import (
     np_erode_msk,
     np_extract_label,
     np_filter_connected_components,
+    np_is_empty,
     np_unique,
     np_volume,
 )
@@ -172,7 +173,7 @@ def get_corpus_coms(
     process_detect_and_solve_merged_corpi: bool = True,
     verbose: bool = False,
 ) -> list:
-    seg_nii.assert_affine(orientation=["P", "I", "R"])
+    seg_nii.assert_affine(orientation=("P", "I", "R"))
     #
     # Extract Corpus region and try to find all coms naively (some skips shouldnt matter)
     corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
@@ -205,25 +206,23 @@ def get_corpus_coms(
     ############
 
     # Get corpus CCs
-    corpus_cc, corpus_cc_n = corpus_nii.get_segmentation_connected_components(labels=1)
-    corpus_cc = corpus_cc[1]
-    corpus_cc_n = corpus_cc_n[1]
+    corpus_cc: NII = corpus_nii.get_connected_components(labels=1)
+    corpus_cc_n = len(corpus_cc.unique())
     logger.print(f"Found {corpus_cc_n} Corpus ccs (naively)", verbose=verbose)
 
     # Check against ivd order
     seg_sem = seg_nii.map_labels({Location.Endplate.value: Location.Vertebra_Disc.value}, verbose=False)
     has_ivd: bool = Location.Vertebra_Disc.value in seg_sem.unique()
-    subreg_cc, subreg_cc_n = seg_sem.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
-    subreg_cc = subreg_cc[Location.Vertebra_Disc.value]
+    subreg_cc: NII = seg_sem.get_connected_components(labels=Location.Vertebra_Disc.value)
     subreg_cc[subreg_cc > 0] += 100
-    subreg_cc_n = subreg_cc_n[Location.Vertebra_Disc.value]
+    subreg_cc_n = len(subreg_cc.unique())
     logger.print(f"Found {subreg_cc_n} IVD ccs (naively)", verbose=verbose)
-    coms = np_center_of_mass(subreg_cc)
-    volumes = np_volume(subreg_cc)
+    coms = subreg_cc.center_of_masses()
+    volumes = subreg_cc.volumes()
     stats = {i: (g[1], True, volumes[i]) for i, g in coms.items()}
 
-    vert_coms = np_center_of_mass(corpus_cc)
-    vert_volumes = np_volume(corpus_cc)
+    vert_coms = corpus_cc.center_of_masses()
+    vert_volumes = corpus_cc.volumes()
 
     for i, g in vert_coms.items():
         stats[i] = (g[1], False, vert_volumes[i])
@@ -285,7 +284,7 @@ def get_corpus_coms(
                     )
 
                     target_vert_id = list(neighbor_verts.keys())[argmax]
-                    segvert = np_extract_label(corpus_cc, target_vert_id, inplace=False)
+                    segvert = corpus_cc.extract_label(target_vert_id, inplace=False)
                     try:
                         logger.print("get_separating_components to split vertebra", verbose=verbose)
                         (spart, tpart, spart_dil, tpart_dil, stpart) = get_separating_components(
@@ -300,7 +299,7 @@ def get_corpus_coms(
                     except Exception as e:
                         logger.print(f"Separating Corpi failed with exception {e}")
 
-    corpus_coms = list(np_center_of_mass(corpus_cc).values())
+    corpus_coms = list(corpus_cc.center_of_masses().values())
     corpus_coms.sort(key=lambda a: a[1])
     corpus_coms.reverse()  # from bottom to top
     logger.print(f"Found {len(corpus_coms)} final Corpus ccs", verbose=verbose)
@@ -317,13 +316,13 @@ def get_separating_components(
     vol_old = vol.copy()
     iterations = 0
     while True:
-        vol_erode = np_erode_msk(vol, mm=1, connectivity=connectivity)
+        vol_erode = np_erode_msk(vol, n_pixel=1, connectivity=connectivity)
         subreg_cc, subreg_cc_n = np_connected_components(vol_erode, connectivity=check_connectivtiy)
         if 1 in subreg_cc_n and subreg_cc_n[1] > 1:
             vol = subreg_cc[1]
             break
         elif 1 not in subreg_cc_n:
-            vol_dilated = np_dilate_msk(vol, mm=1, connectivity=connectivity, mask=vol.copy())
+            vol_dilated = np_dilate_msk(vol, n_pixel=1, connectivity=connectivity, mask=vol.copy())
             # use iteration before to get other CC
             vol[vol_old != 0] = 2  # all possible voxels are 2
             vol[vol_dilated == 1] = 1
@@ -335,7 +334,7 @@ def get_separating_components(
             volume = np_volume(vol)
             dil_iter = 0
             while volume[1] / (volume[1] + volume[2]) < 0.5:
-                vol_dilated = np_dilate_msk(vol_dilated, mm=1, connectivity=connectivity, mask=vol.copy())
+                vol_dilated = np_dilate_msk(vol_dilated, n_pixel=1, connectivity=connectivity, mask=vol.copy())
                 # inst_nii.set_array(vol_dilated).save(files_out + f"subreg_cc_vol_dilated{dil_iter}.nii.gz")
                 vol[vol_dilated == 1] = 1
                 # inst_nii.set_array(vol).save(files_out + f"subreg_cc_dilation{dil_iter}.nii.gz")
@@ -369,15 +368,15 @@ def get_separating_components(
     if spart.sum() == 0 or tpart.sum() == 0:
         raise Exception("S or T are empty")  # noqa: TRY002
 
-    spart_dil = np_dilate_msk(spart, mm=1, connectivity=connectivity)
-    tpart_dil = np_dilate_msk(tpart, mm=1, connectivity=connectivity)
+    spart_dil = np_dilate_msk(spart, n_pixel=1, connectivity=connectivity)
+    tpart_dil = np_dilate_msk(tpart, n_pixel=1, connectivity=connectivity)
     stpart = (spart_dil + (tpart_dil * 2)).astype(np.uint8)
     while 3 not in np_volume(stpart):
-        spart_dil = np_dilate_msk(spart_dil, mm=1, connectivity=connectivity)
+        spart_dil = np_dilate_msk(spart_dil, n_pixel=1, connectivity=connectivity)
         stpart = (spart_dil + (tpart_dil * 2)).astype(np.uint8)
         if 3 in np_volume(stpart):
             break
-        tpart_dil = np_dilate_msk(tpart_dil, mm=1, connectivity=connectivity)
+        tpart_dil = np_dilate_msk(tpart_dil, n_pixel=1, connectivity=connectivity)
         stpart = (spart_dil + (tpart_dil * 2)).astype(np.uint8)
     stpart = spart_dil + (tpart_dil * 2)
     return spart, tpart, spart_dil, tpart_dil, stpart
@@ -594,7 +593,7 @@ def post_process_single_3vert_prediction(
     fill_holes: bool = False,
 ):
     if largest_cc > 0:  # 5 seems like a good number (if three, then at least center must be fully visible)
-        vert_nii = vert_nii.get_largest_k_segmentation_connected_components(largest_cc, labels, return_original_labels=True)
+        vert_nii = vert_nii.filter_connected_components(max_count_component=largest_cc, labels=labels, keep_label=True)
     if fill_holes:
         labels = vert_nii.unique()  # type:ignore
         vert_nii.fill_holes_(labels=labels, verbose=False)
@@ -779,7 +778,7 @@ def merge_coupled_predictions(
 
     debug_data["inst_crop_vert_arr_a_raw"] = seg_nii.set_array(whole_vert_arr)
 
-    if len(np_unique(whole_vert_arr)) == 1:
+    if np_is_empty(whole_vert_arr):
         logger.print("Vert mask empty, will skip", Log_Type.FAIL)
         return whole_vert_nii.set_array_(whole_vert_arr, verbose=False), debug_data, ErrCode.EMPTY
 

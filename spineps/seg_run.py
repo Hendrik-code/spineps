@@ -60,6 +60,7 @@ def process_dataset(
     proc_assign_missing_cc: bool = True,
     proc_clean_inst_by_sem: bool = True,
     proc_vertebra_inconsistency: bool = True,
+    # Misc
     ignore_model_compatibility: bool = False,
     ignore_inference_compatibility: bool = False,
     ignore_bids_filter: bool = False,
@@ -205,6 +206,7 @@ def process_dataset(
                     proc_vertebra_inconsistency=proc_vertebra_inconsistency,
                     snapshot_copy_folder=snapshot_copy_folder,
                     ignore_bids_filter=ignore_bids_filter,
+                    return_output_instead_of_save=False,
                     ignore_compatibility_issues=ignore_inference_compatibility,
                     log_inference_time=log_inference_time,
                     verbose=verbose,
@@ -275,11 +277,13 @@ def process_img_nii(  # noqa: C901
     proc_assign_missing_cc: bool = True,
     proc_clean_inst_by_sem: bool = True,
     proc_vertebra_inconsistency: bool = True,
+    # Misc
     lambda_semantic: Callable[[NII], NII] | None = None,
     snapshot_copy_folder: Path | None = None,
     ignore_bids_filter: bool = False,
     ignore_compatibility_issues: bool = False,
     log_inference_time: bool = True,
+    return_output_instead_of_save: bool = False,
     verbose: bool = False,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty
@@ -413,7 +417,7 @@ def process_img_nii(  # noqa: C901
 
             assert isinstance(seg_nii_modelres, NII), "subregion segmentation is not a NII!"
             logger.print("seg_nii out", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape, verbose=verbose)
-            if np_count_nonzero(seg_nii_modelres.get_seg_array()) == 0:
+            if seg_nii_modelres.is_empty:
                 logger.print("Subregion mask is empty, skip this", Log_Type.FAIL)
                 return output_paths, ErrCode.EMPTY
             logger.print("Output seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape, verbose=verbose)
@@ -421,10 +425,11 @@ def process_img_nii(  # noqa: C901
             # Lambda Injection
             if lambda_semantic is not None:
                 seg_nii_modelres = lambda_semantic(seg_nii_modelres)
-            if save_raw:
-                seg_nii_modelres.save(out_spine_raw, verbose=logger)
-            if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
-                save_nparray(softmax_logits, out_logits)
+            if not return_output_instead_of_save:
+                if save_raw:
+                    seg_nii_modelres.save(out_spine_raw, verbose=logger)
+                if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
+                    save_nparray(softmax_logits, out_logits)
             done_something = True
         else:
             logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
@@ -450,7 +455,7 @@ def process_img_nii(  # noqa: C901
             assert whole_vert_nii is not None, "whole_vert_nii is None"
             whole_vert_nii = whole_vert_nii.copy()  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
             logger.print("vert_out", whole_vert_nii.zoom, whole_vert_nii.orientation, whole_vert_nii.shape, verbose=verbose)
-            if save_raw:
+            if save_raw and not return_output_instead_of_save:
                 whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
         else:
@@ -486,8 +491,9 @@ def process_img_nii(  # noqa: C901
             vert_nii_clean.assert_affine(other=input_nii)
             # input_package.make_nii_from_this(seg_nii_clean)
             # input_package.make_nii_from_this(vert_nii_clean)
-            seg_nii_clean.save(out_spine, verbose=logger)
-            vert_nii_clean.save(out_vert, verbose=logger)
+            if not return_output_instead_of_save:
+                seg_nii_clean.save(out_spine, verbose=logger)
+                vert_nii_clean.save(out_vert, verbose=logger)
             done_something = True
         else:
             seg_nii_clean = NII.load(out_spine, seg=True)
@@ -506,6 +512,10 @@ def process_img_nii(  # noqa: C901
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
             ctd = POI.load(out_ctd)
+
+        # return_output_instead_of_save:
+        if return_output_instead_of_save:
+            return seg_nii_clean, vert_nii_clean, ctd, ErrCode.OK
 
         # save debug
         if save_debug_data:
