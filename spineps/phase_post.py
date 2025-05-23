@@ -2,7 +2,6 @@
 import heapq
 
 import numpy as np
-from scipy.ndimage import center_of_mass
 from TPTBox import NII, Location, Log_Type, v_idx2name, v_name2idx
 from TPTBox.core.np_utils import (
     np_bbox_binary,
@@ -192,7 +191,7 @@ def assign_missing_cc(
             cc_map_c[cc_map_c != 0] = 1
             # print("cc_map_c\n", cc_map_c)
             # print("vert_arr_c\n", vert_arr_c)
-            cc_map_dilated = np_dilate_msk(cc_map_c, 1, mm=1, connectivity=2)
+            cc_map_dilated = np_dilate_msk(cc_map_c, 1, n_pixel=1, connectivity=2)
             # cc_map_dilated[vert_arr_c == 0] = 0
             # print("cc_map_dilated\n", cc_map_dilated)
             # majority voting
@@ -243,7 +242,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
     n_ivd_unique = 0
     if Location.Vertebra_Disc.value in seg_t.unique():
         # Map IVDS
-        subreg_cc, subreg_cc_n = seg_t.get_segmentation_connected_components(labels=Location.Vertebra_Disc.value)
+        subreg_cc, subreg_cc_n = seg_t.get_connected_components(labels=Location.Vertebra_Disc.value)
         subreg_cc = subreg_cc[Location.Vertebra_Disc.value]
         cc_labelset = list(range(1, subreg_cc_n[Location.Vertebra_Disc.value] + 1))
         mapping_cc_to_vert_label = {}
@@ -316,7 +315,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
             curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
             new_vol = curr.sum()
             total = seg_t.extract_label(Location.Endplate.value).sum()
-            logger.print(rf"{new_vol/total*100:.2f}% endplates detected", end="\r") if verbose else None
+            logger.print(rf"{new_vol / total * 100:.2f}% endplates detected", end="\r") if verbose else None
             if old_vol == new_vol and old_vol != 0:
                 break
             old_vol = new_vol

@@ -6,11 +6,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import from_numpy
-from TPTBox import NII, ZOOMS, Image_Reference, Log_Type, Logger, No_Logger, to_nii
+from TPTBox import NII, ZOOMS, Image_Reference, Log_Type, No_Logger, to_nii
 from typing_extensions import Self
 
 from spineps.architectures.pl_unet import PLNet
-from spineps.seg_enums import Acquisition, InputType, Modality, ModelType, OutputType
+from spineps.seg_enums import Acquisition, InputType, Modality, OutputType
 from spineps.utils.citation_reminder import citation_reminder
 from spineps.utils.filepaths import search_path
 from spineps.utils.inference_api import load_inf_model, run_inference
@@ -43,7 +43,7 @@ class Segmentation_Model(ABC):
             default_allow_tqdm (bool, optional): If true, will showcase a progress bar while segmenting. Defaults to True.
         """
         self.name: str = ""
-        assert os.path.exists(str(model_folder)), f"model_folder doesnt exist, got {model_folder}"  # noqa: PTH110
+        assert Path(model_folder).exists(), f"model_folder doesnt exist, got {model_folder}"
 
         self.logger = No_Logger()
         self.use_cpu = use_cpu

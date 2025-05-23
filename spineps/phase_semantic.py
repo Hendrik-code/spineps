@@ -1,5 +1,4 @@
 # from utils.predictor import nnUNetPredictor
-from time import perf_counter
 
 import numpy as np
 from TPTBox import NII, Location, Log_Type
@@ -7,7 +6,7 @@ from TPTBox import NII, Location, Log_Type
 from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import fill_holes_labels, logger
-from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
+from spineps.utils.proc_functions import clean_cc_artifacts
 
 
 def predict_semantic_mask(
@@ -116,9 +115,7 @@ def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
 def semantic_bounding_box_clean(seg_nii: NII):
     ori = seg_nii.orientation
     seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
-    seg_bin_largest_k_cc_nii = seg_binary.get_largest_k_segmentation_connected_components(
-        k=None, labels=1, connectivity=3, return_original_labels=False
-    )
+    seg_bin_largest_k_cc_nii = seg_binary.filter_connected_components(labels=1, connectivity=3, keep_label=False)
     max_k = int(seg_bin_largest_k_cc_nii.max())
     if max_k > 3:
         logger.print(f"Found {max_k} unique connected components in semantic mask", Log_Type.STRANGE)

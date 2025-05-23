@@ -10,7 +10,7 @@ from TPTBox.core.np_utils import (
     np_dilate_msk,
     np_erode_msk,
     np_extract_label,
-    np_get_largest_k_connected_components,
+    np_filter_connected_components,
     np_unique,
     np_volume,
 )
@@ -344,8 +344,8 @@ def get_separating_components(
                     raise Exception("Could not divide into two instance")  # noqa: TRY002
                 dil_iter += 1
 
-            vol_1 = np_get_largest_k_connected_components(vol == 1, k=1, connectivity=check_connectivtiy).astype(np.uint8)
-            vol_2 = np_get_largest_k_connected_components(vol == 2, k=1, connectivity=check_connectivtiy).astype(np.uint8)
+            vol_1 = np_filter_connected_components(vol == 1, largest_k_components=1, connectivity=check_connectivtiy).astype(np.uint8)
+            vol_2 = np_filter_connected_components(vol == 2, largest_k_components=1, connectivity=check_connectivtiy).astype(np.uint8)
             vol_2 *= 2
             vol[vol == 1] = vol_1[vol == 1]
             vol[vol == 2] = vol_2[vol == 2]
@@ -354,10 +354,12 @@ def get_separating_components(
         vol = vol_erode
         iterations += 1
         if iterations > max_iter:
-            raise Exception(f"Could not divide into two instance after max iterations {max_iter}")  # noqa: TRY002
+            raise IndentationError(f"Could not divide into two instance after max iterations {max_iter}")
     if len(np_volume(vol)) != 2:
         logger.print("Get largest two components")
-        subreg_cc_2k = np_get_largest_k_connected_components(vol, k=2, connectivity=check_connectivtiy, return_original_labels=False)
+        subreg_cc_2k = np_filter_connected_components(
+            vol, largest_k_components=2, connectivity=check_connectivtiy, return_original_labels=False
+        )
         spart = subreg_cc_2k == 1
         tpart = subreg_cc_2k == 2
     else:

@@ -1,10 +1,8 @@
-import sys
-from enum import Enum
 from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
-from TPTBox import NII, Log_Type, No_Logger
+from TPTBox import NII, No_Logger
 
 from spineps.architectures.read_labels import VertExact
 from spineps.get_models import get_actual_model
@@ -30,7 +28,7 @@ def perform_labeling_step(model: VertLabelingClassifier, img_nii: NII, vert_nii:
         model = get_actual_model(
             in_config=Path(check_dir + model_p),
         )
-        model.load()
+    model.load()
     # run model
     labelmap = run_model_for_vert_labeling(model, img_nii, vert_nii)[0]
 

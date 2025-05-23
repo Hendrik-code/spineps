@@ -164,7 +164,7 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
     _modelid2folder_labeling = labeling
     for cp in config_paths:
         model_folder = cp.parent
-        model_folder_name = model_folder.name.lower()
+        model_folder_name = model_folder.parent.name.lower() if "nnUNetPlans" in model_folder.name else model_folder.name.lower()
         try:
             inference_config = load_inference_config(str(cp))
             if inference_config.modeltype == ModelType.classifier:
@@ -226,9 +226,9 @@ def get_actual_model(in_config: str | Path, **kwargs) -> Segmentation_Model | Ve
                 Log_Type.FAIL,
             )
             raise FileNotFoundError(f"{in_dir}/**/*inference_config.json")
-        assert (
-            len(path_search) == 1
-        ), f"get_actual_model: found more than one inference_config.json in {in_dir}/**/*inference_config.json. Ambigous behavior, please manually correct this by removing one of these.\nFound {path_search}"
+        assert len(path_search) == 1, (
+            f"get_actual_model: found more than one inference_config.json in {in_dir}/**/*inference_config.json. Ambigous behavior, please manually correct this by removing one of these.\nFound {path_search}"
+        )
         in_dir = path_search[0]
     # else:
     #    base = filepath_model(in_config, model_dir=None)
