@@ -9,7 +9,6 @@ from TPTBox.core.np_utils import (
     np_dice,
     np_dilate_msk,
     np_erode_msk,
-    np_extract_label,
     np_filter_connected_components,
     np_is_empty,
     np_unique,
@@ -173,7 +172,7 @@ def get_corpus_coms(
     process_detect_and_solve_merged_corpi: bool = True,
     verbose: bool = False,
 ) -> list:
-    seg_nii.assert_affine(orientation=["P", "I", "R"])
+    seg_nii.assert_affine(orientation=("P", "I", "R"))
     #
     # Extract Corpus region and try to find all coms naively (some skips shouldnt matter)
     corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
@@ -318,8 +317,8 @@ def get_separating_components(
     while True:
         vol_erode = np_erode_msk(vol, n_pixel=1, connectivity=connectivity)
         subreg_cc, subreg_cc_n = np_connected_components(vol_erode, connectivity=check_connectivtiy)
-        if 1 in subreg_cc_n and subreg_cc_n[1] > 1:
-            vol = subreg_cc[1]
+        if subreg_cc_n > 1:
+            vol = subreg_cc
             break
         elif 1 not in subreg_cc_n:
             vol_dilated = np_dilate_msk(vol, n_pixel=1, connectivity=connectivity, mask=vol.copy())
@@ -706,9 +705,9 @@ def find_prediction_couple(
 
     couple = []
     dice_threshold = 0.3
-    if dices[best_k[0]] > dice_threshold:
+    if len(best_k) > 0 and dices[best_k[0]] > dice_threshold:
         couple.append(best_k[0])
-    if dices[best_k[1]] > dice_threshold:
+    if len(best_k) > 1 and dices[best_k[1]] > dice_threshold:
         couple.append(best_k[1])
     # if dices[best_k[2]] > dice_threshold:
     #    couple.append(best_k[2])

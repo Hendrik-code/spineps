@@ -2,7 +2,6 @@
 import heapq
 
 import numpy as np
-from scipy.ndimage import center_of_mass
 from TPTBox import NII, Location, Log_Type, v_idx2name, v_name2idx
 from TPTBox.core.np_utils import (
     np_bbox_binary,
@@ -61,7 +60,7 @@ def phase_postprocess_combined(
         seg_uncropped = seg_nii.copy()
 
         # Crop down
-        img_nii.apply_crop_(crop_slices)
+        img_nii = img_nii.apply_crop(crop_slices)
         vert_nii.apply_crop_(crop_slices)
         seg_nii.apply_crop_(crop_slices)
 
@@ -410,7 +409,6 @@ def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII):
         except AssertionError as e:
             print(f"Got error {e}, skip")
             break
-        subreg_cc = subreg_cc[1]
         cc_labels = np_unique(subreg_cc)
 
         for ccl in cc_labels:
