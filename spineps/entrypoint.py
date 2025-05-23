@@ -62,6 +62,13 @@ def parser_arguments(parser: argparse.ArgumentParser):
         help="Does not crop input before semantically segmenting. Can improve the segmentation a little but depending on size costs more computation time",
     )
     parser.add_argument(
+        "-no_tltv_labeling",
+        "-ntl",
+        action="store_true",
+        help="Enforces the labeling model to predict exactly 12 thoracic vertebrae",
+    )
+    # proc_lab_force_no_tl_anomaly
+    parser.add_argument(
         "-non4",
         action="store_true",
         help="Does not apply n4 bias field correction",
@@ -237,6 +244,7 @@ def run_sample(opt: Namespace):
         "override_ctd": opt.override_ctd,
         "proc_sem_crop_input": not opt.nocrop,
         "proc_sem_n4_bias_correction": not opt.non4,
+        "proc_lab_force_no_tl_anomaly": opt.no_tltv_labeling,
         "ignore_compatibility_issues": opt.ignore_inference_compatibility,
         "verbose": opt.verbose,
     }
@@ -317,6 +325,7 @@ def run_dataset(opt: Namespace):
         "ignore_bids_filter": opt.ignore_bids_filter,
         "proc_sem_crop_input": not opt.nocrop,
         "proc_sem_n4_bias_correction": not opt.non4,
+        "proc_lab_force_no_tl_anomaly": opt.no_tltv_labeling,
         "snapshot_copy_folder": opt.save_snaps_folder,
         "verbose": opt.verbose,
     }

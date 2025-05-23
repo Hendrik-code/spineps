@@ -30,6 +30,7 @@ def phase_postprocess_combined(
     model_labeling: VertLabelingClassifier | None,
     debug_data: dict | None,
     labeling_offset: int = 0,
+    proc_lab_force_no_tl_anomaly: bool = False,
     proc_assign_missing_cc: bool = True,
     proc_clean_inst_by_sem: bool = True,
     n_vert_bodies: int | None = None,
@@ -59,7 +60,7 @@ def phase_postprocess_combined(
         seg_uncropped = seg_nii.copy()
 
         # Crop down
-        img_nii.apply_crop_(crop_slices)
+        img_nii = img_nii.apply_crop(crop_slices)
         vert_nii.apply_crop_(crop_slices)
         seg_nii.apply_crop_(crop_slices)
 
@@ -92,6 +93,7 @@ def phase_postprocess_combined(
                 img_nii=img_nii,
                 vert_nii=whole_vert_nii_cleaned,
                 subreg_nii=seg_nii_cleaned,
+                proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
             )
 
         logger.print("vert_nii", whole_vert_nii_cleaned.unique(), whole_vert_nii_cleaned.volumes())
@@ -407,7 +409,6 @@ def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII):
         except AssertionError as e:
             print(f"Got error {e}, skip")
             break
-        subreg_cc = subreg_cc[1]
         cc_labels = np_unique(subreg_cc)
 
         for ccl in cc_labels:

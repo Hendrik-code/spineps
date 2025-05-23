@@ -84,9 +84,9 @@ def clean_cc_artifacts(
         return mask_arr
 
     if not ignore_missing_labels:
-        assert np.all(
-            [l in mask_labels for l in labels]
-        ), f"specified labels not found in mask, got labels {labels} and mask labels {mask_labels}"
+        assert np.all([l in mask_labels for l in labels]), (
+            f"specified labels not found in mask, got labels {labels} and mask labels {mask_labels}"
+        )
     else:
         labelsnew = []
         sizes = []
@@ -99,9 +99,9 @@ def clean_cc_artifacts(
 
     if not isinstance(cc_size_threshold, list):
         cc_size_threshold = [cc_size_threshold for i in range(len(labels))]
-    assert (
-        len(cc_size_threshold) == len(labels)
-    ), f"cc_size_threshold size does not match number of given labels to clean, got {len(labels)} and {len(cc_size_threshold)}. Specifiy only an int for cc_size_threshold to use it for all labels"
+    assert len(cc_size_threshold) == len(labels), (
+        f"cc_size_threshold size does not match number of given labels to clean, got {len(labels)} and {len(cc_size_threshold)}. Specifiy only an int for cc_size_threshold to use it for all labels"
+    )
 
     subreg_cc, subreg_cc_stats = connected_components_3d(result_arr, connectivity=1)
 
