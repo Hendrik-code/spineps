@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import cc3d
 import numpy as np
 from ants.utils.convert_nibabel import from_nibabel

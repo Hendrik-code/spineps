@@ -1,4 +1,4 @@
-from pathlib import Path
+from __future__ import annotations
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d

@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import shutil
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Union
 
 from TPTBox import Print_Logger
 from tqdm import tqdm
@@ -20,14 +23,13 @@ phase_to_version: dict[SpinepsPhase, str] = {
     SpinepsPhase.LABELING: current_labeling_highest_version,
 }
 
-instances: dict[str, Path | str] = {"instance": link + current_instance_highest_version + "/instance.zip"}
-semantic: dict[str, Path | str] = {
+instances: dict[str, Union[Path, str]] = {"instance": link + current_instance_highest_version + "/instance.zip"}
+semantic: dict[str, Union[Path, str]] = {
     "t2w": link + current_highest_version + "/t2w.zip",
     "t1w": link + current_highest_version + "/t1w.zip",
     "vibe": link + current_highest_version + "/vibe.zip",
 }
-labeling: dict[str, Path | str] = {"t2w_labeling": link + current_labeling_highest_version + "/labeling.zip"}
-
+labeling: dict[str, Union[Path, str]] = {"t2w_labeling": link + current_labeling_highest_version + "/labeling.zip"}
 
 download_names = {
     "instance": "instance_sagittal",
