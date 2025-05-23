@@ -30,7 +30,7 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
 
     if len(possible_keys) == 0:
         logger.print(
-            "Found no available semantic models. Did you set one up by downloading modelweights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
+            "Found no available semantic models. Did you set one up by downloading model weights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
             Log_Type.FAIL,
         )
         raise KeyError(model_name)
@@ -87,7 +87,7 @@ def get_labeling_model(model_name: str, **kwargs) -> VertLabelingClassifier:
     possible_keys = list(_modelid2folder_labeling.keys())
     if len(possible_keys) == 0:
         logger.print(
-            "Found no available labeling models. Did you set one up by downloading modelweights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
+            "Found no available labeling models. Did you set one up by downloading model weights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
             Log_Type.FAIL,
         )
         raise KeyError(model_name)
@@ -143,7 +143,9 @@ def modelid2folder_labeling() -> dict[str, Path | str]:
         return check_available_models(get_mri_segmentor_models_dir())[2]
 
 
-def check_available_models(models_folder: str | Path, verbose: bool = False) -> tuple[dict[str, Path | int], dict[str, Path | int]]:
+def check_available_models(
+    models_folder: str | Path, verbose: bool = False
+) -> tuple[dict[str, Path | str], dict[str, Path | str], dict[str, Path | str]]:
     """Searches through the specified directories and finds models, sorting them into the dictionaries mapping to instance or semantic models
 
     Args:
@@ -232,7 +234,7 @@ def get_actual_model(
             )
             raise FileNotFoundError(f"{in_dir}/**/*inference_config.json")
         assert len(path_search) == 1, (
-            f"get_actual_model: found more than one inference_config.json in {in_dir}/**/*inference_config.json. Ambigous behavior, please manually correct this by removing one of these.\nFound {path_search}"
+            f"get_actual_model: found more than one inference_config.json in {in_dir}/**/*inference_config.json. Ambiguous behavior, please manually correct this by removing one of these.\nFound {path_search}"
         )
         in_dir = path_search[0]
     # else:

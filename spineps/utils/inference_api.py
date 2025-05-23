@@ -84,7 +84,7 @@ def run_inference(
     input_nii: str | NII | list[NII],
     predictor: nnUNetPredictor,
     reorient_PIR: bool = False,  # noqa: N803
-) -> tuple[NII, NII | None, np.ndarray]:
+) -> tuple[NII, np.ndarray]:
     """Runs nnUnet model inference on one input.
 
     Args:

@@ -218,9 +218,9 @@ def assign_missing_cc(
             labels = labels[1:]
             count = count[1:]
             if len(labels) > 0:
-                newlabel = labels[np.argmax(count)]
-                logger.print(f"Assign {label, cc_l} to {newlabel}, Location at {cc_bbox}", verbose=verbose)
-                vert_arr_c[cc_map_c != 0] = newlabel
+                new_label = labels[np.argmax(count)]
+                logger.print(f"Assign {label, cc_l} to {new_label}, Location at {cc_bbox}", verbose=verbose)
+                vert_arr_c[cc_map_c != 0] = new_label
                 target_arr[cc_bbox] = vert_arr_c
             else:
                 logger.print(f"Assign {label, cc_l} to EMPTY, Location at {cc_bbox}", verbose=verbose or verbose_deletion)

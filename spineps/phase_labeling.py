@@ -365,7 +365,7 @@ def find_vert_path_from_predictions(
     else:
         allow_multiple_at_class = [18, 23] if not proc_lab_force_no_tl_anomaly else [23]  # T12 and L5
         allow_skip_at_class = [17] if not proc_lab_force_no_tl_anomaly else []  # T11
-        fcost, min_costs_path = find_most_probably_sequence(
+        fcost, fpath, min_costs_path = find_most_probably_sequence(
             # input
             cost_matrix,
             min_start_class=0 if not disable_c1 else 1,
@@ -383,13 +383,12 @@ def find_vert_path_from_predictions(
             allow_skip_at_region=[0] if allow_cervical_skip else [],
             punish_skip_at_region_sequence=0.2 if allow_cervical_skip else 0.0,
         )
-        fpath = list(np.argmax(cost_matrix, axis=1))
     # post processing
     fpath_post = fpath_post_processing(fpath)
     return fcost, fpath, fpath_post, cost_matrix.tolist(), min_costs_path, args
 
 
-def fpath_post_processing(fpath):
+def fpath_post_processing(fpath) -> list[int]:
     fpath_post = fpath[:]
 
     # Two T12 -> T12 + T13
@@ -410,14 +409,13 @@ def fpath_post_processing(fpath):
 
 
 def is_valid_vertebra_sequence(sequence: list[VertExact] | list[int]) -> bool:
-    if isinstance(sequence[0], VertExact):
-        sequence = fpath_post_processing([s.value for s in sequence])
+    sequence2: list[int] = fpath_post_processing([s.value for s in sequence]) if isinstance(sequence[0], VertExact) else sequence  # type: ignore
     # must be sequence of vertebrae
-    for i in range(1, len(sequence)):
+    for i in range(1, len(sequence2)):
         if (
-            sequence[i] - sequence[i - 1] == 1
-            or (sequence[i] == 20 and sequence[i - 1] == 28)
-            or (sequence[i] == 20 and sequence[i - 1] == 18)
+            sequence2[i] - sequence2[i - 1] == 1
+            or (sequence2[i] == 20 and sequence2[i - 1] == 28)
+            or (sequence2[i] == 20 and sequence2[i - 1] == 18)
         ):
             continue
         else:

@@ -43,7 +43,7 @@ class Segmentation_Model(ABC):
             default_allow_tqdm (bool, optional): If true, will showcase a progress bar while segmenting. Defaults to True.
         """
         self.name: str = ""
-        assert Path(model_folder).exists(), f"model_folder doesnt exist, got {model_folder}"
+        assert Path(model_folder).exists(), f"model_folder does not exist, got {model_folder}"
 
         self.logger = No_Logger()
         self.use_cpu = use_cpu
@@ -64,10 +64,7 @@ class Segmentation_Model(ABC):
         self.print("initialized with inference config", self.inference_config)
 
     @abstractmethod
-    def load(
-        self,
-        folds: tuple[str, ...] | None = None,
-    ) -> Self:
+    def load(self, folds: tuple[str, ...] | None = None) -> Self:
         """Loads the weights from disk
 
         Returns:
@@ -110,7 +107,7 @@ class Segmentation_Model(ABC):
         resample_to_recommended: bool = True,
         resample_output_to_input_space: bool = True,
         verbose: bool = False,
-    ) -> dict[OutputType, NII]:
+    ) -> dict[OutputType, NII | None]:
         """Segments a given input with this model
 
         Args:
@@ -178,10 +175,7 @@ class Segmentation_Model(ABC):
 
         self.print("input", input_niftys_in_order[0], verbose=verbose)
         self.print("Run Segmentation")
-        result = self.run(
-            input_nii=input_niftys_in_order,
-            verbose=verbose,
-        )
+        result = self.run(input_nii=input_niftys_in_order, verbose=verbose)
         assert OutputType.seg in result and isinstance(result[OutputType.seg], NII), "No seg output in segmentation result"
         for k, v in result.items():
             if isinstance(v, NII):  # and k != OutputType.seg_modelres:
@@ -216,11 +210,7 @@ class Segmentation_Model(ABC):
         return self.inference_config.acquisition
 
     @abstractmethod
-    def run(
-        self,
-        input_nii: list[NII],
-        verbose: bool = False,
-    ) -> dict[OutputType, NII | None]:
+    def run(self, input_nii: list[NII], verbose: bool = False) -> dict[OutputType, NII | None]:
         pass
 
     def print(self, *text, verbose: bool | None = None):
@@ -298,10 +288,7 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
         self.print("Segmenting...")
-        seg_nii, softmax_logits = run_inference(
-            input_nii,
-            self.predictor,
-        )
+        seg_nii, softmax_logits = run_inference(input_nii, self.predictor)
         self.print("Segmentation done!")
         self.print("out_inf", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
         return {OutputType.seg: seg_nii, OutputType.softmax_logits: softmax_logits}

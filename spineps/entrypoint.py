@@ -255,7 +255,7 @@ def run_sample(opt: Namespace):
 
         timestamp = format_time_short(get_time())
         cprofile_out = bids_sample.get_changed_path(
-            format="log",
+            bids_format="log",
             parent=opt.der_name,
             file_type="log",
             info={"desc": "cprofile", "mod": bids_sample.format, "ses": timestamp},

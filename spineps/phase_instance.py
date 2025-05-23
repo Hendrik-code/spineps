@@ -141,7 +141,7 @@ def predict_instance_mask(
         if n_vert_bodies < n_corpus_coms:
             logger.print(f"Number of vertebra {n_vert_bodies} smaller than number of corpus regions {n_corpus_coms}", Log_Type.WARNING)
 
-        # label continously
+        # label continuously
         labelmap = {l: i + 1 for i, l in enumerate(uniq_labels)}
         whole_vert_nii.map_labels_(labelmap, verbose=False)
 
@@ -171,10 +171,10 @@ def get_corpus_coms(
     corpus_size_cleaning: int,
     process_detect_and_solve_merged_corpi: bool = True,
     verbose: bool = False,
-) -> list:
+) -> list | None:
     seg_nii.assert_affine(orientation=("P", "I", "R"))
     #
-    # Extract Corpus region and try to find all coms naively (some skips shouldnt matter)
+    # Extract Corpus region and try to find all coms naively (some skips should not matter)
     corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
     corpus_nii.erode_msk_(2, connectivity=2, verbose=False)
     if 1 in corpus_nii.unique() and corpus_size_cleaning > 0:
@@ -305,22 +305,18 @@ def get_corpus_coms(
     return corpus_coms
 
 
-def get_separating_components(
-    segvert: np.ndarray,
-    max_iter: int = 10,
-    connectivity: int = 3,
-):
-    check_connectivtiy = 3
+def get_separating_components(segvert: np.ndarray, max_iter: int = 10, connectivity: int = 3):
+    check_connectivity = 3
     vol = segvert.copy()
     vol_old = vol.copy()
     iterations = 0
     while True:
         vol_erode = np_erode_msk(vol, n_pixel=1, connectivity=connectivity)
-        subreg_cc, subreg_cc_n = np_connected_components(vol_erode, connectivity=check_connectivtiy)
+        subreg_cc, subreg_cc_n = np_connected_components(vol_erode, connectivity=check_connectivity)
         if subreg_cc_n > 1:
             vol = subreg_cc
             break
-        elif 1 not in subreg_cc_n:
+        elif subreg_cc_n == 0:  # np.max(subreg_cc)# 1 not in np_unique(subreg_cc)
             vol_dilated = np_dilate_msk(vol, n_pixel=1, connectivity=connectivity, mask=vol.copy())
             # use iteration before to get other CC
             vol[vol_old != 0] = 2  # all possible voxels are 2
@@ -342,8 +338,8 @@ def get_separating_components(
                     raise Exception("Could not divide into two instance")  # noqa: TRY002
                 dil_iter += 1
 
-            vol_1 = np_filter_connected_components(vol == 1, largest_k_components=1, connectivity=check_connectivtiy).astype(np.uint8)
-            vol_2 = np_filter_connected_components(vol == 2, largest_k_components=1, connectivity=check_connectivtiy).astype(np.uint8)
+            vol_1 = np_filter_connected_components(vol == 1, largest_k_components=1, connectivity=check_connectivity).astype(np.uint8)
+            vol_2 = np_filter_connected_components(vol == 2, largest_k_components=1, connectivity=check_connectivity).astype(np.uint8)
             vol_2 *= 2
             vol[vol == 1] = vol_1[vol == 1]
             vol[vol == 2] = vol_2[vol == 2]
@@ -356,7 +352,7 @@ def get_separating_components(
     if len(np_volume(vol)) != 2:
         logger.print("Get largest two components")
         subreg_cc_2k = np_filter_connected_components(
-            vol, largest_k_components=2, connectivity=check_connectivtiy, return_original_labels=False
+            vol, largest_k_components=2, connectivity=check_connectivity, return_original_labels=False
         )
         spart = subreg_cc_2k == 1
         tpart = subreg_cc_2k == 2
@@ -402,7 +398,7 @@ def get_plane_split(
     #
     normal_vector = np_center_of_mass(spart.astype(np.uint8))[1] - np_center_of_mass(tpart.astype(np.uint8))[1]
     normalized_normal = normal_vector / np.linalg.norm(normal_vector)
-    axis = np.argmax(np.abs(normalized_normal))
+    axis: int = np.argmax(np.abs(normalized_normal))  # type: ignore
     dims = [0, 1, 2]
     dims.remove(axis)
     dim1, dim2 = dims

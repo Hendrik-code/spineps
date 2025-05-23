@@ -139,7 +139,7 @@ class OutputType(Enum_Compare):
 class ErrCode(Enum_Compare):
     OK = auto()
     ALL_DONE = auto()  # outputs are already there
-    COMPATIBILITY = auto()  # compatibilty issue between model and input
+    COMPATIBILITY = auto()  # compatibility issue between model and input
     UNKNOWN = auto()  # unknown issue
     EMPTY = auto()  # issue that the mask or input is empty
     SHAPE = auto()  # issue that shapes do not match

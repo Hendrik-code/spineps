@@ -49,7 +49,7 @@ def find_most_probably_sequence(  # noqa: C901
     #
     allow_skip_at_region: list[int] | None = None,
     punish_skip_at_region_sequence: float = 0.2,
-) -> tuple[float, list[int]]:
+) -> tuple[float, list[int], list]:
     # default mutable arguments
     if allow_skip_at_region is None:
         allow_skip_at_region = [0]
@@ -80,9 +80,9 @@ def find_most_probably_sequence(  # noqa: C901
         regions.append(n_classes)
         regions_ranges = [(regions[i], regions[i + 1] - 1) for i in range(len(regions) - 1)]
         region_rel_shape = region_rel_cost.shape
-        assert region_rel_shape[1] == (
-            (len(regions) - 1) * 2
-        ), f"expected region_rel_cost with shape {((len(regions) - 1) * 2)}, but got {region_rel_shape[1]}"
+        assert region_rel_shape[1] == ((len(regions) - 1) * 2), (
+            f"expected region_rel_cost with shape {((len(regions) - 1) * 2)}, but got {region_rel_shape[1]}"
+        )
 
     # softmax (deprecated, handled elsewhere)
     if softmax_cost:
