@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotations  # ruff: noqa
 
 import sys
 from pathlib import Path

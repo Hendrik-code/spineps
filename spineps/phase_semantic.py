@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # from utils.predictor import nnUNetPredictor
-
 import numpy as np
 from TPTBox import NII, Location, Log_Type
 
