@@ -149,7 +149,6 @@ class Test_Labeling_Read_Labels(unittest.TestCase):
             subject_name=1337,
             anomaly_dict={},
             vert_subfolders_int=vert_subfolders_int,
-            anomaly_factor_condition=1,
         )
 
         for v in vert_subfolders_int:

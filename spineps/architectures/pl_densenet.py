@@ -78,7 +78,7 @@ class MODEL(Enum):
 
 @dataclass
 class ARGS_MODEL(Class_to_ArgParse):
-    backbone: MODEL = None
+    backbone: MODEL = MODEL.DENSENET169.name
     classification_conv: bool = False
     classification_linear: bool = True
     #
