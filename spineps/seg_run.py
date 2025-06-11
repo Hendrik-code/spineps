@@ -1,17 +1,16 @@
-import os
+from __future__ import annotations
+
 import shutil
 from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
 
-import nibabel as nib
 import numpy as np
 from TPTBox import BIDS_FILE, NII, POI, BIDS_Global_info, Location, Log_Type, Logger
-from TPTBox.core.np_utils import np_count_nonzero
 from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 
 from spineps.phase_instance import predict_instance_mask
-from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
+from spineps.phase_labeling import VertLabelingClassifier
 from spineps.phase_post import phase_postprocess_combined
 from spineps.phase_pre import preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
@@ -289,6 +288,7 @@ def process_img_nii(  # noqa: C901
     ignore_compatibility_issues: bool = False,
     log_inference_time: bool = True,
     return_output_instead_of_save: bool = False,
+    crop=None,
     verbose: bool = False,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty
@@ -389,6 +389,11 @@ def process_img_nii(  # noqa: C901
         input_nii = img_ref.open_nii()
         input_nii.seg = False
         input_nii_ = input_nii.copy()
+        if crop is not None:
+            try:
+                input_nii = input_nii.apply_crop(crop)
+            except Exception:
+                pass
         logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
 
         # First stage
@@ -477,7 +482,7 @@ def process_img_nii(  # noqa: C901
             else:
                 seg_nii_back = seg_nii_modelres
 
-            seg_nii_back.assert_affine(other=input_nii)
+            seg_nii_back.assert_affine(other=input_nii_)
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
                 img_nii=input_nii_,
@@ -494,7 +499,7 @@ def process_img_nii(  # noqa: C901
             )
 
             seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
-            vert_nii_clean.assert_affine(other=input_nii)
+            vert_nii_clean.assert_affine(other=input_nii_)
             # input_package.make_nii_from_this(seg_nii_clean)
             # input_package.make_nii_from_this(vert_nii_clean)
             if not return_output_instead_of_save:
@@ -541,7 +546,18 @@ def process_img_nii(  # noqa: C901
             if snapshot_copy_folder is not None:
                 out_snap = [out_snap, out_snap2]
             ctd = ctd.extract_subregion(Location.Vertebra_Corpus)
-            mri_snapshot(input_nii, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
+            try:
+                mri_snapshot(  # TODO update snapshot
+                    img_ref,
+                    vert_nii_clean,
+                    ctd,
+                    subreg_msk=seg_nii_clean,
+                    out_path=out_snap,
+                    mode="MRI" if img_ref.bids_format.lower() != "ct" else "CT",
+                )
+            except Exception:
+                # Fall back for older TPTBox versions TODO remove later
+                mri_snapshot(img_ref, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
         elif not out_snap2.exists():
             logger.print(f"Copying snapshot into {snapshot_copy_folder!s}")

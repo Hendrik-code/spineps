@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from collections import Counter
 from warnings import warn
@@ -53,7 +55,7 @@ def find_most_probably_sequence(  # noqa: C901
     punish_skip_at_region_sequence: float = 0.2,
     #
     verbose: bool = False,
-) -> tuple[float, list[int]]:
+) -> tuple[float, list[int], list]:
     logger = No_Logger()
     logger.default_verbose = verbose
     # default mutable arguments

@@ -1,13 +1,13 @@
+from __future__ import annotations
+
 # from utils.predictor import nnUNetPredictor
 from time import perf_counter
 
-import numpy as np
-from TPTBox import NII, Location, Log_Type
+from TPTBox import NII, Log_Type
 
-from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Model
-from spineps.seg_pipeline import fill_holes_labels, logger
-from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
+from spineps.seg_enums import ErrCode
+from spineps.seg_pipeline import logger
+from spineps.utils.proc_functions import n4_bias
 
 
 def preprocess_input(

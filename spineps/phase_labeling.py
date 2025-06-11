@@ -1,10 +1,8 @@
-import sys
-from enum import Enum
-from pathlib import Path
+from __future__ import annotations
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
-from TPTBox import NII, Location, Log_Type, No_Logger
+from TPTBox import NII, Location, No_Logger
 
 from spineps.architectures.read_labels import (
     VertExact,
@@ -407,7 +405,7 @@ def find_vert_path_from_predictions(
     return fcost, fpath, fpath_post, cost_matrix.tolist(), min_costs_path, args
 
 
-def fpath_post_processing(fpath):
+def fpath_post_processing(fpath) -> list[int]:
     fpath_post = fpath[:]
 
     # Two T12 -> T12 + T13
@@ -428,14 +426,13 @@ def fpath_post_processing(fpath):
 
 
 def is_valid_vertebra_sequence(sequence: list[VertExact] | list[int]) -> bool:
-    if isinstance(sequence[0], VertExact):
-        sequence = fpath_post_processing([s.value for s in sequence])
+    sequence2: list[int] = fpath_post_processing([s.value for s in sequence]) if isinstance(sequence[0], VertExact) else sequence  # type: ignore
     # must be sequence of vertebrae
-    for i in range(1, len(sequence)):
+    for i in range(1, len(sequence2)):
         if (
-            sequence[i] - sequence[i - 1] == 1
-            or (sequence[i] == 20 and sequence[i - 1] == 28)
-            or (sequence[i] == 20 and sequence[i - 1] == 18)
+            sequence2[i] - sequence2[i - 1] == 1
+            or (sequence2[i] == 20 and sequence2[i - 1] == 28)
+            or (sequence2[i] == 20 and sequence2[i - 1] == 18)
         ):
             continue
         else:

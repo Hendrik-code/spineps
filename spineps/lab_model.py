@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 import os
 from pathlib import Path
@@ -240,7 +242,7 @@ class VertLabelingClassifier(Segmentation_Model):
             predictions[v] = {"soft": logits_soft, "pred": pred_cls}
         return predictions
 
-    def _run_array(self, img_arr: np.ndarray, seg_arr: np.ndarray | None = None):  # , seg_arr: np.ndarray):
+    def _run_array(self, img_arr: np.ndarray, seg_arr: np.ndarray | None = None | torch.Tensor):  # , seg_arr: np.ndarray):
         assert img_arr.ndim == 3, f"Dimension mismatch, {img_arr.shape}, expected 3 dimensions"
         #
         img_arr = self.totensor(img_arr)

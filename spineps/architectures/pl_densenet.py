@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 from dataclasses import dataclass
@@ -45,7 +47,7 @@ class MODEL(Enum):
 
     def __call__(
         self,
-        opt: "ARGS_MODEL",
+        opt: ARGS_MODEL,
         remove_classification_head: bool = True,
     ):
         if "DENSENET" in self.name:

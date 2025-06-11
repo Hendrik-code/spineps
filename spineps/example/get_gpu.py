@@ -1,7 +1,9 @@
-import time  # noqa: INP001
+from __future__ import annotations  # noqa: INP001
+
+import time
 
 import GPUtil
-from TPTBox import Log_Type, No_Logger
+from TPTBox import No_Logger
 
 logger = No_Logger()
 

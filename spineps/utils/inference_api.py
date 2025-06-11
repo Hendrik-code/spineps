@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
@@ -84,7 +86,7 @@ def run_inference(
     input_nii: str | NII | list[NII],
     predictor: nnUNetPredictor,
     reorient_PIR: bool = False,  # noqa: N803
-) -> tuple[NII, NII | None, np.ndarray]:
+) -> tuple[NII, np.ndarray]:
     """Runs nnUnet model inference on one input.
 
     Args:
@@ -101,7 +103,7 @@ def run_inference(
         assert input_nii.endswith(".nii.gz"), f"input file is not a .nii.gz! Got {input_nii}"
         input_nii = NII.load(input_nii, seg=False)
 
-    assert isinstance(input_nii, NII | list), f"input must be a NII or str or list[NII], got {type(input_nii)}"
+    assert isinstance(input_nii, (NII, list)), f"input must be a NII or str or list[NII], got {type(input_nii)}"
     if isinstance(input_nii, NII):
         input_nii = [input_nii]
     orientation = input_nii[0].orientation
