@@ -1,17 +1,82 @@
 import os
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-from monai.networks.nets import DenseNet169
+from monai.networks.nets import DenseNet121, DenseNet169
+from monai.networks.nets.resnet import (
+    ResNet,
+    ResNetBlock,
+    _resnet,
+    get_inplanes,
+    resnet10,
+    resnet18,
+    resnet34,
+    resnet50,
+    resnet101,
+    resnet152,
+)
 from torch import nn
 from TypeSaveArgParse import Class_to_ArgParse
 
 
+def resnet2(
+    layers: list[int] | None = None,
+    **kwargs,
+):
+    if layers is None:
+        layers = [1, 1]
+    return _resnet("resnet2", ResNetBlock, layers, get_inplanes(), False, False, **kwargs)
+
+
+class MODEL(Enum):
+    DENSENET169 = DenseNet169
+    DENSENET121 = DenseNet121
+    RESNET10 = 10  # resnet10
+    RESNET18 = 18  # resnet18
+    RESNET34 = 34  # resnet34
+    RESNET50 = 50  # resnet50
+    RESNET101 = 101  # resnet101
+    RESNET152 = 152  # resnet152
+    RESNET2 = 2  # resnet2
+
+    def __call__(
+        self,
+        opt: "ARGS_MODEL",
+        remove_classification_head: bool = True,
+    ):
+        if "DENSENET" in self.name:
+            return get_densenet_architecture(
+                self.value,
+                in_channel=opt.in_channel,
+                out_channel=opt.num_classes,
+                pretrained=not opt.not_pretrained,
+                remove_classification_head=remove_classification_head,
+            )
+        elif "RESNET" in self.name:
+            d = {
+                10: resnet10,
+                18: resnet18,
+                34: resnet34,
+                50: resnet50,
+                101: resnet101,
+                152: resnet152,
+                2: resnet2,
+            }
+            return get_resnet_architecture(
+                d[self.value],
+                remove_classification_head=remove_classification_head,
+            )
+        else:
+            raise ValueError(f"Model {self.name} not supported.")
+
+
 @dataclass
 class ARGS_MODEL(Class_to_ArgParse):
+    backbone: MODEL = None
     classification_conv: bool = False
     classification_linear: bool = True
     #
@@ -41,9 +106,8 @@ class PLClassifier(pl.LightningModule):
         # save hyperparameter, everything below not visible
         self.save_hyperparameters()
 
-        self.net, linear_in = get_architecture(
-            DenseNet169, opt.in_channel, opt.num_classes, pretrained=False, remove_classification_head=True
-        )
+        self.backbone = MODEL[opt.backbone]
+        self.net, linear_in = self.backbone(opt, remove_classification_head=True)
         self.classification_heads = self.build_classification_heads(linear_in, opt.classification_conv, opt.classification_linear)
         self.classification_keys = list(self.classification_heads.keys())
         self.mse_weighting = opt.mse_weighting
@@ -87,7 +151,7 @@ class PLClassifier(pl.LightningModule):
         return "VertebraLabelingModel"
 
 
-def get_architecture(
+def get_densenet_architecture(
     model,
     in_channel: int = 1,
     out_channel: int = 1,
@@ -100,8 +164,21 @@ def get_architecture(
         out_channels=out_channel,
         pretrained=pretrained,
     )
-    linear_infeatures = 0
     linear_infeatures = model.class_layers[-1].in_features
     if remove_classification_head:
         model.class_layers = model.class_layers[:-1]
+    return model, linear_infeatures
+
+
+def get_resnet_architecture(
+    model,
+    remove_classification_head: bool = True,
+):
+    model = model(
+        spatial_dims=3,
+        n_input_channels=1,
+    )
+    linear_infeatures = model.fc.in_features
+    if remove_classification_head:
+        model.fc = None
     return model, linear_infeatures

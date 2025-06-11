@@ -318,10 +318,10 @@ def get_separating_components(
     while True:
         vol_erode = np_erode_msk(vol, n_pixel=1, connectivity=connectivity)
         subreg_cc, subreg_cc_n = np_connected_components(vol_erode, connectivity=check_connectivtiy)
-        if 1 in subreg_cc_n and subreg_cc_n[1] > 1:
-            vol = subreg_cc[1]
+        if subreg_cc_n > 1:
+            vol = subreg_cc
             break
-        elif 1 not in subreg_cc_n:
+        elif 1 not in np_volume(subreg_cc):
             vol_dilated = np_dilate_msk(vol, n_pixel=1, connectivity=connectivity, mask=vol.copy())
             # use iteration before to get other CC
             vol[vol_old != 0] = 2  # all possible voxels are 2

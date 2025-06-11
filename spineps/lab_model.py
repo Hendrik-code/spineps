@@ -1,9 +1,11 @@
+import math
 import os
 from pathlib import Path
 
 import numpy as np
 import torch
 from monai.transforms import CenterSpatialCropd, Compose, NormalizeIntensityd, ToTensor
+from scipy.ndimage.interpolation import rotate
 from TPTBox import NII, Log_Type, No_Logger, np_utils
 from typing_extensions import Self
 
@@ -13,6 +15,57 @@ from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model
 from spineps.utils.filepaths import search_path
 
 logger = No_Logger(prefix="VertLabelingClassifier")
+
+
+def unit_vector(vector):
+    """Returns the unit vector of the vector."""
+    return vector / np.linalg.norm(vector)
+
+
+def angle_between(v1, v2, signed=True):
+    """Returns the angle in radians between vectors 'v1' and 'v2'::
+
+    >>> angle_between((1, 0, 0), (0, 1, 0))
+    1.5707963267948966
+    >>> angle_between((1, 0, 0), (1, 0, 0))
+    0.0
+    >>> angle_between((1, 0, 0), (-1, 0, 0))
+    3.141592653589793
+    """
+    v1_u = unit_vector(v1)
+    v2_u = unit_vector(v2)
+    angle = np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+    if signed:
+        sign = np.array(np.sign(np.cross(v1, v2).dot((1, 1, 1))))
+        # 0 means collinear: 0 or 180. Let's call that clockwise.
+        sign[sign == 0] = 1
+        angle = sign * angle
+    return angle
+
+
+def rotate_patch_sagitally(patch: np.ndarray, angle: float, msk: bool = False, cval: int = 0) -> np.ndarray:
+    """
+    Rotates a patch sagitally given an angle (Assuming the patch is in (I,P,L) orientation)
+
+    Parameters:
+    ----------
+        patch: np.ndarray
+            a numpy array with (I,P,L) orientation
+        angle: float
+            angle of rotation in degrees
+        msk: bool, optional
+            flag to determine interpolation type. Interpolation order os 0 if input is a mask.
+    Output:
+        np.ndarray: rotated patch
+    """
+    if msk:
+        cval = 0
+        order = 0
+    else:
+        order = 3
+    rotated_patch = rotate(patch, angle=-angle, reshape=False, order=order, mode="constant", cval=cval)  # type: ignore
+    return rotated_patch
 
 
 class VertLabelingClassifier(Segmentation_Model):
@@ -102,12 +155,25 @@ class VertLabelingClassifier(Segmentation_Model):
         seg = seg.reorient()
         # TODO assert order of seg labels are order from top to bottom
         predictions = {}
+
+        coms = seg.reorient(("I", "P", "L")).center_of_masses()
+        sorted_ctds = sorted([[a, *b] for a, b in coms.items()], key=lambda x: x[1])
+
         for v in seg.unique():
-            logits_soft, pred_cls = self.run_given_seg_pos(img, seg, vert_label=v)
+            # Find the index of the given vertebra in the sorted list
+            idx = next(i for i, ct in enumerate(sorted_ctds) if ct[0] == v)
+
+            # Get the centroids above and below
+            ctd1 = sorted_ctds[idx - 1][1:] if idx > 0 else sorted_ctds[idx][1:]
+            ctd2 = sorted_ctds[idx + 1][1:] if idx < len(sorted_ctds) - 1 else sorted_ctds[idx][1:]
+            myradians = angle_between(np.asarray(ctd2) - np.asarray(ctd1), (1, 0, 0))  # type: ignore
+            mydegrees = math.degrees(myradians)
+
+            logits_soft, pred_cls = self.run_given_seg_pos(img, seg, vert_label=v, angle=mydegrees)
             predictions[v] = {"soft": logits_soft, "pred": pred_cls}
         return predictions
 
-    def run_given_seg_pos(self, img: NII | np.ndarray, seg: NII, vert_label: int | None = None):
+    def run_given_seg_pos(self, img: NII, seg: NII, vert_label: int | None = None, angle: float | None = None):
         if vert_label is not None:
             seg = seg.extract_label(vert_label)
         elif len(seg.unique()) > 1:
@@ -118,18 +184,48 @@ class VertLabelingClassifier(Segmentation_Model):
         for i in range(len(crop)):
             size_t = crop[i].stop - crop[i].start
             center_of_crop.append(crop[i].start + (size_t // 2))
-        return self.run_given_center_pos(img, center_of_crop)
+        return self.run_given_center_pos(img, seg, center_of_crop, angle=angle)  # type: ignore
 
-    def run_given_center_pos(self, img: NII | np.ndarray, center_pos: tuple[int, int, int]):
+    def run_given_center_pos(self, img: NII, seg: NII, center_pos: tuple[int, int, int], angle: float | None = None):
+        extra_rotation_padding = 64
+        extra_rotation_padding_halfed = extra_rotation_padding // 2
+        #
         # cut array then runs prediction
         arr = img.get_array() if isinstance(img, NII) else img
         arr_cut, cutout_coords_slices, padding = np_utils.np_calc_crop_around_centerpoint(
             center_pos,
             arr,
-            self.cutout_size,
+            (self.cutout_size[0] + extra_rotation_padding, self.cutout_size[1] + extra_rotation_padding, self.cutout_size[2]),
         )
-        # sem_cut = np.pad(vert_v.get_seg_array()[cutout_coords_slices], padding)
-        return self._run_array(arr_cut)  # sem_cut
+        sem_cut = np.pad(seg[cutout_coords_slices], padding)
+        # final cutout size (200, 160, 32)
+
+        ori = img.orientation
+        img_v = img.set_array(arr_cut).reorient_(("I", "P", "L"))
+        seg_v = seg.set_array(sem_cut).reorient_(("I", "P", "L"))
+
+        # angle = 0
+        if angle is not None and angle != 0:
+            arr_cut = rotate_patch_sagitally(img_v.get_array(), -angle, msk=False)
+            sem_cut = rotate_patch_sagitally(seg_v.get_seg_array(), -angle, msk=True)
+
+        # crop down to final cutout size (200, 160, 32)
+        arr_cut = arr_cut[
+            extra_rotation_padding_halfed:-extra_rotation_padding_halfed,
+            extra_rotation_padding_halfed:-extra_rotation_padding_halfed,
+            :,
+        ]
+        sem_cut = sem_cut[
+            extra_rotation_padding_halfed:-extra_rotation_padding_halfed,
+            extra_rotation_padding_halfed:-extra_rotation_padding_halfed,
+            :,
+        ]
+
+        img_v.set_array_(arr_cut).reorient_(ori)
+        seg_v.set_array_(sem_cut).reorient_(ori)
+        # img_v.save("/DATA/NAS/ongoing_projects/hendrik/img_v.nii.gz")
+        # seg_v.save("/DATA/NAS/ongoing_projects/hendrik/seg_v.nii.gz")
+        return self._run_array(img_v.get_array(), seg_v.get_seg_array())  # sem_cut
 
     def _run_nii(self, img_nii: NII):
         # TODO check resolution
@@ -144,18 +240,27 @@ class VertLabelingClassifier(Segmentation_Model):
             predictions[v] = {"soft": logits_soft, "pred": pred_cls}
         return predictions
 
-    def _run_array(self, img_arr: np.ndarray):  # , seg_arr: np.ndarray):
+    def _run_array(self, img_arr: np.ndarray, seg_arr: np.ndarray | None = None):  # , seg_arr: np.ndarray):
         assert img_arr.ndim == 3, f"Dimension mismatch, {img_arr.shape}, expected 3 dimensions"
         #
         img_arr = self.totensor(img_arr)
         # add channel
         img_arr.unsqueeze_(0)
-        d = self.transform({"img": img_arr, "seg": img_arr})
+
+        if seg_arr is not None:
+            seg_arr = self.totensor(seg_arr)
+            seg_arr.unsqueeze_(0)
+        else:
+            seg_arr = img_arr.clone()
+
+        d = self.transform({"img": img_arr, "seg": seg_arr})
 
         # TODO seg channelwise and stuff
 
         model_input = d["img"]
+        # print(model_input.shape)
         model_input.unsqueeze_(0)
+        # print(model_input.shape)
         model_input = model_input.to(torch.float32)
         model_input = model_input.to(self.device)
 
