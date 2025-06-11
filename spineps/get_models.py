@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
+from typing import Optional, Union
 
 from TPTBox import Log_Type, No_Logger
 from tqdm import tqdm
@@ -30,7 +33,7 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
 
     if len(possible_keys) == 0:
         logger.print(
-            "Found no available semantic models. Did you set one up by downloading modelweights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
+            "Found no available semantic models. Did you set one up by downloading model weights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
             Log_Type.FAIL,
         )
         raise KeyError(model_name)
@@ -87,7 +90,7 @@ def get_labeling_model(model_name: str, **kwargs) -> VertLabelingClassifier:
     possible_keys = list(_modelid2folder_labeling.keys())
     if len(possible_keys) == 0:
         logger.print(
-            "Found no available labeling models. Did you set one up by downloading modelweights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
+            "Found no available labeling models. Did you set one up by downloading model weights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
             Log_Type.FAIL,
         )
         raise KeyError(model_name)
@@ -102,9 +105,9 @@ def get_labeling_model(model_name: str, **kwargs) -> VertLabelingClassifier:
     return get_actual_model(config_path, **kwargs)
 
 
-_modelid2folder_semantic: dict[str, Path | str] | None = None
-_modelid2folder_instance: dict[str, Path | str] | None = None
-_modelid2folder_labeling: dict[str, Path | str] | None = None
+_modelid2folder_semantic: Optional[dict[str, Union[Path, str]]] = None
+_modelid2folder_instance: Optional[dict[str, Union[Path, str]]] = None
+_modelid2folder_labeling: Optional[dict[str, Union[Path, str]]] = None
 
 
 def modelid2folder_semantic() -> dict[str, Path | str]:
@@ -143,7 +146,9 @@ def modelid2folder_labeling() -> dict[str, Path | str]:
         return check_available_models(get_mri_segmentor_models_dir())[2]
 
 
-def check_available_models(models_folder: str | Path, verbose: bool = False) -> tuple[dict[str, Path | int], dict[str, Path | int]]:
+def check_available_models(
+    models_folder: str | Path, verbose: bool = False
+) -> tuple[dict[str, Path | str], dict[str, Path | str], dict[str, Path | str]]:
     """Searches through the specified directories and finds models, sorting them into the dictionaries mapping to instance or semantic models
 
     Args:
@@ -165,7 +170,7 @@ def check_available_models(models_folder: str | Path, verbose: bool = False) -> 
     _modelid2folder_labeling = labeling
     for cp in tqdm(config_paths, desc="Checking models"):
         model_folder = cp.parent
-        model_folder_name = model_folder.name.lower()
+        model_folder_name = model_folder.parent.name.lower() if "nnUNetPlans" in model_folder.name else model_folder.name.lower()
         try:
             inference_config = load_inference_config(str(cp))
             if inference_config.modeltype == ModelType.classifier:
@@ -231,9 +236,9 @@ def get_actual_model(
                 Log_Type.FAIL,
             )
             raise FileNotFoundError(f"{in_dir}/**/*inference_config.json")
-        assert (
-            len(path_search) == 1
-        ), f"get_actual_model: found more than one inference_config.json in {in_dir}/**/*inference_config.json. Ambigous behavior, please manually correct this by removing one of these.\nFound {path_search}"
+        assert len(path_search) == 1, (
+            f"get_actual_model: found more than one inference_config.json in {in_dir}/**/*inference_config.json. Ambiguous behavior, please manually correct this by removing one of these.\nFound {path_search}"
+        )
         in_dir = path_search[0]
     # else:
     #    base = filepath_model(in_config, model_dir=None)

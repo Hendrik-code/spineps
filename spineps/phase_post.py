@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 # from utils.predictor import nnUNetPredictor
 import heapq
 
 import numpy as np
-from scipy.ndimage import center_of_mass
 from TPTBox import NII, Location, Log_Type, v_idx2name, v_name2idx
 from TPTBox.core.np_utils import (
     np_bbox_binary,
@@ -21,6 +22,7 @@ from TPTBox.core.np_utils import (
 
 from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
+from spineps.utils.compat import zip_strict
 from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 
 
@@ -31,6 +33,7 @@ def phase_postprocess_combined(
     model_labeling: VertLabelingClassifier | None,
     debug_data: dict | None,
     labeling_offset: int = 0,
+    proc_lab_force_no_tl_anomaly: bool = False,
     proc_assign_missing_cc: bool = True,
     proc_clean_inst_by_sem: bool = True,
     n_vert_bodies: int | None = None,
@@ -60,7 +63,7 @@ def phase_postprocess_combined(
         seg_uncropped = seg_nii.copy()
 
         # Crop down
-        img_nii.apply_crop_(crop_slices)
+        img_nii = img_nii.apply_crop(crop_slices)
         vert_nii.apply_crop_(crop_slices)
         seg_nii.apply_crop_(crop_slices)
 
@@ -93,6 +96,7 @@ def phase_postprocess_combined(
                 img_nii=img_nii,
                 vert_nii=whole_vert_nii_cleaned,
                 subreg_nii=seg_nii_cleaned,
+                proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
             )
 
         logger.print("vert_nii", whole_vert_nii_cleaned.unique(), whole_vert_nii_cleaned.volumes())
@@ -217,9 +221,9 @@ def assign_missing_cc(
             labels = labels[1:]
             count = count[1:]
             if len(labels) > 0:
-                newlabel = labels[np.argmax(count)]
-                logger.print(f"Assign {label, cc_l} to {newlabel}, Location at {cc_bbox}", verbose=verbose)
-                vert_arr_c[cc_map_c != 0] = newlabel
+                new_label = labels[np.argmax(count)]
+                logger.print(f"Assign {label, cc_l} to {new_label}, Location at {cc_bbox}", verbose=verbose)
+                vert_arr_c[cc_map_c != 0] = new_label
                 target_arr[cc_bbox] = vert_arr_c
             else:
                 logger.print(f"Assign {label, cc_l} to EMPTY, Location at {cc_bbox}", verbose=verbose or verbose_deletion)
@@ -330,7 +334,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
             curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
             new_vol = curr.sum()
             total = seg_t.extract_label(Location.Endplate.value).sum()
-            logger.print(rf"{new_vol/total*100:.2f}% endplates detected", end="\r") if verbose else None
+            logger.print(rf"{new_vol / total * 100:.2f}% endplates detected", end="\r") if verbose else None
             if old_vol == new_vol and old_vol != 0:
                 break
             old_vol = new_vol
@@ -379,7 +383,7 @@ def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0):
     vert_nii.reorient_()
     vert_arr = vert_nii.get_seg_array()
     com_i = np_center_of_mass(vert_arr)
-    comb_l = list(zip(com_i.keys(), com_i.values(), strict=True))
+    comb_l = list(zip_strict(com_i.keys(), com_i.values()))
     comb_l.sort(key=lambda a: a[1][1])  # PIR
     com_map = {comb_l[idx][0]: idx + 1 + labeling_offset for idx in range(len(comb_l))}
 
@@ -408,7 +412,6 @@ def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII):
         except AssertionError as e:
             print(f"Got error {e}, skip")
             break
-        subreg_cc = subreg_cc[1]
         cc_labels = np_unique(subreg_cc)
 
         for ccl in cc_labels:

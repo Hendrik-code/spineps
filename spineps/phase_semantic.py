@@ -1,13 +1,13 @@
-# from utils.predictor import nnUNetPredictor
-from time import perf_counter
+from __future__ import annotations
 
+# from utils.predictor import nnUNetPredictor
 import numpy as np
 from TPTBox import NII, Location, Log_Type
 
 from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import fill_holes_labels, logger
-from spineps.utils.proc_functions import clean_cc_artifacts, n4_bias
+from spineps.utils.proc_functions import clean_cc_artifacts
 
 
 def predict_semantic_mask(
@@ -19,13 +19,13 @@ def predict_semantic_mask(
     proc_remove_inferior_beyond_canal: bool = False,
     proc_clean_small_cc_artifacts: bool = True,
     verbose: bool = False,
-) -> tuple[NII | None, NII | None, np.ndarray | None, ErrCode]:
+) -> tuple[NII | None, NII | None, ErrCode]:
     """Predicts the semantic mask, takes care of rescaling, and back
 
     Args:
         mri_nii (NII): input mri image (grayscal, must be in range 0 -> ?)
         model (Segmentation_Model): Model to semantically segment with
-        do_n4 (bool, optional): Wheter to apply n4 bias field correction. Defaults to True.
+        do_n4 (bool, optional): Wherever to apply n4 bias field correction. Defaults to True.
         fill_holes (bool, optional): Whether to fill holes in the output mask. Defaults to True.
         clean_artifacts (bool, optional): Whether to try and clean possible artifacts. Defaults to True.
         do_crop (bool, optional): Whether to apply cropping in order to speedup computation (min value in scan must be 0!). Defaults to True.

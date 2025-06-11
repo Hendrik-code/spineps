@@ -2,6 +2,8 @@
 # coverage run -m unittest
 # coverage report
 # coverage html
+from __future__ import annotations
+
 import os
 import unittest
 from pathlib import Path
@@ -11,6 +13,7 @@ from TPTBox.tests.test_utils import get_test_mri
 
 import spineps
 from spineps.get_models import Segmentation_Model, get_actual_model
+from spineps.utils.compat import zip_strict
 from spineps.utils.proc_functions import clean_cc_artifacts, connected_components_3d, n4_bias
 
 logger = No_Logger()
@@ -38,7 +41,7 @@ class Test_proc_functions(unittest.TestCase):
         l3_cleaned = clean_cc_artifacts(l3, logger=logger, labels=[41, 42, 43, 44, 45, 46, 47, 48, 49])
         l3_cleaned = l3.set_array(l3_cleaned)
         l3_cleaned_volumes = l3_cleaned.volumes()
-        for a, b in zip(l3_volumes.values(), l3_cleaned_volumes.values(), strict=True):
+        for a, b in zip_strict(l3_volumes.values(), l3_cleaned_volumes.values()):
             self.assertEqual(a, b)
 
     def test_clean_artifacts_no_zeros(self):
@@ -49,7 +52,7 @@ class Test_proc_functions(unittest.TestCase):
         l3_cleaned = clean_cc_artifacts(l3, logger=logger, labels=[41, 42, 43, 44, 45, 46, 47, 48, 49])
         l3_cleaned = l3.set_array(l3_cleaned)
         l3_cleaned_volumes = l3_cleaned.volumes()
-        for a, b in zip(l3_volumes.values(), l3_cleaned_volumes.values(), strict=True):
+        for a, b in zip_strict(l3_volumes.values(), l3_cleaned_volumes.values()):
             self.assertEqual(a, b)
 
     def test_clean_artifacts_zeros(self):
@@ -65,7 +68,7 @@ class Test_proc_functions(unittest.TestCase):
                 )
                 l3_cleaned = l3.set_array(l3_cleaned)
                 l3_cleaned_volumes = l3_cleaned.volumes()
-                for a, b in zip(l3_volumes.values(), l3_cleaned_volumes.values(), strict=True):
+                for a, b in zip_strict(l3_volumes.values(), l3_cleaned_volumes.values()):
                     self.assertEqual(a, b)
             else:
                 with self.assertRaises(AssertionError):

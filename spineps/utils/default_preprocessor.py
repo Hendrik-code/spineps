@@ -1,13 +1,15 @@
 # Adapted from https://github.com/MIC-DKFZ/nnUNet
 # Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring
 # method for deep learning-based biomedical image segmentation. Nature methods, 18(2), 203-211.
+from __future__ import annotations
+
 from typing import Union, Tuple
 
 import numpy as np
 
 # from acvl_utils.miscellaneous.ptqdm import ptqdm
 from batchgenerators.utilities.file_and_folder_operations import *
-from acvl_utils.cropping_and_padding.bounding_boxes import get_bbox_from_mask, crop_to_bbox, bounding_box_to_slice
+from acvl_utils.cropping_and_padding.bounding_boxes import get_bbox_from_mask, bounding_box_to_slice
 
 import nnunetv2
 from nnunetv2.utilities.find_class_by_name import recursive_find_python_class

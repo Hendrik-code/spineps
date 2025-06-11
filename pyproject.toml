@@ -19,7 +19,7 @@ spineps = 'spineps.entrypoint:entry_point'
 spineps_ = 'spineps.entrypoint:entrypoint_no_checks'
 
 [tool.poetry.dependencies]
-python = "^3.10 || ^3.11"
+python = "^3.9 || ^3.10 || ^3.11"
 connected-components-3d = "^3.12.3"
 fill-voids = "^2.0.5"
 nibabel = "^5.1.0"
@@ -48,7 +48,7 @@ pandas = "^2.1.0"
 joblib = "^1.3.2"
 future = "^0.18.3"
 flake8 = ">=4.0.1"
-auxiliary = ">=0.1.0"
+#auxiliary = ">=0.1.0"
 tqdm = ">=4.62.3"
 
 
@@ -163,6 +163,8 @@ ignore = [
     "SIM118", # dictionay keys
     "N802", # function name lowercase
     "PLR2044", # empty comment symbol
+    "B905", # strict= in zip()
+    "UP007", # Union instead of | in python 3.9
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
