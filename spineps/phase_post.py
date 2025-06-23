@@ -241,7 +241,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
     orientation = whole_vert_nii.orientation
     vert_t = whole_vert_nii.reorient()
     seg_t = seg_nii.reorient()
-    vert_labels = [t for t in vert_t.unique() if t <= 26]  # without zero
+    vert_labels = [t for t in vert_t.unique() if t <= 26 or t == 28]  # without zero
     vert_arr = vert_t.get_seg_array()
     subreg_arr = seg_t.get_seg_array()
 
