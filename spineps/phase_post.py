@@ -241,7 +241,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
     orientation = whole_vert_nii.orientation
     vert_t = whole_vert_nii.reorient()
     seg_t = seg_nii.reorient()
-    vert_labels = vert_t.unique()  # without zero
+    vert_labels = [t for t in vert_t.unique() if t <= 26 or t == 28]  # without zero
     vert_arr = vert_t.get_seg_array()
     subreg_arr = seg_t.get_seg_array()
 
@@ -286,8 +286,8 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
 
         # find which vert got how many ivd CCs
         to_mapped_labels = list(mapping_cc_to_vert_label.values())
-        for l in vert_labels:
-            if l not in to_mapped_labels:
+        for i, l in enumerate(vert_labels):
+            if l not in to_mapped_labels and l != 1:
                 logger.print(f"Vertebra {v_idx2name[l]} got no IVD component assigned", Log_Type.STRANGE)
             count = to_mapped_labels.count(l)
             if count > 1:
@@ -455,7 +455,8 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII):
     volumes = subreg_cc.volumes()
     stats = {i: (g[1], True, volumes[i]) for i, g in coms.items()}
 
-    vert_coms = vert_nii.center_of_masses()
+    corpus_nii = seg_sem.extract_label([Location.Vertebra_Corpus_border.value, Location.Arcus_Vertebrae.value]) * vert_nii
+    vert_coms = corpus_nii.center_of_masses()
     vert_volumes = vert_nii.volumes()
 
     for i, g in vert_coms.items():

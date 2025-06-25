@@ -288,10 +288,7 @@ def get_corpus_coms(
                     segvert = corpus_cc.extract_label(target_vert_id, inplace=False)
                     try:
                         logger.print("get_separating_components to split vertebra", verbose=verbose)
-                        (spart, tpart, spart_dil, tpart_dil, stpart) = get_separating_components(
-                            segvert,
-                            connectivity=3,
-                        )
+                        (spart, tpart, spart_dil, tpart_dil, stpart) = get_separating_components(segvert, connectivity=3)
 
                         logger.print("Splitting by plane")
                         plane_split_nii = get_plane_split(segvert, corpus_nii, spart, tpart, spart_dil, tpart_dil)
@@ -308,6 +305,55 @@ def get_corpus_coms(
 
 
 def get_separating_components(segvert: np.ndarray, max_iter: int = 10, connectivity: int = 3):
+    """
+    Attempts to split a binary volumetric segmentation into two spatially separate components (S and T)
+    by iterative erosion and connected component analysis.
+
+    This function is designed for cases where an initial segmentation is a single connected component,
+    but the goal is to identify two meaningful subregions. It uses morphological erosion to find a
+    splitting point and then recovers the two regions through dilation.
+
+    Parameters
+    ----------
+    segvert : np.ndarray
+        A 3D binary (or labeled) numpy array representing the segmented volume to split.
+    max_iter : int, optional
+        Maximum number of erosion iterations allowed to find separable components. Default is 10.
+    connectivity : int, optional
+        Connectivity used for morphological operations (e.g., 1=6-connectivity, 2=18, 3=26). Default is 3.
+
+    Returns
+    -------
+    spart : np.ndarray
+        Binary mask of the first separated component (S).
+    tpart : np.ndarray
+        Binary mask of the second separated component (T).
+    spart_dil : np.ndarray
+        Dilated version of spart until contact with tpart.
+    tpart_dil : np.ndarray
+        Dilated version of tpart until contact with spart.
+    stpart : np.ndarray
+        Combined map of dilated S and T, with values:
+        - 0: background
+        - 1: spart_dil only
+        - 2: tpart_dil only
+        - 3: overlapping region between spart_dil and tpart_dil
+
+    Raises
+    ------
+    Exception
+        If the input volume cannot be split into two parts within the allowed number of iterations,
+        or if resulting parts are empty.
+    IndentationError
+        If the maximum number of iterations is reached without successful separation.
+
+    Notes
+    -----
+    - The function assumes that `np_erode_msk`, `np_dilate_msk`, `np_connected_components`,
+      `np_volume`, `np_filter_connected_components` are available in the environment.
+    - This method is particularly useful for anatomical structures that are initially connected
+      (e.g., left and right organs) but should be separated for downstream analysis.
+    """
     check_connectivity = 3
     vol = segvert.copy()
     vol_old = vol.copy()
@@ -387,6 +433,52 @@ def get_plane_split(
     spart_dil: np.ndarray,
     tpart_dil: np.ndarray,
 ):
+    """
+    Computes an approximate separating plane between two regions (spart and tpart)
+    based on their dilated overlap and returns it as a NIfTI image.
+
+    This function determines the collision region between the dilated versions
+    of two separated segmentation components. It then estimates a plane orthogonal
+    to the vector between their centers of mass and passing through the point
+    of contact. The resulting binary plane is filled in the axial direction
+    and returned in NIfTI format for visualization or further processing.
+
+    Parameters
+    ----------
+    segvert : np.ndarray
+        Original 3D binary or labeled segmentation volume.
+    compare_nii : NII
+        NIfTI image object used as a reference for orientation and spatial metadata.
+    spart : np.ndarray
+        Binary mask of the first component (S).
+    tpart : np.ndarray
+        Binary mask of the second component (T).
+    spart_dil : np.ndarray
+        Dilated mask of spart.
+    tpart_dil : np.ndarray
+        Dilated mask of tpart.
+
+    Returns
+    -------
+    plane_filled_nii : NII
+        A NIfTI image containing a filled binary plane separating spart and tpart,
+        reoriented to match the input NIfTI image. If no collision is detected,
+        returns an empty image.
+
+    Notes
+    -----
+    - The function uses the collision area between the dilated masks to find
+      a center of mass and constructs a plane orthogonal to the vector between
+      the COMs of spart and tpart.
+    - Filling the plane ensures better visualization and compatibility with downstream tasks.
+    - If the dilated masks do not overlap, an empty volume is returned and a warning is logged.
+
+    TODO
+    ----
+    - Improve accuracy by using the line connecting both COMs and projecting the collision
+      point onto this vector, rather than relying on the COM of the overlap region.
+    """
+
     s_dilint = spart_dil.astype(np.uint8)
     t_dilint = tpart_dil.astype(np.uint8)
     collision_arr = s_dilint + t_dilint
