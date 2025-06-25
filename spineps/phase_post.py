@@ -455,7 +455,8 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII):
     volumes = subreg_cc.volumes()
     stats = {i: (g[1], True, volumes[i]) for i, g in coms.items()}
 
-    vert_coms = vert_nii.center_of_masses()
+    corpus_nii = seg_sem.extract_label([Location.Vertebra_Corpus_border.value, Location.Arcus_Vertebrae.value]) * vert_nii
+    vert_coms = corpus_nii.center_of_masses()
     vert_volumes = vert_nii.volumes()
 
     for i, g in vert_coms.items():
