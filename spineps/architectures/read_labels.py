@@ -384,6 +384,12 @@ class SubjectInfo:
     double_entries: list[int] = field(default_factory=list)
 
     @property
+    def has_tea(self) -> bool:
+        if not self.has_anomaly_entry:
+            return None
+        return self.anomaly_entry["T11"] or self.anomaly_entry["T13"]
+
+    @property
     def block(self) -> int:
         return int(str(self.subject_name)[:3])
 
@@ -393,15 +399,17 @@ def get_subject_info(
     subject_name: str | int,
     anomaly_dict: dict,
     vert_subfolders_int: list[int],
-    anomaly_factor_condition: int = 0,
+    subject_name_int: bool = True,
 ):
+    if subject_name_int:
+        subject_name = int(subject_name)
     double_entries = []
     labelmap = {}
     has_anomaly_entry = False
     anomaly_entry = {}
     deleted_label = []
     is_remove = False
-    if int(subject_name) in anomaly_dict:
+    if subject_name in anomaly_dict:
         anomaly_entry = anomaly_dict[subject_name]
         has_anomaly_entry = True
         if anomaly_entry["DeleteLabel"] is not None:
@@ -411,22 +419,43 @@ def get_subject_info(
 
         if bool(anomaly_entry["T11"]):
             labelmap = {i: i + 1 for i in range(19, 26)}
-            double_entries = [17, 18, 20, 21]
         elif bool(anomaly_entry["T13"]):
             labelmap = {20: 28, 21: 20, 22: 21, 23: 22, 24: 23, 25: 24}
-            double_entries = [19, 28, 20, 21]
-        elif anomaly_factor_condition == 0:
-            double_entries = [18, 19, 20, 21]
+
+    if "LabelOverride" in anomaly_entry and anomaly_entry["LabelOverride"] is not None:
+        assert len(anomaly_entry["LabelOverride"]) == len(vert_subfolders_int), (
+            f"len({anomaly_entry['LabelOverride']}) != len({vert_subfolders_int})"
+        )
+        vert_subfolders_sorted = sorted(vert_subfolders_int, key=lambda x: x if x != 28 else 19.5)
+        labelmap = {i: k for i, k in zip(vert_subfolders_sorted, anomaly_entry["LabelOverride"], strict=False)}  # noqa: C416
 
     actual_labels = [labelmap.get(v, v) for v in vert_subfolders_int]
+
+    if 28 in actual_labels and 19 not in actual_labels:
+        print(f"{subject_name}: 28 in {actual_labels} but no 19")
+        is_remove = True
+
+    # T11
+    if 18 in actual_labels and 19 not in actual_labels and 20 in actual_labels:
+        double_entries = [17, 18, 20, 21]
+    elif 28 in actual_labels:
+        double_entries = [19, 28, 20, 21]
+    else:
+        double_entries = [18, 19, 20, 21]
+
+    if len(anomaly_dict) == 0:
+        double_entries = []
+
     #
     # last_hwk = 7
     # first_bwk = 8
-    last_bwk = max([v for v in actual_labels if 7 < v <= 19 or v == 28]) if max(actual_labels) >= 18 else None
+    bwks = [v for v in actual_labels if 7 < v <= 19 or v == 28]
+    last_bwk = max(bwks) if max(actual_labels) >= 18 and len(bwks) > 0 else None
     # first_lwk = 20
-    last_lwk = max([v for v in actual_labels if 22 < v < 26]) if max(actual_labels) >= 23 else None
+    lwks = [v for v in actual_labels if 22 < v < 26]
+    last_lwk = max(lwks) if max(actual_labels) >= 23 and len(lwks) > 0 else None
     return SubjectInfo(
-        subject_name=int(subject_name),
+        subject_name=subject_name,
         has_anomaly_entry=has_anomaly_entry,
         anomaly_entry=anomaly_entry,
         actual_labels=actual_labels,

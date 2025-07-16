@@ -5,6 +5,7 @@ from collections import Counter
 from warnings import warn
 
 import numpy as np
+from TPTBox import Log_Type, No_Logger
 
 
 def argmin(lst):
@@ -30,6 +31,7 @@ def internal_to_real_path(p):
     return pat
 
 
+# TODO: make clear recursion calls with extra cost for the path?
 def find_most_probably_sequence(  # noqa: C901
     cost: np.ndarray | list[int],
     #
@@ -51,7 +53,11 @@ def find_most_probably_sequence(  # noqa: C901
     #
     allow_skip_at_region: list[int] | None = None,
     punish_skip_at_region_sequence: float = 0.2,
+    #
+    verbose: bool = False,
 ) -> tuple[float, list[int], list]:
+    logger = No_Logger()
+    logger.default_verbose = verbose
     # default mutable arguments
     if allow_skip_at_region is None:
         allow_skip_at_region = [0]
@@ -109,6 +115,7 @@ def find_most_probably_sequence(  # noqa: C901
 
     # main recursive loop
     def minCostAlgo(r, c):
+        logger.print(f"Called vert {r}, label {c}")
         # get current region
         region_cur = c_to_region_idx(c, regions)
         # start point
@@ -116,22 +123,26 @@ def find_most_probably_sequence(  # noqa: C901
             # go over each possible start column
             options = []
             for cc in range(min_start_class, n_classes):
-                add_option_path(options, 0, cc, 0)
+                with logger:
+                    # logger.default_verbose = cc in [7, 8, 9]
+                    add_option_path(options, 0, cc, 0)
                 # options.append(minCostAlgo(r=0, c=cc))
             minidx, minval = argmin([o[0] for o in options])
             return minval, options[minidx][1]
         # stepped over the line
         elif c < 0 or r < 0 or c >= shape[1] or r >= shape[0]:
+            logger.print(f"Out of bounds vert {r}, label {c}")
             return sys.maxsize, [(r, c)]
         # last row, path end
         elif r == shape[0] - 1:
+            # logger.print(f"End of path vert {r}, label {c}")
             # path_tothis.append((r, c))
             cost_value = costlist[r][c]
             p = [(r, c)]
             # transition cost of vertrel
             cost_value += rel_cost(r, c, p, region_cur)
-            # if cost_value < 0:
-            #    print(f"Endpoint {r}, {c} to {cost_value}, {p}")
+            if cost_value < 0:
+                logger.print(f"End of path vert {r}, label {c} to {cost_value}, {internal_to_real_path(p)}")
             return (cost_value, p)
         # check min of move directions
         else:
@@ -141,21 +152,25 @@ def find_most_probably_sequence(  # noqa: C901
             # rel_costadd = rel_cost(r, c, [(r, c)], region_cur)
             options = []
             # normal diagonal edge
-            add_option_path(options, r + 1, c + 1, 0)
+            with logger:
+                add_option_path(options, r + 1, c + 1, 0)
             # allow two subsequent of same class
             if c in allow_multiple_at_class:
                 cost_add = punish_multiple_sequence
                 if c == 18:
                     cost_add += t13_cost_single(r + 1, c)
-                add_option_path(options, r + 1, c, cost_add)
+                with logger:
+                    add_option_path(options, r + 1, c, cost_add)
             # Allow skips at certain classes
             if c in allow_skip_at_class:
                 cost_add = punish_skip_sequence
-                add_option_path(options, r + 1, c + 2, cost_add)
+                with logger:
+                    add_option_path(options, r + 1, c + 2, cost_add)
             # Allow skips in certain regions
             if region_cur in allow_skip_at_region and c != regions_ranges[region_cur][1] - 1:
                 cost_add = punish_skip_at_region_sequence
-                add_option_path(options, r + 1, c + 2, punish_skip_at_region_sequence)
+                with logger:
+                    add_option_path(options, r + 1, c + 2, punish_skip_at_region_sequence)
             # find min
             minidx, minval = argmin([o[0] for o in options])
             pnext = options[minidx][1]
@@ -172,8 +187,8 @@ def find_most_probably_sequence(  # noqa: C901
                     break
             # setting to memory
             min_costs_path[r][c] = (cost_value, p)
-            # if cost_value < 0:
-            #    print(f"Setting {r}, {c} to {cost_value}, {p}")
+            if cost_value < 0:
+                logger.print(f"Setting vert {r}, label {c} to {cost_value}, {internal_to_real_path(p)}")
             return min_costs_path[r][c]
 
     # def t13_cost(r, c, pnext, p, region_cur):
@@ -211,11 +226,11 @@ def find_most_probably_sequence(  # noqa: C901
                 if rel_cost == 0:
                     continue
                 if last == 0 and c == regions_ranges[region_cur][0]:
-                    # print(f"Added F {rel_cost} to {r}, {c}, {internal_to_real_path(pnext)}")
+                    logger.print(f"Added F {rel_cost} to vert {r}, label {c}, {internal_to_real_path(pnext)}")
                     cost_add += rel_cost
                     # break
-                elif last == 1 and c_to_region_idx(pnext[-1][1], regions) >= region_cur + 1:
-                    # print(f"Added L {rel_cost} to {r}, {c}, {internal_to_real_path(pnext)}")
+                elif last == 1 and (c_to_region_idx(pnext[-1][1], regions) >= region_cur + 1):  # or pnext[-1][1] == c):
+                    logger.print(f"Added L {rel_cost} to vert {r}, label {c}, {internal_to_real_path(pnext)}")
                     cost_add += rel_cost
         return cost_add
 

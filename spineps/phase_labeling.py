@@ -36,6 +36,10 @@ def perform_labeling_step(
 ):
     model.load()
 
+    if 26 in vert_nii.unique():
+        has_sacrum = vert_nii.volumes()[26] > 500  # noqa: F841
+        # TODO remove sacrum for labeling and make a separate step for sacrum labeling
+
     if subreg_nii is not None:
         # crop for corpus instead of whole vertebra
         corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border))
@@ -204,7 +208,11 @@ def prepare_vertrel_columns(vertrel_matrix: np.ndarray, gaussian_sigma: float = 
         if gaussian_sigma > 0.0 and np.sum(vertrel_matrix) > 0.0:
             vertrel_matrix[:, i] = gaussian_filter1d(vertrel_matrix[:, i], sigma=gaussian_sigma, mode="nearest", radius=gaussian_radius)
         # normalize per column / label in this case
-        vertrel_matrix[:, i] = vertrel_matrix[:, i] / (np.sum(vertrel_matrix[:, i]) + DIVIDE_BY_ZERO_OFFSET)
+        vertrel_sum = np.sum(vertrel_matrix[:, i]) + DIVIDE_BY_ZERO_OFFSET
+        if vertrel_sum > 1.0:
+            vertrel_matrix[:, i] = vertrel_matrix[:, i] / vertrel_sum
+        elif vertrel_sum < 1.0:
+            vertrel_matrix[:, i] = vertrel_matrix[:, i] / (1.0 + vertrel_sum)
     return vertrel_matrix
 
 
@@ -225,18 +233,21 @@ def prepare_vertrel(vertrel_softmax_values: np.ndarray, gaussian_sigma: float = 
 
 def find_vert_path_from_predictions(
     predictions,
-    visible_w: float = 1.0,
+    visible_w: float = 0.5,
     vert_w: float = 0.9,  # 0.9
     vertgrp_w: float = 0.8,
     region_w: float = 1.1,  # 1.1
-    vertrel_w: float = 0.3,  # 0.3
+    vertrel_w: float = 0.6,  # 0.3
     vertt13_w: float = 0.4,
     disable_c1: bool = True,
     boost_c2: float = 1.0,  # 3.0
     allow_cervical_skip: bool = False,
+    allow_thoracic_skip: bool = False,
+    allow_lumbar_skip: bool = False,
     #
     punish_multiple_sequence: float = 0.0,
     punish_skip_sequence: float = 0.0,
+    punish_skip_at_region_sequence: float = 0.0,
     #
     region_gaussian_sigma: float = 0.0,  # 0 means no gaussian
     vert_gaussian_sigma: float = 0.8,  # 0.8 0 means no gaussian
@@ -253,6 +264,7 @@ def find_vert_path_from_predictions(
 ):
     args = locals()
     assert 0 <= visible_w, visible_w  # noqa: SIM300
+    assert visible_w <= 1.0, f"visible_w must be <= 1.0, got {visible_w}"
     assert 0 <= vert_w, vert_w  # noqa: SIM300
     assert 0 <= region_w, region_w  # noqa: SIM300
     assert 0 <= vertrel_w, vertrel_w  # noqa: SIM300
@@ -263,6 +275,7 @@ def find_vert_path_from_predictions(
     cost_matrix = np.zeros((n_vert, 24))  # TODO 24 fix?
     relative_cost_matrix = np.zeros((n_vert, 6))  # TODO 6 fix?
     visible_chain = prepare_visible(predictions, visible_w)
+    # print(visible_chain)
 
     predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())  # noqa: RUF015
     assert "VERT" in predict_keys or "VERTEXACT" in predict_keys or "VERTGRP" in predict_keys, (
@@ -365,6 +378,13 @@ def find_vert_path_from_predictions(
     else:
         allow_multiple_at_class = [18, 23] if not proc_lab_force_no_tl_anomaly else [23]  # T12 and L5
         allow_skip_at_class = [17] if not proc_lab_force_no_tl_anomaly else []  # T11
+        allow_skip_at_region = []
+        if allow_cervical_skip:
+            allow_skip_at_region.append(0)
+        if allow_thoracic_skip:
+            allow_skip_at_region.append(1)
+        if allow_lumbar_skip:
+            allow_skip_at_region.append(2)
         fcost, fpath, min_costs_path = find_most_probably_sequence(
             # input
             cost_matrix,
@@ -380,8 +400,9 @@ def find_vert_path_from_predictions(
             allow_multiple_at_class=allow_multiple_at_class,  # T12 and L5
             allow_skip_at_class=allow_skip_at_class,  # T11
             #
-            allow_skip_at_region=[0] if allow_cervical_skip else [],
-            punish_skip_at_region_sequence=0.2 if allow_cervical_skip else 0.0,
+            allow_skip_at_region=allow_skip_at_region,
+            punish_skip_at_region_sequence=punish_skip_at_region_sequence,
+            verbose=False,
         )
     # post processing
     fpath_post = fpath_post_processing(fpath)
