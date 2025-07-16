@@ -264,7 +264,7 @@ def find_vert_path_from_predictions(
 ):
     args = locals()
     assert 0 <= visible_w, visible_w  # noqa: SIM300
-    assert visible_w <= 1.0, visible_w
+    assert visible_w <= 1.0, f"visible_w must be <= 1.0, got {visible_w}"
     assert 0 <= vert_w, vert_w  # noqa: SIM300
     assert 0 <= region_w, region_w  # noqa: SIM300
     assert 0 <= vertrel_w, vertrel_w  # noqa: SIM300
