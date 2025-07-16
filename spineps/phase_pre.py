@@ -26,7 +26,7 @@ def preprocess_input(
         try:
             # Enforce to range [0, 1500]
             if proc_normalize_input:
-                mri_nii.normalize_to_range_(min_value=0, max_value=9000, verbose=False)
+                mri_nii.normalize_to_range_(min_value=0, max_value=1500, verbose=False)
                 crop = mri_nii.compute_crop(dist=0) if proc_crop_input else (slice(None, None), slice(None, None), slice(None, None))
             else:
                 crop = (

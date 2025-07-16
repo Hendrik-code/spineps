@@ -7,6 +7,8 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 # SPINEPS – Automatic Whole Spine Segmentation of T2w MR images using a Two-Phase Approach to Multi-class Semantic and Instance Segmentation.
+# and
+# VERIDAH: Solving Enumeration Anomaly Aware Vertebra Labeling across Imaging Sequences
 
 This is a segmentation pipeline to automatically, and robustly, segment the whole spine in T2w sagittal images.
 
@@ -268,6 +270,23 @@ In the subregion segmentation:
 
 In the vertebra instance segmentation mask, each label X in [1, 25] are the unique vertebrae, while 100+X are their corresponding IVD and 200+X their endplates.
 
+## VERIDAH:
+
+To run the vertebra labeling after segmentation, specify a -model_labeling model (similar to -model_semantic and -model_instance).
+
+If you use VERIDAH (labeling model) in addition to the segmentation models from SPINEPS, then a labeling model will run and give each vertebrae detected by SPINEPS a vertebra label. These are
+
+| Label | Structure |
+| :---: | --------- |
+| 1  | C1 |
+| 2 - 7  | C2 - C7 |
+| 8 - 19  | T1 - T12 |
+| 28  | T13 |
+| 20  | L1 |
+| 21 - 25  | L2 - L6 |
+| 26  | Sacrum |
+
+The labels 100+X still correspond to the vertebra's IVD and 200+X the respective endplate. For example, the label 119 is the IVD below the T12 vertebra.
 
 ## Using the Code
 

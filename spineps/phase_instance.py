@@ -598,6 +598,7 @@ def collect_vertebra_predictions(
             Location.Vertebra_Disc.value: 0,
             Location.Endplate.value: 0,
             26: 0,
+            51: 0,
         },
         verbose=False,
     )
