@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
+from inspect import isfunction
 
 import torch
 from einops import rearrange
@@ -188,8 +189,6 @@ class ResnetBlock3D(nn.Module):
 
 
 def default(val, d):
-    from inspect import isfunction
-
     if val is not None:
         return val
     return d() if isfunction(d) else d

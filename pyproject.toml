@@ -165,6 +165,8 @@ ignore = [
     "PLR2044", # empty comment symbol
     "B905", # strict= in zip()
     "UP007", # Union instead of | in python 3.9
+    "PLC0415",
+    "UP045",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.

@@ -95,7 +95,7 @@ def run_model_for_vert_labeling(
     # run model
     predictions = model.run_all_seg_instances(img, vert)
 
-    fcost, fpath, fpath_post, costlist, min_costs_path, args = find_vert_path_from_predictions(
+    fcost, fpath, fpath_post, costlist, min_costs_path, _args = find_vert_path_from_predictions(
         predictions=predictions,
         proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
         verbose=verbose,

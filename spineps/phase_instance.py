@@ -288,7 +288,7 @@ def get_corpus_coms(
                     segvert = corpus_cc.extract_label(target_vert_id, inplace=False)
                     try:
                         logger.print("get_separating_components to split vertebra", verbose=verbose)
-                        (spart, tpart, spart_dil, tpart_dil, stpart) = get_separating_components(segvert, connectivity=3)
+                        (spart, tpart, spart_dil, tpart_dil, _) = get_separating_components(segvert, connectivity=3)
 
                         logger.print("Splitting by plane")
                         plane_split_nii = get_plane_split(segvert, corpus_nii, spart, tpart, spart_dil, tpart_dil)
