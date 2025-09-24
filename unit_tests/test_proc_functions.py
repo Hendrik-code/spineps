@@ -21,7 +21,7 @@ logger = No_Logger()
 
 class Test_proc_functions(unittest.TestCase):
     def test_n4_bias(self):
-        mri, subreg, vert, label = get_test_mri()
+        mri, _subreg, _vert, _label = get_test_mri()
         mri.normalize_to_range_()
         mri_min = mri.min()
         mri_max = mri.max()
@@ -34,7 +34,7 @@ class Test_proc_functions(unittest.TestCase):
         self.assertEqual(mri_max, 252)
 
     def test_clean_artifacts(self):
-        mri, subreg, vert, label = get_test_mri()
+        _mri, subreg, vert, label = get_test_mri()
         l3 = vert.extract_label(label)
         l3 = subreg.apply_mask(l3)
         l3_volumes = l3.volumes()
@@ -45,7 +45,7 @@ class Test_proc_functions(unittest.TestCase):
             self.assertEqual(a, b)
 
     def test_clean_artifacts_no_zeros(self):
-        mri, subreg, vert, label = get_test_mri()
+        _mri, _subreg, vert, label = get_test_mri()
         l3 = vert.extract_label(label)
         l3[l3 == 0] = 1
         l3_volumes = l3.volumes()
@@ -56,7 +56,7 @@ class Test_proc_functions(unittest.TestCase):
             self.assertEqual(a, b)
 
     def test_clean_artifacts_zeros(self):
-        mri, subreg, vert, label = get_test_mri()
+        _mri, subreg, vert, label = get_test_mri()
         l3 = vert.extract_label(label)
         l3 = subreg.apply_mask(l3) * 0
         l3_volumes = l3.volumes()

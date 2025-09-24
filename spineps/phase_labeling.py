@@ -130,7 +130,7 @@ def run_model_for_vert_labeling_cutouts(
     orig_label = list(img_arrays.keys())
     # run model
     predictions = model.run_all_arrays(img_arrays)
-    fcost, fpath, fpath_post, costlist, min_costs_path, args = find_vert_path_from_predictions(
+    fcost, fpath, fpath_post, costlist, min_costs_path, _args = find_vert_path_from_predictions(
         predictions=predictions,
         verbose=verbose,
         disable_c1=disable_c1,

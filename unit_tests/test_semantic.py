@@ -75,7 +75,7 @@ class Test_Semantic_Phase(unittest.TestCase):
 
         from spineps.seg_enums import Acquisition, InputType, Modality
 
-        mri, subreg, vert, label = get_test_mri()
+        mri, _subreg, _vert, _label = get_test_mri()
         input_path = get_tests_dir().joinpath("sample_mri", "sub-mri_label-6_T2w.nii.gz")
         model = Segmentation_Model_Dummy()
 
@@ -99,7 +99,7 @@ class Test_Semantic_Phase(unittest.TestCase):
         self.assertFalse(compatible)
 
     def test_phase_preprocess(self):
-        mri, subreg, vert, label = get_test_mri()
+        mri, _subreg, _vert, _label = get_test_mri()
         for pad_size in range(7):
             origin_diff = max([d * float(pad_size) for d in mri.zoom]) + 1e-4
             # print(origin_diff)
@@ -113,7 +113,7 @@ class Test_Semantic_Phase(unittest.TestCase):
                 self.assertEqual(s + (2 * pad_size), preprossed_input.shape[idx])
 
     def test_segment_scan(self):
-        mri, subreg, vert, label = get_test_mri()
+        mri, subreg, _vert, _label = get_test_mri()
         model = Segmentation_Model_Dummy()
         model.run = MagicMock(return_value={OutputType.seg: subreg, OutputType.softmax_logits: None})
         debug_data = {}
@@ -134,7 +134,7 @@ class Test_Semantic_Phase(unittest.TestCase):
         self.assertEqual(errcode, ErrCode.OK)
 
     def test_run_inference(self):
-        mri, subreg, vert, label = get_test_mri()
+        mri, subreg, _vert, _label = get_test_mri()
         model = Segmentation_Model_Dummy().load()
         s_arr = subreg.get_seg_array()
         model.predictor.predict_single_npy_array = MagicMock(return_value=(s_arr, s_arr[np.newaxis, :]))
