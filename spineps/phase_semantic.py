@@ -107,7 +107,7 @@ def predict_semantic_mask(
 def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
     seg_nii.assert_affine(orientation=("P", "I", "R"))
     canal_nii = seg_nii.extract_label([Location.Spinal_Canal.value, Location.Spinal_Cord.value])
-    crop_i = canal_nii.compute_crop(dist=16)[1]
+    crop_i = canal_nii.compute_crop(dist=64 / seg_nii.zoom[1])[1]
     seg_arr = seg_nii.get_seg_array()
     sacrum_arr = seg_nii.extract_label(26).get_seg_array()
     seg_arr[:, 0 : crop_i.start, :] = 0
