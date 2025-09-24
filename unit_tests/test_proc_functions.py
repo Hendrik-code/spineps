@@ -27,7 +27,7 @@ class Test_proc_functions(unittest.TestCase):
         mri_max = mri.max()
         self.assertEqual(mri_min, 0)
         self.assertEqual(mri_max, 387)
-        mri_n4biased, mask = n4_bias(mri)
+        mri_n4biased, _mask = n4_bias(mri)
         mri_min = mri_n4biased.min()
         mri_max = mri_n4biased.max()
         self.assertEqual(mri_min, 0)

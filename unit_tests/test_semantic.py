@@ -117,7 +117,7 @@ class Test_Semantic_Phase(unittest.TestCase):
         model = Segmentation_Model_Dummy()
         model.run = MagicMock(return_value={OutputType.seg: subreg, OutputType.softmax_logits: None})
         debug_data = {}
-        seg_nii, softmax_logits, errcode = predict_semantic_mask(
+        seg_nii, _softmax_logits, errcode = predict_semantic_mask(
             mri,
             model,
             debug_data=debug_data,
