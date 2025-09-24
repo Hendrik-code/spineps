@@ -286,7 +286,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
 
         # find which vert got how many ivd CCs
         to_mapped_labels = list(mapping_cc_to_vert_label.values())
-        for i, l in enumerate(vert_labels):
+        for l in vert_labels:
             if l not in to_mapped_labels and l != 1:
                 logger.print(f"Vertebra {v_idx2name[l]} got no IVD component assigned", Log_Type.STRANGE)
             count = to_mapped_labels.count(l)

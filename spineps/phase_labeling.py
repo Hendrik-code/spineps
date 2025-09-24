@@ -33,8 +33,10 @@ def perform_labeling_step(
     vert_nii: NII,
     subreg_nii: NII | None = None,
     proc_lab_force_no_tl_anomaly: bool = False,
+    disable_c1: bool = True,
 ):
-    model.load()
+    if model.predictor is None:
+        model.load()
 
     if 26 in vert_nii.unique():
         has_sacrum = vert_nii.volumes()[26] > 500  # noqa: F841
@@ -44,12 +46,15 @@ def perform_labeling_step(
         # crop for corpus instead of whole vertebra
         corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border))
         vert_nii_c = vert_nii * corpus_nii
+    else:
+        vert_nii_c = vert_nii
     # run model
     labelmap = run_model_for_vert_labeling(
         model,
         img_nii,
         vert_nii_c,
         proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
+        disable_c1=disable_c1,
     )[0]
     # TODO make all vertebrae without visible corpus to visibility 0 but take into account for labeling
     for i in vert_nii.unique():
@@ -66,14 +71,21 @@ def run_model_for_vert_labeling(
     vert_nii: NII,
     verbose: bool = False,
     proc_lab_force_no_tl_anomaly: bool = False,
+    disable_c1: bool = True,
 ):
     # reorient
     img = img_nii.reorient(model.inference_config.model_expected_orientation, verbose=False)
     vert = vert_nii.reorient(model.inference_config.model_expected_orientation, verbose=False)
-    # zms_pir = img.zoom
+    zms_pir = img.zoom
+
+    # crop
+    crop = vert.compute_crop(dist=128 / min(img.zoom))
+    img.apply_crop_(crop)
+    vert.apply_crop_(crop)
+
     # rescale
-    # img.rescale_(model.calc_recommended_resampling_zoom(zms_pir), verbose=False)
-    # vert.rescale_(model.calc_recommended_resampling_zoom(zms_pir), verbose=False)
+    img.rescale_(model.calc_recommended_resampling_zoom(zms_pir), verbose=False)
+    vert.rescale_(model.calc_recommended_resampling_zoom(zms_pir), verbose=False)
     #
     img.assert_affine(other=vert)
     # extract vertebrae
@@ -83,10 +95,11 @@ def run_model_for_vert_labeling(
     # run model
     predictions = model.run_all_seg_instances(img, vert)
 
-    fcost, fpath, fpath_post, costlist, min_costs_path, args = find_vert_path_from_predictions(
+    fcost, fpath, fpath_post, costlist, min_costs_path, _args = find_vert_path_from_predictions(
         predictions=predictions,
         proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
         verbose=verbose,
+        disable_c1=disable_c1,
     )
     assert len(orig_label) == len(fpath_post), f"{len(orig_label)} != {len(fpath_post)}"
     labelmap = {orig_label[idx]: fpath_post[idx] for idx in range(len(orig_label))}
@@ -100,7 +113,7 @@ def run_model_for_vert_labeling_cutouts(
     disable_c1: bool = True,
     boost_c2: float = 3.0,
     allow_cervical_skip: bool = True,
-    verbose: bool = False,
+    verbose: bool = True,
 ):
     # reorient
     # img = img_nii.reorient(model.inference_config.model_expected_orientation, verbose=False)
@@ -117,7 +130,7 @@ def run_model_for_vert_labeling_cutouts(
     orig_label = list(img_arrays.keys())
     # run model
     predictions = model.run_all_arrays(img_arrays)
-    fcost, fpath, fpath_post, costlist, min_costs_path, args = find_vert_path_from_predictions(
+    fcost, fpath, fpath_post, costlist, min_costs_path, _args = find_vert_path_from_predictions(
         predictions=predictions,
         verbose=verbose,
         disable_c1=disable_c1,
@@ -257,6 +270,7 @@ def find_vert_path_from_predictions(
     vertrel_column_norm: bool = True,
     vertrel_gaussian_sigma: float = 0.6,  # 0.6 # 0 means no gaussian
     #
+    focus_tl_gap: bool = True,  # focus on T11/T13 gap (if T11/t13 case is detected, predict again using crops and then check again)
     argmax_combined_cost_matrix_instead_of_path_algorithm: bool = False,
     proc_lab_force_no_tl_anomaly: bool = False,
     #
