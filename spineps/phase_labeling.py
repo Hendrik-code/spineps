@@ -113,7 +113,7 @@ def run_model_for_vert_labeling_cutouts(
     disable_c1: bool = True,
     boost_c2: float = 3.0,
     allow_cervical_skip: bool = True,
-    verbose: bool = False,
+    verbose: bool = True,
 ):
     # reorient
     # img = img_nii.reorient(model.inference_config.model_expected_orientation, verbose=False)
@@ -270,7 +270,7 @@ def find_vert_path_from_predictions(
     vertrel_column_norm: bool = True,
     vertrel_gaussian_sigma: float = 0.6,  # 0.6 # 0 means no gaussian
     #
-    focus_tl_gap: bool = True,  # focus on T11/T13 gap
+    focus_tl_gap: bool = True,  # focus on T11/T13 gap (if T11/t13 case is detected, predict again using crops and then check again)
     argmax_combined_cost_matrix_instead_of_path_algorithm: bool = False,
     proc_lab_force_no_tl_anomaly: bool = False,
     #
