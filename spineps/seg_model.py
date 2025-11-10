@@ -123,7 +123,10 @@ class Segmentation_Model(ABC):
             dict[OutputType, NII]: _description_
         """
         if self.predictor is None:
-            self.load()
+            try:
+                self.load()
+            except FileNotFoundError:
+                self.load(folds=["all"])
             assert self.predictor is not None, "self.predictor == None after load(). Error!"
 
         # Check if input matches expectation
@@ -333,6 +336,7 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         target = from_numpy(arr)
 
         target[target == 26] = 0
+        target[target >= 10] = 0
 
         do_backup = False
         # channel-wise

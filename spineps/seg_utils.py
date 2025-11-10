@@ -3,8 +3,7 @@ from __future__ import annotations
 # from utils.predictor import nnUNetPredictor
 from typing import Union
 
-import nibabel as nib
-from TPTBox import BIDS_FILE, NII, ZOOMS, Log_Type
+from TPTBox import BIDS_FILE, ZOOMS, Log_Type
 
 from spineps.seg_enums import Acquisition, Modality
 from spineps.seg_model import Segmentation_Model
@@ -157,7 +156,7 @@ def check_input_model_compatibility(
 
     img_nii = img_ref.open_nii()
     if img_nii.get_plane() not in ["iso", *allowed_acq]:
-        logger_texts.append(f"input get_plane() is not 'iso' or one of the expected {allowed_acq}.")
+        logger_texts.append(f"input {img_nii.get_plane()=} is not 'iso' or one of the expected {allowed_acq}.")
         compatible = False
 
     if len(logger_texts) > 1:

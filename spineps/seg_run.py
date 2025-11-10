@@ -290,6 +290,8 @@ def process_img_nii(  # noqa: C901
     return_output_instead_of_save: bool = False,
     crop=None,
     verbose: bool = False,
+    _nii=None,
+    _end_after_subreg=False,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty
 
@@ -386,11 +388,12 @@ def process_img_nii(  # noqa: C901
     with logger:
         if verbose:
             model_semantic.logger.default_verbose = True
-        input_nii = img_ref.open_nii()
+        input_nii = _nii if _nii is not None else img_ref.open_nii()
         input_nii.seg = False
         input_nii_ = input_nii.copy()
         if crop is not None:
             try:
+                logger.print("Input image manuel crop", crop, "from", input_nii.shape)
                 input_nii = input_nii.apply_crop(crop)
             except Exception:
                 pass
@@ -445,7 +448,8 @@ def process_img_nii(  # noqa: C901
             logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
             seg_nii_modelres = NII.load(out_spine_raw, seg=True)
             print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
-
+        if _end_after_subreg:
+            return output_paths, ErrCode.OK
         # Second stage
         if not out_vert_raw.exists() or override_instance:
             whole_vert_nii, errcode = predict_instance_mask(

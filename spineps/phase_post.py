@@ -236,12 +236,15 @@ def assign_missing_cc(
     return target_arr, reference_arr, deletion_map
 
 
-def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
+def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, include_sacrum=False, verbose=True):
     # PIR
     orientation = whole_vert_nii.orientation
     vert_t = whole_vert_nii.reorient()
     seg_t = seg_nii.reorient()
-    vert_labels = [t for t in vert_t.unique() if t <= 26 or t == 28]  # without zero
+    if include_sacrum:
+        vert_labels = [t for t in vert_t.unique() if t < 40]  # without zero
+    else:
+        vert_labels = [t for t in vert_t.unique() if t <= 26 or t == 28]  # without zero
     vert_arr = vert_t.get_seg_array()
     subreg_arr = seg_t.get_seg_array()
 
@@ -392,18 +395,20 @@ def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0):
     return vert_nii, vert_nii.unique()
 
 
-def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII):
+def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII, verbose=False, locs=None):
+    if locs is None:
+        locs = [
+            Location.Superior_Articular_Left,
+            Location.Superior_Articular_Right,
+            Location.Inferior_Articular_Left,
+            Location.Inferior_Articular_Right,
+        ]
     seg_nii.assert_affine(shape=vert_nii.shape)
     seg_arr = seg_nii.get_seg_array()
     vert_arr = vert_nii.get_seg_array()
 
     # assign inconsistent substructures
-    for loc in [
-        Location.Superior_Articular_Left,
-        Location.Superior_Articular_Right,
-        Location.Inferior_Articular_Left,
-        Location.Inferior_Articular_Right,
-    ]:
+    for loc in locs:
         value = loc.value
 
         subreg_l = np_extract_label(seg_arr, value, inplace=False)  # type:ignore
@@ -436,7 +441,7 @@ def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII):
 
                 vert_arr[cc_map == 1] = to_label
                 logger.print(
-                    f"set cc to {to_label}, with volume decision {gt_volume}, based on {biggest_volume}, {second_volume}", verbose=False
+                    f"set cc to {to_label}, with volume decision {gt_volume}, based on {biggest_volume}, {second_volume}", verbose=verbose
                 )
 
         vert_nii.set_array_(vert_arr)

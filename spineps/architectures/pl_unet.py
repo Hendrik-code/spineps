@@ -6,7 +6,6 @@ import pytorch_lightning as pl
 import torch
 import torchmetrics.functional as mF  # noqa: N812
 from torch import nn
-from torch.optim import lr_scheduler
 
 from spineps.architectures.unet3D import Unet3D
 
