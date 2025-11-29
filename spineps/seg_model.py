@@ -313,7 +313,7 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
 
         chktpath = search_path(self.model_folder, "**/*weights*.ckpt")
         assert len(chktpath) == 1
-        model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0])
+        model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False)
         model.eval()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() and not self.use_cpu else "cpu")
         model.to(self.device)
