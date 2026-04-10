@@ -580,8 +580,7 @@ def collect_vertebra_predictions(
     # print("vert_predict_template", vert_predict_template.shape)
 
     # relabel to the labels expected by the model
-    mapping = {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, Location.Dens_axis.value: 9}
-    # 50: 9 Lagacy no longer supported will become sacrum.
+    mapping = {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9}
     seg_nii_for_cut: NII = seg_nii.copy().extract_label(list(mapping.keys()), keep_label=True).map_labels_(mapping, verbose=False)
     # print("seg_nii_for_cut", seg_nii_for_cut.shape)
 

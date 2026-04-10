@@ -508,6 +508,7 @@ def process_img_nii(  # noqa: C901
                 seg_nii_back = seg_nii_modelres
             seg_nii_back.assert_affine(other=input_nii_)
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
+            has_c1 = model_semantic.inference_config.has_c1
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
                 img_nii=input_nii_,
                 seg_nii=seg_nii_back,
@@ -520,6 +521,7 @@ def process_img_nii(  # noqa: C901
                 proc_assign_missing_cc=proc_assign_missing_cc,
                 proc_vertebra_inconsistency=proc_vertebra_inconsistency,
                 verbose=verbose,
+                disable_c1=not has_c1,
             )
             seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
             vert_nii_clean.assert_affine(other=input_nii_)

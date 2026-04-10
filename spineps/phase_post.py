@@ -41,6 +41,7 @@ def phase_postprocess_combined(
     proc_vertebra_inconsistency: bool = True,
     proc_assign_posterior_instance_label: bool = True,
     verbose: bool = False,
+    disable_c1=True,
 ) -> tuple[NII, NII]:
     logger.print("Post process", Log_Type.STAGE)
     with logger:
@@ -69,6 +70,11 @@ def phase_postprocess_combined(
 
         # Post processing both
         ###################
+
+        if proc_vertebra_inconsistency:
+            # Assigns superior/inferior based on instance label overlap
+            assign_vertebra_inconsistency(vert_nii, seg_nii)
+
         whole_vert_nii_cleaned, seg_nii_cleaned = mask_cleaning_other(
             whole_vert_nii=vert_nii,
             seg_nii=seg_nii,
@@ -83,13 +89,10 @@ def phase_postprocess_combined(
         if proc_assign_posterior_instance_label:
             whole_vert_nii_cleaned = fix_wrong_posterior_instance_label(seg_nii_cleaned, seg_inst=whole_vert_nii_cleaned, logger=logger)
 
-        if proc_vertebra_inconsistency:
-            # Assigns superior/inferior based on instance label overlap
-            assign_vertebra_inconsistency(seg_nii_cleaned, whole_vert_nii_cleaned)
-
         # Label vertebra top -> down
         whole_vert_nii_cleaned, vert_labels = label_instance_top_to_bottom(whole_vert_nii_cleaned, labeling_offset=labeling_offset)
         logger.print(f"Labeled {len(vert_labels)} vertebra instances from top to bottom")
+
         if model_labeling is not None:
             whole_vert_nii_cleaned = perform_labeling_step(
                 model=model_labeling,
@@ -97,12 +100,13 @@ def phase_postprocess_combined(
                 vert_nii=whole_vert_nii_cleaned,
                 subreg_nii=seg_nii_cleaned,
                 proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
+                disable_c1=labeling_offset > 1 and disable_c1,
             )
 
         logger.print("vert_nii", whole_vert_nii_cleaned.unique(), whole_vert_nii_cleaned.volumes())
         logger.print("seg_nii", seg_nii_cleaned.unique())
 
-        whole_vert_nii_cleaned[seg_nii_cleaned.get_seg_array() == v_name2idx["S1"]] = v_name2idx["S1"]
+        whole_vert_nii_cleaned[seg_nii_cleaned.extract_label([v_name2idx["S1"], 53, 54, 55]).get_seg_array() == 1] = v_name2idx["S1"]
         vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
         #
         #
@@ -183,54 +187,61 @@ def assign_missing_cc(
     verbose: bool = False,
     verbose_deletion: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    # pipeline: target = vert, reference = subregion
     assert target_arr.shape == reference_arr.shape
-    subreg_arr_vert_rest = reference_arr.copy()
-    subreg_arr_vert_rest[target_arr != 0] = 0
-    deletion_map = np.zeros(reference_arr.shape)
+
+    deletion_map = np.zeros_like(reference_arr, dtype=np.uint8)
+
+    # only reference pixels not already covered by target
+    subreg_arr_vert_rest = np.where(target_arr == 0, reference_arr, 0)
 
     label_rest = np_unique(subreg_arr_vert_rest)
     if len(label_rest) == 1 and label_rest[0] == 0:
         logger.print("No CC had to be assigned", Log_Type.OK, verbose=verbose)
         return target_arr, reference_arr, deletion_map
-    # subreg_arr_vert_rest is not hit pixels bei vertebra prediction
+
     subreg_cc = np_connected_components_per_label(subreg_arr_vert_rest, connectivity=2)
+
     loop_counts = 0
-    # for label, for each cc
+
     for label, subreg_cc_map in subreg_cc.items():
         if label == 0:
             continue
+
         cc_labels = np_unique_withoutzero(subreg_cc_map)
         loop_counts += len(cc_labels)
-        # print(cc_labels)
+
         for cc_l in cc_labels:
-            cc_map = subreg_cc_map.copy()
-            cc_map[cc_map != cc_l] = 0
-            cc_bbox = np_bbox_binary(cc_map, px_dist=2)
-            vert_arr_c = target_arr.copy()[cc_bbox]
-            cc_map_c = cc_map[cc_bbox]
-            cc_map_c[cc_map_c != 0] = 1
-            # print("cc_map_c\n", cc_map_c)
-            # print("vert_arr_c\n", vert_arr_c)
-            cc_map_dilated = np_dilate_msk(cc_map_c, 1, n_pixel=1, connectivity=2)
-            # cc_map_dilated[vert_arr_c == 0] = 0
-            # print("cc_map_dilated\n", cc_map_dilated)
-            # majority voting
-            mult = vert_arr_c * cc_map_dilated
-            labels, count = np.unique(mult, return_counts=True)
-            labels = labels[1:]
-            count = count[1:]
-            if len(labels) > 0:
-                new_label = labels[np.argmax(count)]
-                logger.print(f"Assign {label, cc_l} to {new_label}, Location at {cc_bbox}", verbose=verbose)
-                vert_arr_c[cc_map_c != 0] = new_label
+            cc_mask = subreg_cc_map == cc_l
+
+            cc_bbox = np_bbox_binary(cc_mask, px_dist=2)
+
+            cc_mask_c = cc_mask[cc_bbox]
+            vert_arr_c = target_arr[cc_bbox]
+
+            # dilate only local mask
+            cc_map_dilated = np_dilate_msk(cc_mask_c.astype(np.uint8), 1, n_pixel=1, connectivity=2).astype(bool)
+
+            # neighborhood labels
+            neighbor_labels = vert_arr_c[cc_map_dilated]
+            neighbor_labels = neighbor_labels[neighbor_labels != 0]
+
+            if neighbor_labels.size > 0:
+                new_label = np.bincount(neighbor_labels).argmax()
+
+                logger.print(f"Assign Missing CC {(label, cc_l)} to {new_label}, Location at {cc_bbox}", verbose=verbose)
+
+                vert_arr_c[cc_mask_c] = new_label
                 target_arr[cc_bbox] = vert_arr_c
+
             else:
-                logger.print(f"Assign {label, cc_l} to EMPTY, Location at {cc_bbox}", verbose=verbose or verbose_deletion)
-                reference_arr[cc_bbox][cc_map_c == 1] = 0
-                deletion_map[cc_bbox][cc_map_c == 1] = 1
-            # print("vert_arr\n", vert_arr)
-            # print()
+                logger.print(f"Assign {(label, cc_l)} to EMPTY, Location at {cc_bbox}", verbose=verbose or verbose_deletion)
+
+                ref_view = reference_arr[cc_bbox]
+                del_view = deletion_map[cc_bbox]
+
+                ref_view[cc_mask_c] = 0
+                del_view[cc_mask_c] = 1
+
     logger.print(f"Assign missing cc: Processed {loop_counts} missed ccs")
 
     return target_arr, reference_arr, deletion_map
@@ -392,18 +403,22 @@ def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0):
     return vert_nii, vert_nii.unique()
 
 
-def assign_vertebra_inconsistency(seg_nii: NII, vert_nii: NII):
+def assign_vertebra_inconsistency(
+    seg_nii: NII,
+    vert_nii: NII,
+    locations=(
+        Location.Superior_Articular_Left,
+        Location.Superior_Articular_Right,
+        Location.Inferior_Articular_Left,
+        Location.Inferior_Articular_Right,
+    ),
+):
     seg_nii.assert_affine(shape=vert_nii.shape)
     seg_arr = seg_nii.get_seg_array()
     vert_arr = vert_nii.get_seg_array()
 
     # assign inconsistent substructures
-    for loc in [
-        Location.Superior_Articular_Left,
-        Location.Superior_Articular_Right,
-        Location.Inferior_Articular_Left,
-        Location.Inferior_Articular_Right,
-    ]:
+    for loc in locations:
         value = loc.value
 
         subreg_l = np_extract_label(seg_arr, value, inplace=False)  # type:ignore
