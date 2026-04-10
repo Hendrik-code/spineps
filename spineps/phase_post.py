@@ -141,10 +141,8 @@ def mask_cleaning_other(
     # if dilation_fill:
     #    vert_arr_cleaned = np_dilate_msk(vert_arr_cleaned, label_ref=vert_labels, mm=5)  # , mask=subreg_vert_arr
     subreg_arr = seg_nii.get_seg_array()
-
+    vert_arr_cleaned[subreg_arr == Location.Dens_axis.value] = 2
     if proc_assign_missing_cc:
-        vert_arr_cleaned[subreg_arr == Location.Dens_axis.value] = 2
-
         vert_arr_cleaned, subreg_vert_arr, deletion_map = assign_missing_cc(
             vert_arr_cleaned,
             subreg_vert_arr,
