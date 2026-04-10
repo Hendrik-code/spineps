@@ -26,6 +26,7 @@ class Segmentation_Inference_Config:
         labels: dict,
         expected_inputs: list[InputType | str] = [InputType.img],  # noqa: B006
         has_c1=False,
+        sacrum_ids=(26,),
         **kwargs,
     ):
         if not isinstance(modality, list):
@@ -42,6 +43,7 @@ class Segmentation_Inference_Config:
         self.default_step_size = float(default_step_size)
         self.expected_inputs = [InputType[i] if isinstance(i, str) else i for i in expected_inputs]  # type: ignore
         self.has_c1 = has_c1
+        self.sacrum_ids = sacrum_ids
         names = [member.name for member in Location]
         try:
             self.segmentation_labels = {

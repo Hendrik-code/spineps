@@ -42,6 +42,7 @@ def phase_postprocess_combined(
     proc_assign_posterior_instance_label: bool = True,
     verbose: bool = False,
     disable_c1=True,
+    sacrum_ids=(v_name2idx["S1"],),
 ) -> tuple[NII, NII]:
     logger.print("Post process", Log_Type.STAGE)
     with logger:
@@ -106,7 +107,7 @@ def phase_postprocess_combined(
         logger.print("vert_nii", whole_vert_nii_cleaned.unique(), whole_vert_nii_cleaned.volumes())
         logger.print("seg_nii", seg_nii_cleaned.unique())
 
-        whole_vert_nii_cleaned[seg_nii_cleaned.extract_label([v_name2idx["S1"], 53, 54, 55]).get_seg_array() == 1] = v_name2idx["S1"]
+        whole_vert_nii_cleaned[seg_nii_cleaned.extract_label(sacrum_ids).get_seg_array() == 1] = v_name2idx["S1"]
         vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
         #
         #
