@@ -321,15 +321,12 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         self.print("Model loaded from", self.model_folder, Log_Type.OK, verbose=True)
         return self
 
-    def run(
-        self,
-        input_nii: list[NII],
-        verbose: bool = False,
-    ) -> dict[OutputType, NII | None]:
+    def run(self, input_nii: list[NII], verbose: bool = False) -> dict[OutputType, NII | None]:
         assert len(input_nii) == 1, "Unet3D does not support more than one input"
-        input_nii = input_nii[0]
+        input_nii_ = input_nii[0]
 
-        arr = input_nii.get_seg_array().astype(np.int16)
+        arr = input_nii_.get_seg_array().astype(np.int16)
+
         target = from_numpy(arr)
 
         target[target == 26] = 0
@@ -345,7 +342,7 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
             logits = self.predictor.forward(targetc.to(self.device))
         #
         except Exception as e:
-            print(f"Channel-wise model failed with {e}, try legacy version")
+            self.logger.print(f"Channel-wise model failed with {e}, try legacy version", ltype=Log_Type.FAIL)
             do_backup = True
         #
         if do_backup:
@@ -360,6 +357,6 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         del logits
         del pred_x
         pred_cls = pred_cls.detach().cpu().numpy()[0]
-        seg_nii: NII = input_nii.set_array(pred_cls)
+        seg_nii: NII = input_nii_.set_array(pred_cls)
         self.print("out", seg_nii.zoom, seg_nii.orientation, seg_nii.shape) if verbose else None
         return {OutputType.seg: seg_nii}
