@@ -265,6 +265,7 @@ def process_img_nii(  # noqa: C901
     proc_normalize_input: bool = True,
     # Processings
     # Pre-processing crop
+    crop=None,
     auto_crop_to_spine: bool | Literal["auto"] = "auto",
     auto_crop_when_max_res_leq=1.2,
     auto_crop_req_crop_min_dim=200,
@@ -294,7 +295,7 @@ def process_img_nii(  # noqa: C901
     ignore_compatibility_issues: bool = False,
     log_inference_time: bool = True,
     return_output_instead_of_save: bool = False,
-    crop=None,
+    timing=False,
     verbose: bool = False,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty
@@ -320,6 +321,7 @@ def process_img_nii(  # noqa: C901
         snapshot_copy_folder (Path | None | bool, optional): If given a path, will copy all created snapshots in here. Defaults to None.
         do_crop_semantic (bool, optional): _description_. Defaults to True.
 
+        crop: If given a crop only segment the crop
         auto_crop_to_spine (bool| "auto"): Speed up high-res models by first predicting the spine with VIBESeg https://link.springer.com/article/10.1007/s00330-025-12035-9 and crop to the spine (any mr / ct).
         auto_crop_when_max_res_leq: the larges spacing value must of a semantic model to activate crop when auto_crop_to_spine="auto"
         auto_crop_req_crop_min_dim: compute crop if the images is smaller than the cube of this number for when auto_crop_to_spine="auto"
@@ -336,7 +338,7 @@ def process_img_nii(  # noqa: C901
         ignore_inference_compatibility (bool, optional): If true, will ignore compatibility issues between models and individual inputs. Defaults to False.
         ignore_bids_filter (bool, optional): _description_. Defaults to False.
         log_inference_time (bool, optional): If true, will log the inference time for each subject. Defaults to True.
-        crop: If given a crop only segment the crop
+        timing: log the timing for each step
         verbose (bool, optional): If true, will spam your terminal with info. Defaults to False.
 
     Returns:
@@ -390,7 +392,7 @@ def process_img_nii(  # noqa: C901
         else:
             logger.print("Issues are ignored, might not have expected outcome", Log_Type.WARNING)
 
-    start_time = perf_counter()
+    start_time = start_time2 = perf_counter()
     file_dir = img_ref.file["nii.gz"]
 
     logger.print("Processing", file_dir.name)
@@ -400,6 +402,9 @@ def process_img_nii(  # noqa: C901
         input_nii = img_ref.open_nii()
         input_nii.seg = False
         input_nii_ = input_nii.copy()
+        if timing:
+            logger.print(f"Loading files took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+            start_time2 = perf_counter()
         # First stage
         if not out_spine_raw.exists() or override_semantic:
             resolution_range = model_semantic.inference_config.resolution_range
@@ -415,6 +420,9 @@ def process_img_nii(  # noqa: C901
                 )
                 out_vibeseg = output_paths["out_vibeseg"]
                 crop = compute_crop(input_nii, out_vibeseg, ddevice="cpu" if model_semantic.use_cpu else "cuda", logger=logger)
+                if timing:
+                    logger.print(f"Compute cropping took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                    start_time2 = perf_counter()
 
             if crop is not None:
                 logger.print(f"Change {crop=} from shape={input_nii.shape}")
@@ -433,6 +441,10 @@ def process_img_nii(  # noqa: C901
                 proc_do_n4_bias_correction=proc_sem_n4_bias_correction,
                 verbose=verbose,
             )
+            if timing:
+                logger.print(f"Preprocess input took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
+
             if errcode != ErrCode.OK:
                 logger.print("Got Error from preprocessing", Log_Type.FAIL)
                 return output_paths, errcode
@@ -467,6 +479,9 @@ def process_img_nii(  # noqa: C901
                 if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
                     save_nparray(softmax_logits, out_logits)
             done_something = True
+            if timing:
+                logger.print(f"Predict semantic took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         else:
             logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
             seg_nii_modelres = NII.load(out_spine_raw, seg=True)
@@ -493,6 +508,9 @@ def process_img_nii(  # noqa: C901
             if save_raw and not return_output_instead_of_save:
                 whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
+            if timing:
+                logger.print(f"Predict instance took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         else:
             logger.print("Vert Mask already exists. Set -override_vert to create it anew")
             whole_vert_nii = NII.load(out_vert_raw, seg=True)
@@ -533,6 +551,9 @@ def process_img_nii(  # noqa: C901
                 seg_nii_clean.save(out_spine, verbose=logger)
                 vert_nii_clean.save(out_vert, verbose=logger)
             done_something = True
+            if timing:
+                logger.print(f"Post Postprocess took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         else:
             seg_nii_clean = NII.load(out_spine, seg=True)
             vert_nii_clean = NII.load(out_vert, seg=True)
@@ -547,6 +568,9 @@ def process_img_nii(  # noqa: C901
             )
             ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
             done_something = True
+            if timing:
+                logger.print(f"Centroids took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
             ctd = POI.load(out_ctd)
@@ -566,6 +590,9 @@ def process_img_nii(  # noqa: C901
                         out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False
                     )
                 logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
+                if timing:
+                    logger.print(f"Save debug data took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                    start_time2 = perf_counter()
 
         # Snapshot
         if not out_snap.exists() or done_something:
@@ -586,6 +613,9 @@ def process_img_nii(  # noqa: C901
                 # Fall back for older TPTBox versions TODO remove later
                 mri_snapshot(img_ref, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
+            if timing:
+                logger.print(f"Snapshot took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         elif not out_snap2.exists():
             logger.print(f"Copying snapshot into {snapshot_copy_folder!s}")
             out_snap2.parent.mkdir(exist_ok=True)
