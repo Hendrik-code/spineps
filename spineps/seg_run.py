@@ -403,7 +403,7 @@ def process_img_nii(  # noqa: C901
         input_nii.seg = False
         input_nii_ = input_nii.copy()
         if timing:
-            logger.print(f"Loading files took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+            logger.print(f"Loading files took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
             start_time2 = perf_counter()
         # First stage
         if not out_spine_raw.exists() or override_semantic:
@@ -421,7 +421,9 @@ def process_img_nii(  # noqa: C901
                 out_vibeseg = output_paths["out_vibeseg"]
                 crop = compute_crop(input_nii, out_vibeseg, ddevice="cpu" if model_semantic.use_cpu else "cuda", logger=logger)
                 if timing:
-                    logger.print(f"Compute cropping took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                    logger.print(
+                        f"Compute cropping took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
+                    )
                     start_time2 = perf_counter()
 
             if crop is not None:
@@ -442,7 +444,7 @@ def process_img_nii(  # noqa: C901
                 verbose=verbose,
             )
             if timing:
-                logger.print(f"Preprocess input took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                logger.print(f"Preprocess input took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
 
             if errcode != ErrCode.OK:
@@ -480,7 +482,7 @@ def process_img_nii(  # noqa: C901
                     save_nparray(softmax_logits, out_logits)
             done_something = True
             if timing:
-                logger.print(f"Predict semantic took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                logger.print(f"Predict semantic took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
         else:
             logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
@@ -509,7 +511,7 @@ def process_img_nii(  # noqa: C901
                 whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
             if timing:
-                logger.print(f"Predict instance took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                logger.print(f"Predict instance took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
         else:
             logger.print("Vert Mask already exists. Set -override_vert to create it anew")
@@ -552,7 +554,7 @@ def process_img_nii(  # noqa: C901
                 vert_nii_clean.save(out_vert, verbose=logger)
             done_something = True
             if timing:
-                logger.print(f"Post Postprocess took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                logger.print(f"Post Postprocess took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
         else:
             seg_nii_clean = NII.load(out_spine, seg=True)
@@ -569,7 +571,7 @@ def process_img_nii(  # noqa: C901
             ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
             done_something = True
             if timing:
-                logger.print(f"Centroids took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                logger.print(f"Centroids took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
@@ -591,7 +593,9 @@ def process_img_nii(  # noqa: C901
                     )
                 logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
                 if timing:
-                    logger.print(f"Save debug data took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                    logger.print(
+                        f"Save debug data took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
+                    )
                     start_time2 = perf_counter()
 
         # Snapshot
@@ -614,14 +618,14 @@ def process_img_nii(  # noqa: C901
                 mri_snapshot(img_ref, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
             if timing:
-                logger.print(f"Snapshot took: {perf_counter() - start_time2}", Log_Type.OK, verbose=log_inference_time)
+                logger.print(f"Snapshot took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
         elif not out_snap2.exists():
             logger.print(f"Copying snapshot into {snapshot_copy_folder!s}")
             out_snap2.parent.mkdir(exist_ok=True)
             shutil.copy(out_snap, out_snap2)
 
-    logger.print(f"Pipeline took: {perf_counter() - start_time}", Log_Type.OK, verbose=log_inference_time)
+    logger.print(f"Pipeline took: {perf_counter() - start_time:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
     return output_paths, ErrCode.OK
 
 
