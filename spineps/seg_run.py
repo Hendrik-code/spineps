@@ -321,10 +321,10 @@ def process_img_nii(  # noqa: C901
         snapshot_copy_folder (Path | None | bool, optional): If given a path, will copy all created snapshots in here. Defaults to None.
         do_crop_semantic (bool, optional): _description_. Defaults to True.
 
-        crop: If given a crop only segment the crop
-        auto_crop_to_spine (bool| "auto"): Speed up high-res models by first predicting the spine with VIBESeg https://link.springer.com/article/10.1007/s00330-025-12035-9 and crop to the spine (any mr / ct).
-        auto_crop_when_max_res_leq: the larges spacing value must of a semantic model to activate crop when auto_crop_to_spine="auto"
-        auto_crop_req_crop_min_dim: compute crop if the images is smaller than the cube of this number for when auto_crop_to_spine="auto"
+        crop: If provided, segment only within the specified crop.
+        auto_crop_to_spine (bool | "auto"): Speeds up high-resolution models by first predicting the spine with VIBESeg (https://link.springer.com/article/10.1007/s00330-025-12035-9) and cropping to the spine region (works for any MR or CT image).
+        auto_crop_when_max_res_leq: Enables automatic spine cropping when auto_crop_to_spine="auto" and the largest spacing value of the semantic model is less than or equal to this threshold.
+        auto_crop_req_crop_min_dim: When auto_crop_to_spine="auto", compute the crop only if the image size exceeds this value cubed.
 
         proc_n4correction (bool, optional): _description_. Defaults to True.
         proc_fillholes (bool, optional): If true, will use fill holes in postprocessing step. Defaults to True.
@@ -408,9 +408,10 @@ def process_img_nii(  # noqa: C901
         # First stage
         if not out_spine_raw.exists() or override_semantic:
             resolution_range = model_semantic.inference_config.resolution_range
-            max_resolution: float = max(resolution_range) if isinstance(resolution_range[0], tuple) else resolution_range  # type: ignore
+
+            max_resolution: float = max(resolution_range[1]) if isinstance(resolution_range[0], tuple) else max(resolution_range)  # type: ignore
             num_voxels = math.prod(input_nii.shape)
-            if auto_crop_to_spine or (
+            if auto_crop_to_spine is True or (
                 auto_crop_to_spine == "auto"
                 and (max_resolution) <= auto_crop_when_max_res_leq
                 and num_voxels > auto_crop_req_crop_min_dim**3

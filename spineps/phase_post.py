@@ -108,6 +108,7 @@ def phase_postprocess_combined(
         logger.print("seg_nii", seg_nii_cleaned.unique())
 
         whole_vert_nii_cleaned[seg_nii_cleaned.extract_label(sacrum_ids).get_seg_array() == 1] = v_name2idx["S1"]
+        whole_vert_nii_cleaned[seg_nii_cleaned == Location.Dens_axis.value] = 2
         vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
         #
         #
@@ -141,13 +142,9 @@ def mask_cleaning_other(
     # if dilation_fill:
     #    vert_arr_cleaned = np_dilate_msk(vert_arr_cleaned, label_ref=vert_labels, mm=5)  # , mask=subreg_vert_arr
     subreg_arr = seg_nii.get_seg_array()
-    vert_arr_cleaned[subreg_arr == Location.Dens_axis.value] = 2
+
     if proc_assign_missing_cc:
-        vert_arr_cleaned, subreg_vert_arr, deletion_map = assign_missing_cc(
-            vert_arr_cleaned,
-            subreg_vert_arr,
-            verbose=verbose,
-        )
+        vert_arr_cleaned, subreg_vert_arr, deletion_map = assign_missing_cc(vert_arr_cleaned, subreg_vert_arr, verbose=verbose)
         subreg_vert_nii.set_array_(subreg_vert_arr)
         vert_arr_cleaned[subreg_vert_arr == 0] = 0
         subreg_arr[deletion_map == 1] = 0
@@ -397,8 +394,8 @@ def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0):
 
 
 def assign_vertebra_inconsistency(
-    seg_nii: NII,
     vert_nii: NII,
+    seg_nii: NII,
     locations=(
         Location.Superior_Articular_Left,
         Location.Superior_Articular_Right,
