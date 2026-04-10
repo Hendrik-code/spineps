@@ -104,7 +104,7 @@ def phase_postprocess_combined(
                 disable_c1=labeling_offset > 1 and disable_c1,
             )
 
-        logger.print("vert_nii", whole_vert_nii_cleaned.unique(), whole_vert_nii_cleaned.volumes())
+        logger.print("vert_nii volumes:", whole_vert_nii_cleaned.volumes())
         logger.print("seg_nii", seg_nii_cleaned.unique())
 
         whole_vert_nii_cleaned[seg_nii_cleaned.extract_label(sacrum_ids).get_seg_array() == 1] = v_name2idx["S1"]
@@ -120,17 +120,9 @@ def phase_postprocess_combined(
         vert_uncropped[crop_slices] = vert_arr_cleaned
         seg_uncropped[crop_slices] = seg_nii_cleaned.get_seg_array()
 
-        logger.print("vert_uncropped", vert_uncropped.unique(), vert_uncropped.volumes())
+        logger.print("vert_uncropped volumes", vert_uncropped.volumes())
         logger.print("seg_uncropped", seg_uncropped.unique())
 
-        # subreg_nii_cleaned = vert_nii_cleaned.set_array(subreg_arr_cleaned, verbose=False)
-        logger.print(
-            "Vertebra whole_vert_nii_uncropped_backsampled",
-            vert_uncropped.zoom,
-            vert_uncropped.orientation,
-            vert_uncropped.shape,
-            verbose=verbose,
-        )
         debug_data["vert_arr_return_final"] = vert_uncropped.copy()
     return seg_uncropped, vert_uncropped
 
