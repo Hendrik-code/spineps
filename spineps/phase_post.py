@@ -143,6 +143,8 @@ def mask_cleaning_other(
     subreg_arr = seg_nii.get_seg_array()
 
     if proc_assign_missing_cc:
+        vert_arr_cleaned[subreg_arr == Location.Dens_axis.value] = 2
+
         vert_arr_cleaned, subreg_vert_arr, deletion_map = assign_missing_cc(
             vert_arr_cleaned,
             subreg_vert_arr,
