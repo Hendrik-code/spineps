@@ -94,11 +94,10 @@ def predict_instance_mask(
         corpus_size_cleaning = max(int(corpus_size_cleaning / (expected_zms[0] * expected_zms[1] * expected_zms[2])), 40)
         vert_size_threshold = max(int(vert_size_threshold / (expected_zms[0] * expected_zms[1] * expected_zms[2])), 40)
 
-        seg_labels = seg_nii.unique()
+        seg_labels = seg_nii_rdy.unique()
         if 49 not in seg_labels:
             logger.print(f"no corpus ({Location.Vertebra_Corpus_border.value}) labels in this segmentation, cannot proceed", Log_Type.FAIL)
             return None, ErrCode.EMPTY
-
         # get all the 3vert predictions
         vert_predictions, hierarchical_existing_predictions, n_corpus_coms = collect_vertebra_predictions(
             seg_nii=seg_nii_rdy,
@@ -113,7 +112,7 @@ def predict_instance_mask(
         )
         if vert_predictions is None:
             return None, ErrCode.UNKNOWN  # type:ignore
-        logger.print("Vertebra Predictions done!", verbose=verbose)
+        logger.print(f"Vertebra Predictions done! Found {n_corpus_coms} initial candidates.", verbose=verbose)
 
         # debug_data["vert_predictions"] = vert_predictions
         whole_vert_nii, debug_data, errcode = from_vert3_predictions_make_vert_mask(
@@ -179,7 +178,7 @@ def get_corpus_coms(
     # Extract Corpus region and try to find all coms naively (some skips should not matter)
     corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
     corpus_nii.erode_msk_(2, connectivity=2, verbose=False)
-    if 1 in corpus_nii.unique() and corpus_size_cleaning > 0:
+    if corpus_nii.max() != 0 and corpus_size_cleaning > 0:
         corpus_nii.set_array_(
             clean_cc_artifacts(
                 corpus_nii,
@@ -193,7 +192,7 @@ def get_corpus_coms(
             verbose=False,
         )
 
-    if 1 not in corpus_nii.unique():
+    if corpus_nii.max() == 0:
         logger.print(f"No corpus found after get_corpus_coms post process, cannot make vertebra mask. {corpus_nii.unique()}", Log_Type.FAIL)
         return None
 
@@ -285,7 +284,7 @@ def get_corpus_coms(
                     )
 
                     target_vert_id = list(neighbor_verts.keys())[argmax]
-                    segvert = corpus_cc.extract_label(target_vert_id, inplace=False)
+                    segvert = corpus_cc.extract_label(target_vert_id, inplace=False).get_array()
                     try:
                         logger.print("get_separating_components to split vertebra", verbose=verbose)
                         (spart, tpart, spart_dil, tpart_dil, _) = get_separating_components(segvert, connectivity=3)
@@ -295,7 +294,7 @@ def get_corpus_coms(
                         split_vert = split_by_plane(segvert, plane_split_nii)
                         corpus_cc[split_vert == 2] = corpus_cc.max() + 1
                     except Exception as e:
-                        logger.print(f"Separating Corpi failed with exception {e}")
+                        logger.print(f"Separating Corpi failed with exception {e}", Log_Type.FAIL)
 
     corpus_coms = list(corpus_cc.center_of_masses().values())
     corpus_coms.sort(key=lambda a: a[1])
@@ -581,27 +580,9 @@ def collect_vertebra_predictions(
     # print("vert_predict_template", vert_predict_template.shape)
 
     # relabel to the labels expected by the model
-    seg_nii_for_cut: NII = seg_nii.copy().map_labels_(
-        {
-            41: 1,
-            42: 2,
-            43: 3,
-            44: 4,
-            45: 5,
-            46: 6,
-            47: 7,
-            48: 8,
-            49: 9,
-            50: 9,
-            Location.Spinal_Cord.value: 0,
-            Location.Spinal_Canal.value: 0,
-            Location.Vertebra_Disc.value: 0,
-            Location.Endplate.value: 0,
-            26: 0,
-            51: 0,
-        },
-        verbose=False,
-    )
+    mapping = {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, Location.Dens_axis.value: 9}
+    # 50: 9 Lagacy no longer supported will become sacrum.
+    seg_nii_for_cut: NII = seg_nii.copy().extract_label(list(mapping.keys()), keep_label=True).map_labels_(mapping, verbose=False)
     # print("seg_nii_for_cut", seg_nii_for_cut.shape)
 
     logger.print("Vertebra collect in", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
@@ -620,13 +601,10 @@ def collect_vertebra_predictions(
                 break
             seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
 
-        cutout_size2 = cutout_size
-
         # Calc cutout
-        arr_cut, cutout_coords, paddings = np_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size2)
+        arr_cut, cutout_coords, paddings = np_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size)
         cut_nii = seg_nii_for_cut.set_array(arr_cut, verbose=False).reorient_()
         debug_data[f"inst_cutout_vert_nii_{com_idx}_cut"] = cut_nii
-        # print("cut_nii", cut_nii.shape)
         results = model.segment_scan(
             cut_nii,
             resample_to_recommended=False,
