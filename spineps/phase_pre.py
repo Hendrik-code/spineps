@@ -1,13 +1,40 @@
 from __future__ import annotations
 
+import inspect
+
 # from utils.predictor import nnUNetPredictor
 from time import perf_counter
+from typing import Literal
 
-from TPTBox import NII, Log_Type
+from TPTBox import NII, Log_Type, to_nii
 
 from spineps.seg_enums import ErrCode
 from spineps.seg_pipeline import logger
 from spineps.utils.proc_functions import n4_bias
+
+
+def _has_logger_arg(func) -> bool:
+    return "logger" in inspect.signature(func).parameters
+
+
+def compute_crop(nii: NII, out_file, dataset_id=100, ddevice: Literal["cpu", "cuda", "mps"] = "cuda", gpu=0, max_folds=None, logger=None):
+    from TPTBox.core.vert_constants import Full_Body_Instance_Vibe
+    from TPTBox.segmentation import run_vibeseg
+
+    if _has_logger_arg(run_vibeseg):
+        out = run_vibeseg(nii, out_file, dataset_id=dataset_id, ddevice=ddevice, gpu=gpu, max_folds=max_folds, logger=logger)
+    else:  # backwards compatibility, can be removed if we force to a new version of TPTBox than 30.Apr.26
+        out = run_vibeseg(nii, out_file, dataset_id=dataset_id, ddevice=ddevice, gpu=gpu, max_folds=max_folds)
+    seg = to_nii(out, True)
+    seg.extract_label_(
+        [
+            Full_Body_Instance_Vibe.IVD,
+            Full_Body_Instance_Vibe.vertebra_body,
+            Full_Body_Instance_Vibe.vertebra_posterior_elements,
+            Full_Body_Instance_Vibe.sacrum,
+        ]
+    )
+    return seg.compute_crop(0, dist=25)
 
 
 def preprocess_input(

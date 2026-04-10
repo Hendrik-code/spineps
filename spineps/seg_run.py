@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 import shutil
 from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
+from typing import Literal
 
 import numpy as np
 from TPTBox import BIDS_FILE, NII, POI, BIDS_Global_info, Location, Log_Type, Logger
@@ -12,7 +14,7 @@ from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 from spineps.phase_instance import predict_instance_mask
 from spineps.phase_labeling import VertLabelingClassifier
 from spineps.phase_post import phase_postprocess_combined
-from spineps.phase_pre import preprocess_input
+from spineps.phase_pre import compute_crop, preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
 from spineps.seg_model import Segmentation_Model
@@ -262,6 +264,10 @@ def process_img_nii(  # noqa: C901
     proc_pad_size: int = 4,
     proc_normalize_input: bool = True,
     # Processings
+    # Pre-processing crop
+    auto_crop_to_spine: bool | Literal["auto"] = "auto",
+    auto_crop_when_max_res_leq=1.2,
+    auto_crop_req_crop_min_dim=200,
     # Semantic
     proc_sem_crop_input: bool = True,
     proc_sem_n4_bias_correction: bool = True,
@@ -314,6 +320,10 @@ def process_img_nii(  # noqa: C901
         snapshot_copy_folder (Path | None | bool, optional): If given a path, will copy all created snapshots in here. Defaults to None.
         do_crop_semantic (bool, optional): _description_. Defaults to True.
 
+        auto_crop_to_spine (bool| "auto"): Speed up high-res models by first predicting the spine with VIBESeg https://link.springer.com/article/10.1007/s00330-025-12035-9 and crop to the spine (any mr / ct).
+        auto_crop_when_max_res_leq: the larges spacing value must of a semantic model to activate crop when auto_crop_to_spine="auto"
+        auto_crop_req_crop_min_dim: compute crop if the images is smaller than the cube of this number for when auto_crop_to_spine="auto"
+
         proc_n4correction (bool, optional): _description_. Defaults to True.
         proc_fillholes (bool, optional): If true, will use fill holes in postprocessing step. Defaults to True.
         proc_clean (bool, optional): If true, will use CC cleaning in postprocessing step. Defaults to True.
@@ -326,6 +336,7 @@ def process_img_nii(  # noqa: C901
         ignore_inference_compatibility (bool, optional): If true, will ignore compatibility issues between models and individual inputs. Defaults to False.
         ignore_bids_filter (bool, optional): _description_. Defaults to False.
         log_inference_time (bool, optional): If true, will log the inference time for each subject. Defaults to True.
+        crop: If given a crop only segment the crop
         verbose (bool, optional): If true, will spam your terminal with info. Defaults to False.
 
     Returns:
@@ -347,7 +358,6 @@ def process_img_nii(  # noqa: C901
     out_snap2 = output_paths["out_snap2"]
     out_raw = output_paths["out_raw"]
     out_debug = output_paths["out_debug"]
-
     if isinstance(snapshot_copy_folder, Path):
         snapshot_copy_folder.mkdir(parents=True, exist_ok=True)
 
@@ -370,6 +380,7 @@ def process_img_nii(  # noqa: C901
 
     if Modality.CT in model_semantic.modalities():
         proc_normalize_input = False  # Never normalize input if it is an CT
+        proc_sem_n4_bias_correction = False  # n4_bias_correction is a MRI thing
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     compatible_labeling = check_input_model_compatibility(img_ref, model=model_labeling) if model_labeling is not None else True
@@ -389,15 +400,30 @@ def process_img_nii(  # noqa: C901
         input_nii = img_ref.open_nii()
         input_nii.seg = False
         input_nii_ = input_nii.copy()
-        if crop is not None:
-            try:
-                input_nii = input_nii.apply_crop(crop)
-            except Exception:
-                pass
-        logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
-
         # First stage
         if not out_spine_raw.exists() or override_semantic:
+            resolution_range = model_semantic.inference_config.resolution_range
+            max_resolution: float = max(resolution_range) if isinstance(resolution_range[0], tuple) else resolution_range  # type: ignore
+            num_voxels = math.prod(input_nii.shape)
+            if auto_crop_to_spine or (
+                auto_crop_to_spine == "auto"
+                and (max_resolution) <= auto_crop_when_max_res_leq
+                and num_voxels > auto_crop_req_crop_min_dim**3
+            ):
+                logger.print(
+                    "Compute spine crop with VIBESegmentator https://link.springer.com/article/10.1007/s00330-025-12035-9", Log_Type.OK
+                )
+                out_vibeseg = output_paths["out_vibeseg"]
+                crop = compute_crop(input_nii, out_vibeseg, ddevice="cpu" if model_semantic.use_cpu else "cuda", logger=logger)
+
+            if crop is not None:
+                logger.print(f"Change {crop=} from shape={input_nii.shape}")
+                try:
+                    input_nii = input_nii.apply_crop(crop)
+                except Exception:
+                    logger.print_error()
+            logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
+
             input_preprocessed, errcode = preprocess_input(
                 input_nii,
                 pad_size=proc_pad_size,
@@ -444,8 +470,7 @@ def process_img_nii(  # noqa: C901
         else:
             logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
             seg_nii_modelres = NII.load(out_spine_raw, seg=True)
-            print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
-
+            logger.print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
         # Second stage
         if not out_vert_raw.exists() or override_instance:
             whole_vert_nii, errcode = predict_instance_mask(
@@ -481,7 +506,6 @@ def process_img_nii(  # noqa: C901
                 whole_vert_nii = whole_vert_nii.resample_from_to(input_nii_)
             else:
                 seg_nii_back = seg_nii_modelres
-
             seg_nii_back.assert_affine(other=input_nii_)
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
@@ -497,7 +521,6 @@ def process_img_nii(  # noqa: C901
                 proc_vertebra_inconsistency=proc_vertebra_inconsistency,
                 verbose=verbose,
             )
-
             seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
             vert_nii_clean.assert_affine(other=input_nii_)
             # input_package.make_nii_from_this(seg_nii_clean)
@@ -526,7 +549,7 @@ def process_img_nii(  # noqa: C901
 
         # return_output_instead_of_save:
         if return_output_instead_of_save:
-            return seg_nii_clean, vert_nii_clean, ctd, ErrCode.OK
+            return seg_nii_clean, vert_nii_clean, ctd, ErrCode.OK  # type: ignore
 
         # save debug
         if save_debug_data:
@@ -640,6 +663,13 @@ def output_paths_from_input(
         non_strict_mode=non_strict_mode,
         make_parent=False,
     )
+    out_vibeseg = img_ref.get_changed_path(
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "VIBESeg-100", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
+    )
     out_logits = out_raw.joinpath(out_logits.name)
     return {
         "out_spine": out_spine,
@@ -653,6 +683,7 @@ def output_paths_from_input(
         "out_snap2": out_snap2,
         "out_debug": out_debug,
         "out_raw": out_raw,
+        "out_vibeseg": out_vibeseg,
     }
 
 
