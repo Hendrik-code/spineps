@@ -38,10 +38,6 @@ def perform_labeling_step(
     if model.predictor is None:
         model.load()
 
-    if 26 in vert_nii.unique():
-        has_sacrum = vert_nii.volumes()[26] > 500  # noqa: F841
-        # TODO remove sacrum for labeling and make a separate step for sacrum labeling
-
     if subreg_nii is not None:
         # crop for corpus instead of whole vertebra
         corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border))
