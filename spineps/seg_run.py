@@ -411,10 +411,14 @@ def process_img_nii(  # noqa: C901
 
             max_resolution: float = max(resolution_range[1]) if isinstance(resolution_range[0], tuple) else max(resolution_range)  # type: ignore
             num_voxels = math.prod(input_nii.shape)
-            if auto_crop_to_spine is True or (
-                auto_crop_to_spine == "auto"
-                and (max_resolution) <= auto_crop_when_max_res_leq
-                and num_voxels > auto_crop_req_crop_min_dim**3
+            if (
+                auto_crop_to_spine is True
+                or (
+                    auto_crop_to_spine == "auto"
+                    and (max_resolution) <= auto_crop_when_max_res_leq
+                    and num_voxels > auto_crop_req_crop_min_dim**3
+                )
+                or model_semantic.inference_config.needs_corp
             ):
                 logger.print(
                     "Compute spine crop with VIBESegmentator https://link.springer.com/article/10.1007/s00330-025-12035-9", Log_Type.OK
@@ -522,6 +526,7 @@ def process_img_nii(  # noqa: C901
         if not out_spine.exists() or not out_vert.exists() or done_something or override_postpair:
             # back to input space
             #
+            seg_nii_modelres[seg_nii_modelres == 50] = 49
             if not save_modelres_mask:
                 seg_nii_back = seg_nii_modelres.resample_from_to(input_nii_)
                 whole_vert_nii = whole_vert_nii.resample_from_to(input_nii_)

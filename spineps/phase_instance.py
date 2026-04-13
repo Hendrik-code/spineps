@@ -174,31 +174,38 @@ def get_corpus_coms(
     verbose: bool = False,
 ) -> list | None:
     seg_nii.assert_affine(orientation=("P", "I", "R"))
-    #
-    # Extract Corpus region and try to find all coms naively (some skips should not matter)
-    corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
-    corpus_nii.erode_msk_(2, connectivity=2, verbose=False)
-    if corpus_nii.max() != 0 and corpus_size_cleaning > 0:
-        corpus_nii.set_array_(
-            clean_cc_artifacts(
-                corpus_nii,
-                labels=[1],
-                cc_size_threshold=corpus_size_cleaning,
-                only_delete=True,
-                ignore_missing_labels=True,
-                logger=logger,
-                verbose=verbose,
-            ),
-            verbose=False,
-        )
 
-    if corpus_nii.max() == 0:
+    # Extract Corpus region and try to find all coms naively (some skips should not matter)
+    if Location.Vertebra_Corpus.value in seg_nii.unique():
+        corpus_nii_cms = seg_nii.extract_label([Location.Vertebra_Corpus])
+        corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
+        # process_detect_and_solve_merged_corpi = False
+    else:
+        corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border])
+
+        corpus_nii.erode_msk_(2, connectivity=2, verbose=False)
+        if corpus_nii.max() != 0 and corpus_size_cleaning > 0:
+            corpus_nii.set_array_(
+                clean_cc_artifacts(
+                    corpus_nii,
+                    labels=[1],
+                    cc_size_threshold=corpus_size_cleaning,
+                    only_delete=True,
+                    ignore_missing_labels=True,
+                    logger=logger,
+                    verbose=verbose,
+                ),
+                verbose=False,
+            )
+        corpus_nii_cms = corpus_nii
+    if corpus_nii_cms.max() == 0:
         logger.print(f"No corpus found after get_corpus_coms post process, cannot make vertebra mask. {corpus_nii.unique()}", Log_Type.FAIL)
         return None
 
     if not process_detect_and_solve_merged_corpi:
-        corpus_coms = corpus_nii.get_segmentation_connected_components_center_of_mass(label=1, sort_by_axis=1)
+        corpus_coms = corpus_nii_cms.get_segmentation_connected_components_center_of_mass(label=1, sort_by_axis=1)
         corpus_coms.reverse()  # from bottom to top
+        logger.print(f"Found {len(corpus_coms)} Corpus ccs", verbose=verbose)
         return corpus_coms
 
     ############
@@ -206,7 +213,7 @@ def get_corpus_coms(
     ############
 
     # Get corpus CCs
-    corpus_cc: NII = corpus_nii.get_connected_components(labels=1)
+    corpus_cc: NII = corpus_nii_cms.get_connected_components(labels=1)
     corpus_cc_n = len(corpus_cc.unique())
     logger.print(f"Found {corpus_cc_n} Corpus ccs (naively)", verbose=verbose)
 

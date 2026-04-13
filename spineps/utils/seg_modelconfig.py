@@ -15,21 +15,22 @@ class Segmentation_Inference_Config:
         self,
         logger: Logger_Interface | None,
         log_name: str,
-        modality: str | list[str],
+        modality: str | tuple[str],
         acquisition: str,
         modeltype: str,
         model_expected_orientation: AX_CODES,
-        available_folds: int,
+        available_folds: int | str | tuple[str] | tuple[int],
         inference_augmentation: bool,
         resolution_range: ZOOMS | tuple[ZOOMS, ZOOMS],
         default_step_size: float,
         labels: dict,
         expected_inputs: list[InputType | str] = [InputType.img],  # noqa: B006
         has_c1=False,
+        needs_corp=False,
         sacrum_ids=(26,),
         **kwargs,
     ):
-        if not isinstance(modality, list):
+        if not isinstance(modality, (list, tuple)):
             modality = [modality]
 
         self.log_name: str = log_name
@@ -38,12 +39,14 @@ class Segmentation_Inference_Config:
         self.modeltype: ModelType = ModelType[modeltype]
         self.model_expected_orientation: AX_CODES = tuple(model_expected_orientation)  # type:ignore
         self.resolution_range = resolution_range
-        self.available_folds: int = int(available_folds)
+        self.available_folds: int | str | tuple[str] | tuple[int] = available_folds
         self.inference_augmentation: bool = inference_augmentation
         self.default_step_size = float(default_step_size)
         self.expected_inputs = [InputType[i] if isinstance(i, str) else i for i in expected_inputs]  # type: ignore
         self.has_c1 = has_c1
+        self.needs_corp = needs_corp
         self.sacrum_ids = sacrum_ids
+
         names = [member.name for member in Location]
         try:
             self.segmentation_labels = {
