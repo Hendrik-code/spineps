@@ -268,10 +268,17 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         global threads_started  # noqa: PLW0603
         if not os.path.exists(self.model_folder):  # noqa: PTH110
             self.print(f"Model weights not found in {self.model_folder}", Log_Type.FAIL)
+        conf_folds = self.inference_config.available_folds
+        if isinstance(conf_folds, int):
+            conf_folds = tuple([str(i) for i in range(conf_folds)])
+        elif isinstance(conf_folds, str):
+            conf_folds = (conf_folds,)
+        else:
+            conf_folds = tuple([str(i) for i in conf_folds])
         self.predictor = load_inf_model(
             model_folder=self.model_folder,
             step_size=self.inference_config.default_step_size,
-            use_folds=folds if folds is not None else tuple([str(i) for i in range(self.inference_config.available_folds)]),
+            use_folds=folds if folds is not None else conf_folds,
             inference_augmentation=self.inference_config.inference_augmentation,
             init_threads=not threads_started,
             allow_non_final=True,
