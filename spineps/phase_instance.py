@@ -174,11 +174,12 @@ def get_corpus_coms(
     verbose: bool = False,
 ) -> list | None:
     seg_nii.assert_affine(orientation=("P", "I", "R"))
-
+    dense = False
     # Extract Corpus region and try to find all coms naively (some skips should not matter)
     if Location.Vertebra_Corpus.value in seg_nii.unique():
         corpus_nii_cms = seg_nii.extract_label([Location.Vertebra_Corpus])
         corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
+        dense = True
         # process_detect_and_solve_merged_corpi = False
     else:
         corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border])
@@ -204,6 +205,9 @@ def get_corpus_coms(
 
     if not process_detect_and_solve_merged_corpi:
         corpus_coms = corpus_nii_cms.get_segmentation_connected_components_center_of_mass(label=1, sort_by_axis=1)
+        if dense:
+            dens_cc = seg_nii.get_segmentation_connected_components_center_of_mass(label=Location.Dens_axis.value)
+            corpus_coms.extend(dens_cc)
         corpus_coms.reverse()  # from bottom to top
         logger.print(f"Found {len(corpus_coms)} Corpus ccs", verbose=verbose)
         return corpus_coms
@@ -305,6 +309,9 @@ def get_corpus_coms(
 
     corpus_coms = list(corpus_cc.center_of_masses().values())
     corpus_coms.sort(key=lambda a: a[1])
+    if dense:
+        dens_cc = seg_nii.get_segmentation_connected_components_center_of_mass(label=Location.Dens_axis.value)
+        corpus_coms.extend(dens_cc)
     corpus_coms.reverse()  # from bottom to top
     logger.print(f"Found {len(corpus_coms)} final Corpus ccs", verbose=verbose)
     return corpus_coms
