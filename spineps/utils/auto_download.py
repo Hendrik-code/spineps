@@ -16,11 +16,14 @@ link = "https://github.com/Hendrik-code/spineps/releases/download/"
 current_highest_version = "v1.0.9"
 current_instance_highest_version = "v1.2.0"
 current_labeling_highest_version = "v1.4.0"
+current_highest_ct_version = "v1.4.2"
 
-phase_to_version: dict[SpinepsPhase, str] = {
-    SpinepsPhase.SEMANTIC: current_highest_version,
-    SpinepsPhase.INSTANCE: current_instance_highest_version,
-    SpinepsPhase.LABELING: current_labeling_highest_version,
+
+phase_to_version: dict[str, str] = {
+    SpinepsPhase.SEMANTIC.name: current_highest_version,
+    SpinepsPhase.INSTANCE.name: current_instance_highest_version,
+    SpinepsPhase.LABELING.name: current_labeling_highest_version,
+    SpinepsPhase.SEMANTIC.name + "_ct": current_highest_ct_version,
 }
 
 instances: dict[str, Union[Path, str]] = {"instance": link + current_instance_highest_version + "/instance.zip"}
@@ -28,6 +31,7 @@ semantic: dict[str, Union[Path, str]] = {
     "t2w": link + current_highest_version + "/t2w.zip",
     "t1w": link + current_highest_version + "/t1w.zip",
     "vibe": link + current_highest_version + "/vibe.zip",
+    "ct": link + current_highest_ct_version + "/ct.zip",
 }
 labeling: dict[str, Union[Path, str]] = {"t2w_labeling": link + current_labeling_highest_version + "/labeling.zip"}
 
@@ -36,12 +40,14 @@ download_names = {
     "t2w": "T2w_semantic",
     "t1w": "T1w_semantic",
     "vibe": "Vibe_semantic",
+    "ct": "CT_semantic",
     "t2w_labeling": "T2w_labeling",
 }
 
 
 def download_if_missing(key, url, phase: SpinepsPhase):
-    version = phase_to_version[phase]
+
+    version = phase_to_version.get(f"{phase}_{key}", phase_to_version[phase.name])
     out_path = Path(get_mri_segmentor_models_dir(), download_names[key] + "_" + version)
     if not out_path.exists():
         download_weights(url, out_path)
@@ -73,6 +79,7 @@ def download_weights(weights_url, out_path) -> None:
         urllib.request.urlretrieve(str(weights_url), zip_path, reporthook=update_progress)
 
     logger.print("Extracting pretrained weights...")
+
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(out_path)
     # Test if there is an additional folder and move the content on up.
