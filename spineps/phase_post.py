@@ -35,6 +35,7 @@ def phase_postprocess_combined(
     labeling_offset: int = 0,
     proc_lab_force_no_tl_anomaly: bool = False,
     proc_assign_missing_cc: bool = True,
+    proc_assign_missing_cc_fast=False,
     proc_clean_inst_by_sem: bool = True,
     n_vert_bodies: int | None = None,
     process_merge_vertebra: bool = True,
@@ -81,6 +82,7 @@ def phase_postprocess_combined(
             seg_nii=seg_nii,
             n_vert_bodies=n_vert_bodies,
             proc_assign_missing_cc=proc_assign_missing_cc,
+            proc_assign_missing_cc_fast=proc_assign_missing_cc_fast,
             verbose=verbose,
         )
 
@@ -133,11 +135,19 @@ def mask_cleaning_other(
     seg_nii: NII,
     n_vert_bodies: int,
     proc_assign_missing_cc: bool = False,
+    proc_assign_missing_cc_fast=False,
     verbose: bool = False,
 ) -> tuple[NII, NII]:
+    subreg_vert_nii = seg_nii.extract_label(vertebra_subreg_labels)
+
+    if proc_assign_missing_cc_fast:
+        logger.print("missing cc (fast)")
+        missing = subreg_vert_nii.copy()
+        missing[whole_vert_nii != 0] = 0
+        infect = missing  # .filter_connected_components(max_volume=fast_assinge_missing_cc_size)
+        whole_vert_nii = whole_vert_nii.infect(infect, verbose=verbose)
     # make copy where both masks clean each other
     vert_arr_cleaned = whole_vert_nii.get_seg_array()
-    subreg_vert_nii = seg_nii.extract_label(vertebra_subreg_labels)
     subreg_vert_arr = subreg_vert_nii.get_seg_array()
     # if dilation_fill:
     #    vert_arr_cleaned = np_dilate_msk(vert_arr_cleaned, label_ref=vert_labels, mm=5)  # , mask=subreg_vert_arr
@@ -217,8 +227,10 @@ def assign_missing_cc(
 
             if neighbor_labels.size > 0:
                 new_label = np.bincount(neighbor_labels).argmax()
-
-                logger.print(f"Assign Missing CC {(label, cc_l)} to {new_label}, Location at {cc_bbox}", verbose=verbose)
+                if verbose:
+                    logger.print(
+                        f"Assign Missing CC {(label, cc_l)} to {new_label}, Location at {cc_bbox}, {cc_mask.sum()}", verbose=verbose
+                    )
 
                 vert_arr_c[cc_mask_c] = new_label
                 target_arr[cc_bbox] = vert_arr_c
@@ -226,11 +238,8 @@ def assign_missing_cc(
             else:
                 logger.print(f"Assign {(label, cc_l)} to EMPTY, Location at {cc_bbox}", verbose=verbose or verbose_deletion)
 
-                ref_view = reference_arr[cc_bbox]
-                del_view = deletion_map[cc_bbox]
-
-                ref_view[cc_mask_c] = 0
-                del_view[cc_mask_c] = 1
+                reference_arr[cc_bbox][cc_mask_c == 1] = 0
+                deletion_map[cc_bbox][cc_mask_c == 1] = 1
 
     logger.print(f"Assign missing cc: Processed {loop_counts} missed ccs")
 

@@ -286,6 +286,7 @@ def process_img_nii(  # noqa: C901
     # Both
     proc_fill_3d_holes: bool = True,
     proc_assign_missing_cc: bool = True,
+    proc_assign_missing_cc_fast: bool = False,
     proc_clean_inst_by_sem: bool = True,
     proc_vertebra_inconsistency: bool = True,
     # Misc
@@ -383,6 +384,7 @@ def process_img_nii(  # noqa: C901
     if Modality.CT in model_semantic.modalities():
         proc_normalize_input = False  # Never normalize input if it is an CT
         proc_sem_n4_bias_correction = False  # n4_bias_correction is a MRI thing
+        proc_assign_missing_cc_fast = True  # TODO remove
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     compatible_labeling = check_input_model_compatibility(img_ref, model=model_labeling) if model_labeling is not None else True
@@ -546,6 +548,7 @@ def process_img_nii(  # noqa: C901
                 labeling_offset=vertebra_instance_labeling_offset - 1,
                 proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                 proc_assign_missing_cc=proc_assign_missing_cc,
+                proc_assign_missing_cc_fast=proc_assign_missing_cc_fast,
                 proc_vertebra_inconsistency=proc_vertebra_inconsistency,
                 verbose=verbose,
                 disable_c1=not has_c1,
