@@ -19,14 +19,8 @@ spineps = 'spineps.entrypoint:entry_point'
 spineps_ = 'spineps.entrypoint:entrypoint_no_checks'
 
 [tool.poetry.dependencies]
-python = "^3.9 || ^3.10 || ^3.11"
-connected-components-3d = "^3.12.3"
-fill-voids = "^2.0.5"
-nibabel = "^5.1.0"
-numpy = "^1.25.2"
-pathlib = "^1.0.1"
+python = "^3.9 || ^3.10 || ^3.11 || ^3.12 || ^3.13 || ^3.14"
 pytorch-lightning = "^2.0.8"
-SciPy = "^1.11.2"
 torchmetrics = "^1.1.2"
 tqdm = "^4.66.1"
 einops= "^0.6.1"
