@@ -33,7 +33,10 @@ semantic: dict[str, Union[Path, str]] = {
     "vibe": link + current_highest_version + "/vibe.zip",
     "ct": link + current_highest_ct_version + "/ct.zip",
 }
-labeling: dict[str, Union[Path, str]] = {"t2w_labeling": link + current_labeling_highest_version + "/labeling.zip"}
+labeling: dict[str, Union[Path, str]] = {
+    "t2w_labeling": link + current_labeling_highest_version + "/labeling.zip",
+    "ct_labeling": link + current_labeling_highest_version + "/ct_labeling.zip",
+}
 
 download_names = {
     "instance": "instance_sagittal",
@@ -42,6 +45,7 @@ download_names = {
     "vibe": "Vibe_semantic",
     "ct": "CT_semantic",
     "t2w_labeling": "T2w_labeling",
+    "ct_labeling": "CT_labeling",
 }
 
 
