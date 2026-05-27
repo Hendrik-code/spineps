@@ -103,7 +103,7 @@ def phase_postprocess_combined(
                 vert_nii=whole_vert_nii_cleaned,
                 subreg_nii=seg_nii_cleaned,
                 proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
-                disable_c1=labeling_offset > 1 and disable_c1,
+                disable_c1=labeling_offset >= 1 and disable_c1,
             )
 
         logger.print("vert_nii volumes:", whole_vert_nii_cleaned.volumes())

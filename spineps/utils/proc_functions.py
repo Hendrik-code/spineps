@@ -35,7 +35,7 @@ def n4_bias(
     Returns:
         _type_: _description_
     """
-    from ants.utils.convert_nibabel import from_nibabel
+    from ants.utils.convert_nibabel import from_nibabel  # they keep renaming that thing. (version 0.4.2)
 
     # print("n4 bias", nii.dtype)
     mask = nii.get_array()
