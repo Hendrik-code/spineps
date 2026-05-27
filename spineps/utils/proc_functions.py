@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import cc3d
 import numpy as np
-from ants.utils.convert_nibabel import from_nibabel
 from scipy.ndimage import center_of_mass
 from TPTBox import NII, Location, Logger_Interface
 from TPTBox.core.np_utils import (
@@ -36,6 +35,8 @@ def n4_bias(
     Returns:
         _type_: _description_
     """
+    from ants.utils.convert_nibabel import from_nibabel
+
     # print("n4 bias", nii.dtype)
     mask = nii.get_array()
     mask[mask < threshold] = 0
