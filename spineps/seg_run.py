@@ -384,7 +384,9 @@ def process_img_nii(  # noqa: C901
     if Modality.CT in model_semantic.modalities():
         proc_normalize_input = False  # Never normalize input if it is an CT
         proc_sem_n4_bias_correction = False  # n4_bias_correction is a MRI thing
-        proc_assign_missing_cc_fast = True  # TODO remove
+        # proc_assign_missing_cc_fast = True  # TODO remove
+        if model_semantic.inference_config.has_c1:
+            vertebra_instance_labeling_offset = 1
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     compatible_labeling = check_input_model_compatibility(img_ref, model=model_labeling) if model_labeling is not None else True

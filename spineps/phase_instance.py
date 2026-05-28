@@ -48,10 +48,10 @@ def predict_instance_mask(
     logger.print("Predict instance mask", Log_Type.STAGE)
     with logger:
         # Fixed constants for this approach
-        cutout_size = (248, 304, 64)  # (264, 304, 64)  # (248, 304, 64)  # (264, 304, 64)
-        corpus_size_cleaning = 100 * 2.42  # voxel threshold * nako resolution
-        corpus_border_threshold = 10
-        vert_size_threshold = 250 * 2.42
+        cutout_size = model.inference_config.cutout_size
+        corpus_size_cleaning = model.inference_config.corpus_size_cleaning  # voxel threshold * nako resolution
+        corpus_border_threshold = model.inference_config.corpus_border_threshold
+        vert_size_threshold = model.inference_config.vert_size_threshold
 
         logger.print("Vertebra input", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
         # Save values for resample back later
@@ -594,7 +594,8 @@ def collect_vertebra_predictions(
     # print("vert_predict_template", vert_predict_template.shape)
 
     # relabel to the labels expected by the model
-    mapping = {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9}
+    # {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9}
+    mapping = {int(a): int(b) for a, b in model.inference_config.mapping.items()}
     seg_nii_for_cut: NII = seg_nii.copy().extract_label(list(mapping.keys()), keep_label=True).map_labels_(mapping, verbose=False)
     # print("seg_nii_for_cut", seg_nii_for_cut.shape)
 
