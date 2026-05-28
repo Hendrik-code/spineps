@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import itertools
 from functools import partial
 
 import torch
@@ -43,8 +46,8 @@ class Unet3D(nn.Module):
         init_dim = init_dim if init_dim is not None else dim
         self.init_conv = nn.Conv3d(channels + conditional_dimensions, init_dim, 7, padding=3)
 
-        dims = [init_dim, *map(lambda m: int(dim * m), dim_mults)]
-        in_out = list(zip(dims[:-1], dims[1:]))
+        dims = [init_dim, *(int(dim * m) for m in dim_mults)]
+        in_out = list(itertools.pairwise(dims))
 
         block = partial(ResnetBlock3D, groups=resnet_block_groups)
 

@@ -26,9 +26,9 @@ def get_mri_segmentor_models_dir() -> Path:
     if folder_path is None and spineps_environment_path_backup is not None:
         folder_path = spineps_environment_path_backup
 
-    assert (
-        folder_path is not None
-    ), "Environment variable 'SPINEPS_SEGMENTOR_MODELS' is not defined. Setup the environment variable as stated in the readme or set the override in utils.filepaths.py"
+    assert folder_path is not None, (
+        "Environment variable 'SPINEPS_SEGMENTOR_MODELS' is not defined. Setup the environment variable as stated in the readme or set the override in utils.filepaths.py"
+    )
     folder_path = Path(folder_path)
     assert folder_path.exists(), f"Environment variable 'SPINEPS_SEGMENTOR_MODELS' = {folder_path} does not exist"
     return folder_path

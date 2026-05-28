@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 from torch import from_numpy
 from TPTBox import NII, ZOOMS, Image_Reference, Log_Type, No_Logger, to_nii
 from typing_extensions import Self

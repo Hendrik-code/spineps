@@ -164,6 +164,9 @@ ignore = [
     "UP007", # Union instead of | in python 3.9
     "PLC0415",
     "UP045",
+    "N803",
+    "N806",
+    "N812",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.

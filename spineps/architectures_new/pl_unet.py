@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from argparse import Namespace
 from typing import Any, cast
 
@@ -22,7 +24,7 @@ def _tb_logger(module: pl.LightningModule) -> TensorBoardLogger:
 
 
 class PLNet(pl.LightningModule):
-    def __init__(self, opt: Namespace, do2D: bool = False, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, opt: Namespace, do2D: bool = False, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         super().__init__()
         self.save_hyperparameters()
 
