@@ -52,9 +52,17 @@ def perform_labeling_step(
         proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
         disable_c1=disable_c1,
     )[0]
-    # TODO make all vertebrae without visible corpus to visibility 0 but take into account for labeling
-    for i in vert_nii.unique():
+
+    vert_nii_u = vert_nii.unique()
+    # add C1 if it not set in labelmap, C2 exists, the minimal label (from sorting C1) is not mached anywhere.
+    if not disable_c1 and min(vert_nii_u) not in labelmap and 1 not in labelmap.values() and 2 in labelmap.values():
+        logger.on_debug("Add C1 after labeling")
+        labelmap[min(vert_nii_u)] = 1
+    # remove unmatched vertebras
+    for i in vert_nii_u:
         if i not in labelmap:
+            logger.on_debug(f"Set label to 0, because not found {i}")
+
             labelmap[i] = 0
 
     # relabel according to labelmap
