@@ -5,6 +5,7 @@
 [![codecov](https://codecov.io/gh/Hendrik-code/spineps/graph/badge.svg?token=A7FWUKO9Y4)](https://codecov.io/gh/Hendrik-code/spineps)
 [![tests](https://github.com/Hendrik-code/spineps/actions/workflows/tests.yml/badge.svg)](https://github.com/Hendrik-code/spineps/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Documentation Status](https://readthedocs.org/projects/spineps/badge/?version=latest)](https://spineps.readthedocs.io)
 
 # SPINEPS – Automatic Whole Spine Segmentation of T2w MR images using a Two-Phase Approach to Multi-class Semantic and Instance Segmentation.
 # and
@@ -16,7 +17,9 @@ This is a segmentation pipeline to automatically, and robustly, segment the whol
 
 ## Documentation
 
-Full documentation lives in the [`docs/`](docs/) folder and is built with [MkDocs](https://www.mkdocs.org/)
+📖 **Online documentation: [spineps.readthedocs.io](https://spineps.readthedocs.io)**
+
+The documentation source lives in the [`docs/`](docs/) folder and is built with [MkDocs](https://www.mkdocs.org/)
 (Material theme + [mkdocstrings](https://mkdocstrings.github.io/)). To build and preview it locally:
 
 ```bash

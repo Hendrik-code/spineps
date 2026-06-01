@@ -9,6 +9,7 @@ description = "Framework for out-of-the box whole spine MRI segmentation."
 authors = ["Hendrik Möller <hendrik.moeller@tum.de>"]
 repository = "https://github.com/Hendrik-code/spineps"
 homepage = "https://github.com/Hendrik-code/spineps"
+documentation = "https://spineps.readthedocs.io"
 license = "Apache License Version 2.0, January 2004"
 readme = "README.md"
 exclude = ["models", "examples"]
