@@ -21,6 +21,11 @@ from spineps.utils.seg_modelconfig import Segmentation_Inference_Config, load_in
 
 threads_started = False
 
+# Two zoom vectors are considered identical if every axis differs by less than this (mm).
+ZOOM_MATCH_TOLERANCE = 1e-4
+# Legacy single-channel Unet3D divided the input label ids by this value to scale them to ~[0, 1].
+LEGACY_LABEL_NORMALIZATION = 9
+
 
 class Segmentation_Model(ABC):
     """Abstract Segmentation Model class
@@ -98,7 +103,7 @@ class Segmentation_Model(ABC):
     def same_modelzoom_as_model(self, model: Self, input_zoom: ZOOMS) -> bool:
         self_zms = self.calc_recommended_resampling_zoom(input_zoom=input_zoom)
         model_zms = model.calc_recommended_resampling_zoom(input_zoom=self_zms)
-        match: bool = bool(np.all([self_zms[i] - model_zms[i] < 1e-4 for i in range(3)]))
+        match: bool = bool(np.all([self_zms[i] - model_zms[i] < ZOOM_MATCH_TOLERANCE for i in range(3)]))
         return match
 
     @citation_reminder
@@ -356,7 +361,7 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         else:
             # legacy version
             target = target.to(torch.float32)
-            target /= 9
+            target /= LEGACY_LABEL_NORMALIZATION
             target = target.unsqueeze(0)
             target = target.unsqueeze(0)
             logits = self.predictor.forward(target.to(self.device))

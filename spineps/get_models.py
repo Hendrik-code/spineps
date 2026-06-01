@@ -17,6 +17,39 @@ from spineps.utils.seg_modelconfig import load_inference_config
 logger = No_Logger()
 logger.prefix = "Models"
 
+# Shown when no model of a given kind could be found in the configured models directory.
+_NO_MODELS_AVAILABLE_MSG = (
+    "Found no available {kind} models. Did you set one up by downloading the model weights and "
+    "putting them into the folder specified by the env variable, or did you want to specify an "
+    "absolute path instead?"
+)
+
+
+def _get_model_by_name(
+    model_name: str,
+    modelid2folder: dict[str, Path | str],
+    phase: SpinepsPhase,
+    kind: str,
+    **kwargs,
+) -> Segmentation_Model | VertLabelingClassifier:
+    """Looks up a model by name in a model-id-to-folder map and instantiates it.
+
+    Shared implementation behind get_semantic_model / get_instance_model / get_labeling_model.
+    """
+    model_name = model_name.lower()
+    possible_keys = list(modelid2folder.keys())
+    if len(possible_keys) == 0:
+        logger.print(_NO_MODELS_AVAILABLE_MSG.format(kind=kind), Log_Type.FAIL)
+        raise KeyError(model_name)
+    if model_name not in possible_keys:
+        logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
+        raise KeyError(model_name)
+    config_path = modelid2folder[model_name]
+    if str(config_path).startswith("http"):
+        # Resolve HTTP
+        config_path = download_if_missing(model_name, config_path, phase=phase)
+    return get_actual_model(config_path, **kwargs)
+
 
 def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
     """Finds and returns a semantic model by name
@@ -27,24 +60,7 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
     Returns:
         Segmentation_Model: _description_
     """
-    model_name = model_name.lower()
-    _modelid2folder_subreg = modelid2folder_semantic()
-    possible_keys = list(_modelid2folder_subreg.keys())
-
-    if len(possible_keys) == 0:
-        logger.print(
-            "Found no available semantic models. Did you set one up by downloading model weights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
-            Log_Type.FAIL,
-        )
-        raise KeyError(model_name)
-    if model_name not in possible_keys:
-        logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
-        raise KeyError(model_name)
-    config_path = _modelid2folder_subreg[model_name]
-    if str(config_path).startswith("http"):
-        # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path, phase=SpinepsPhase.SEMANTIC)
-    return get_actual_model(config_path, **kwargs)
+    return _get_model_by_name(model_name, modelid2folder_semantic(), SpinepsPhase.SEMANTIC, "semantic", **kwargs)
 
 
 def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
@@ -56,53 +72,19 @@ def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
     Returns:
         Segmentation_Model: _description_
     """
-    model_name = model_name.lower()
-    _modelid2folder_vert = modelid2folder_instance()
-    possible_keys = list(_modelid2folder_vert.keys())
-    if len(possible_keys) == 0:
-        logger.print(
-            "Found no available instance models. Did you set one up by downloading modelweights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
-            Log_Type.FAIL,
-        )
-        raise KeyError(model_name)
-    if model_name not in possible_keys:
-        logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
-        raise KeyError(model_name)
-    config_path = _modelid2folder_vert[model_name]
-    if str(config_path).startswith("http"):
-        # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path, phase=SpinepsPhase.INSTANCE)
-
-    return get_actual_model(config_path, **kwargs)
+    return _get_model_by_name(model_name, modelid2folder_instance(), SpinepsPhase.INSTANCE, "instance", **kwargs)
 
 
 def get_labeling_model(model_name: str, **kwargs) -> VertLabelingClassifier:
-    """Finds and returns an instance model by name
+    """Finds and returns a labeling model by name
 
     Args:
         model_name (str): _description_
 
     Returns:
-        Segmentation_Model: _description_
+        VertLabelingClassifier: _description_
     """
-    model_name = model_name.lower()
-    _modelid2folder_labeling = modelid2folder_labeling()
-    possible_keys = list(_modelid2folder_labeling.keys())
-    if len(possible_keys) == 0:
-        logger.print(
-            "Found no available labeling models. Did you set one up by downloading model weights and putting them into the folder specified by the env variable or did you want to specify with an absolute path instead?",
-            Log_Type.FAIL,
-        )
-        raise KeyError(model_name)
-    if model_name not in possible_keys:
-        logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
-        raise KeyError(model_name)
-    config_path = _modelid2folder_labeling[model_name]
-    if str(config_path).startswith("http"):
-        # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path, phase=SpinepsPhase.LABELING)
-
-    return get_actual_model(config_path, **kwargs)
+    return _get_model_by_name(model_name, modelid2folder_labeling(), SpinepsPhase.LABELING, "labeling", **kwargs)
 
 
 _modelid2folder_semantic: Optional[dict[str, Union[Path, str]]] = None
