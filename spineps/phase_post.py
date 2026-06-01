@@ -634,8 +634,8 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII) -> tuple[NII, 
     """Detect and merge a vertebra (typically C2) that was split into two stacked instances.
 
     Builds a height-sorted list of IVD components and vertebra instances. If the two topmost entries are both vertebrae, the
-    upper one is significantly smaller (below ``MERGED_VERTEBRA_SIZE_RATIO`` of the other), and the two masks touch in more than
-    ``MERGED_VERTEBRA_MIN_CONTACT_VOXELS`` voxels, the smaller instance is merged into the larger one in ``vert_nii``.
+    upper one is significantly smaller (below ``MERGED_VERTEBRA_SIZE_RATIO`` of the other), and the two masks touch over more
+    than ``MERGED_VERTEBRA_MIN_CONTACT_MM2`` of area, the smaller instance is merged into the larger one in ``vert_nii``.
 
     Args:
         seg_nii (NII): Subregion semantic segmentation mask.

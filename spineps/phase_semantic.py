@@ -159,7 +159,7 @@ def semantic_bounding_box_clean(seg_nii: NII) -> NII:
     """Keep only connected components that fall within the spine's growing bounding box.
 
     Binarizes the mask and labels its connected components. Starting from the largest component's bounding box
-    (expanded by ``CC_BBOX_MARGIN``), it iteratively merges in any other component whose bounding box overlaps
+    (expanded by ``CC_BBOX_MARGIN_MM``), it iteratively merges in any other component whose bounding box overlaps
     the current region in all three axes (with extra inferior margin to tolerate gaps in the spine). Voxels
     outside the resulting region, and any non-incorporated components, are removed. Components are dropped if the
     binary mask has more than ``MAX_EXPECTED_SEMANTIC_CC`` parts (logged as strange).

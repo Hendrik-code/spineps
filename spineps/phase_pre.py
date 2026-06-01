@@ -43,7 +43,7 @@ def compute_crop(
     """Run the Vibe whole-body segmentation and compute a crop region around the spine.
 
     Segments the input with ``run_vibeseg``, keeps only the spine-relevant labels (IVD, vertebra body,
-    vertebra posterior elements, and sacrum), and returns a bounding-box crop expanded by ``VIBE_CROP_MARGIN`` voxels.
+    vertebra posterior elements, and sacrum), and returns a bounding-box crop expanded by ``VIBE_CROP_MARGIN_MM``.
 
     Args:
         nii (NII): Input MRI image to segment and crop.
@@ -55,7 +55,7 @@ def compute_crop(
         logger (optional): Logger forwarded to ``run_vibeseg`` when that version supports it. Defaults to None.
 
     Returns:
-        tuple[slice, slice, slice]: The crop slices around the segmented spine, with a ``VIBE_CROP_MARGIN`` margin.
+        tuple[slice, slice, slice]: The crop slices around the segmented spine, with a ``VIBE_CROP_MARGIN_MM`` margin.
     """
     from TPTBox.core.vert_constants import Full_Body_Instance_Vibe
     from TPTBox.segmentation import run_vibeseg
