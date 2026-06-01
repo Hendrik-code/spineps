@@ -20,8 +20,7 @@ def citation_reminder(func):
         if not has_reminded_citation and os.environ.get("SPINEPS_TURN_OF_CITATION_REMINDER", "FALSE") != "TRUE":
             print_citation_reminder()
             has_reminded_citation = True
-        func_result = func(*args, **kwargs)
-        return func_result
+        return func(*args, **kwargs)
 
     return wrapper
 

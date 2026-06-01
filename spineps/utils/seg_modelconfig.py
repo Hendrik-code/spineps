@@ -8,6 +8,20 @@ from TPTBox import AX_CODES, ZOOMS, Location, Log_Type, Logger_Interface, v_name
 
 from spineps.seg_enums import Acquisition, InputType, Modality, ModelType
 
+# Number of spatial dimensions of a volumetric (3D) image.
+SPATIAL_DIMS = 3
+
+# Default voxel geometry and post-processing cleaning thresholds. The voxel-count
+# thresholds are multiplied by the resolution scaling factor at runtime.
+DEFAULT_CUTOUT_SIZE = (248, 304, 64)
+DEFAULT_SACRUM_IDS = (26,)
+DEFAULT_CORPUS_SIZE_CLEANING = 100  # minimum corpus component size in voxels
+DEFAULT_CORPUS_BORDER_THRESHOLD = 10
+DEFAULT_VERT_SIZE_THRESHOLD = 250  # minimum vertebra size in voxels
+
+# Default remapping of raw model label ids onto canonical SPINEPS label ids.
+DEFAULT_LABEL_MAPPING = {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9, 26: 0}
+
 
 class Segmentation_Inference_Config:
     """Bucket for saving Inference Config data"""
@@ -28,17 +42,17 @@ class Segmentation_Inference_Config:
         expected_inputs: list[InputType | str] = [InputType.img],  # noqa: B006
         has_c1=False,
         needs_corp=False,
-        sacrum_ids=(26,),
-        cutout_size=(248, 304, 64),  # (264, 304, 64)  # (248, 304, 64)  # (264, 304, 64)
-        corpus_size_cleaning=100,
-        corpus_border_threshold=10,
-        vert_size_threshold=250,
+        sacrum_ids=DEFAULT_SACRUM_IDS,
+        cutout_size=DEFAULT_CUTOUT_SIZE,
+        corpus_size_cleaning=DEFAULT_CORPUS_SIZE_CLEANING,
+        corpus_border_threshold=DEFAULT_CORPUS_BORDER_THRESHOLD,
+        vert_size_threshold=DEFAULT_VERT_SIZE_THRESHOLD,
         mapping=None,
         **kwargs,
     ):
-        scaling_factor = np.prod(resolution_range) if len(resolution_range) == 3 else np.prod(resolution_range[0])
+        scaling_factor = np.prod(resolution_range) if len(resolution_range) == SPATIAL_DIMS else np.prod(resolution_range[0])
         if mapping is None:
-            mapping = {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9, 26: 0}
+            mapping = dict(DEFAULT_LABEL_MAPPING)
         if not isinstance(modality, (list, tuple)):
             modality = [modality]
 
