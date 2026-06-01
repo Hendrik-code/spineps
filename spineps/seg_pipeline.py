@@ -32,6 +32,7 @@ vertebra_subreg_labels = [
     Location.Inferior_Articular_Right.value,
     Location.Vertebra_Corpus_border.value,
     Location.Vertebra_Corpus.value,
+    Location.Dens_axis.value,
 ]
 
 

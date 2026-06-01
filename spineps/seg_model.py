@@ -6,12 +6,13 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 from torch import from_numpy
 from TPTBox import NII, ZOOMS, Image_Reference, Log_Type, No_Logger, to_nii
 from typing_extensions import Self
 
 from spineps.architectures.pl_unet import PLNet
+from spineps.architectures_new.pl_unet import PLNet as PLNet_new
 from spineps.seg_enums import Acquisition, InputType, Modality, OutputType
 from spineps.utils.citation_reminder import citation_reminder
 from spineps.utils.filepaths import search_path
@@ -268,10 +269,17 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         global threads_started  # noqa: PLW0603
         if not os.path.exists(self.model_folder):  # noqa: PTH110
             self.print(f"Model weights not found in {self.model_folder}", Log_Type.FAIL)
+        conf_folds = self.inference_config.available_folds
+        if isinstance(conf_folds, int):
+            conf_folds = tuple([str(i) for i in range(conf_folds)])
+        elif isinstance(conf_folds, str):
+            conf_folds = (conf_folds,)
+        else:
+            conf_folds = tuple([str(i) for i in conf_folds])
         self.predictor = load_inf_model(
             model_folder=self.model_folder,
             step_size=self.inference_config.default_step_size,
-            use_folds=folds if folds is not None else tuple([str(i) for i in range(self.inference_config.available_folds)]),
+            use_folds=folds if folds is not None else conf_folds,
             inference_augmentation=self.inference_config.inference_augmentation,
             init_threads=not threads_started,
             allow_non_final=True,
@@ -312,8 +320,12 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         assert os.path.exists(self.model_folder)  # noqa: PTH110
 
         chktpath = search_path(self.model_folder, "**/*weights*.ckpt")
-        assert len(chktpath) == 1
-        model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False)
+        assert len(chktpath) == 1, chktpath
+        try:
+            model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False)
+        except RuntimeError:
+            model = PLNet_new.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False)
+
         model.eval()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() and not self.use_cpu else "cpu")
         model.to(self.device)
@@ -321,45 +333,38 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         self.print("Model loaded from", self.model_folder, Log_Type.OK, verbose=True)
         return self
 
-    def run(
-        self,
-        input_nii: list[NII],
-        verbose: bool = False,
-    ) -> dict[OutputType, NII | None]:
+    def run(self, input_nii: list[NII], verbose: bool = False) -> dict[OutputType, NII | None]:
         assert len(input_nii) == 1, "Unet3D does not support more than one input"
-        input_nii = input_nii[0]
+        input_nii_ = input_nii[0]
 
-        arr = input_nii.get_seg_array().astype(np.int16)
+        arr = input_nii_.get_seg_array().astype(np.int16)
+
         target = from_numpy(arr)
+        n_classes = self.predictor.network.channels
 
-        target[target == 26] = 0
+        target[target >= n_classes] = 0
 
-        do_backup = False
         # channel-wise
-        try:
+        if n_classes != 1:
             targetc = target.to(torch.int64)
-            targetc = F.one_hot(targetc, num_classes=10)
+            targetc = F.one_hot(targetc, num_classes=n_classes)
             targetc = targetc.permute(3, 0, 1, 2)
             targetc = targetc.unsqueeze(0)
             targetc = targetc.to(torch.float32)
             logits = self.predictor.forward(targetc.to(self.device))
-        #
-        except Exception as e:
-            print(f"Channel-wise model failed with {e}, try legacy version")
-            do_backup = True
-        #
-        if do_backup:
+        else:
+            # legacy version
             target = target.to(torch.float32)
             target /= 9
             target = target.unsqueeze(0)
             target = target.unsqueeze(0)
             logits = self.predictor.forward(target.to(self.device))
-        #
-        pred_x = self.predictor.softmax(logits)
+        soft_max = torch.nn.Softmax(dim=1)
+        pred_x = soft_max(logits)
         _, pred_cls = torch.max(pred_x, 1)
         del logits
         del pred_x
         pred_cls = pred_cls.detach().cpu().numpy()[0]
-        seg_nii: NII = input_nii.set_array(pred_cls)
+        seg_nii: NII = input_nii_.set_array(pred_cls)
         self.print("out", seg_nii.zoom, seg_nii.orientation, seg_nii.shape) if verbose else None
         return {OutputType.seg: seg_nii}

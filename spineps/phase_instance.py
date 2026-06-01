@@ -48,10 +48,10 @@ def predict_instance_mask(
     logger.print("Predict instance mask", Log_Type.STAGE)
     with logger:
         # Fixed constants for this approach
-        cutout_size = (248, 304, 64)  # (264, 304, 64)  # (248, 304, 64)  # (264, 304, 64)
-        corpus_size_cleaning = 100 * 2.42  # voxel threshold * nako resolution
-        corpus_border_threshold = 10
-        vert_size_threshold = 250 * 2.42
+        cutout_size = model.inference_config.cutout_size
+        corpus_size_cleaning = model.inference_config.corpus_size_cleaning  # voxel threshold * nako resolution
+        corpus_border_threshold = model.inference_config.corpus_border_threshold
+        vert_size_threshold = model.inference_config.vert_size_threshold
 
         logger.print("Vertebra input", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
         # Save values for resample back later
@@ -94,11 +94,10 @@ def predict_instance_mask(
         corpus_size_cleaning = max(int(corpus_size_cleaning / (expected_zms[0] * expected_zms[1] * expected_zms[2])), 40)
         vert_size_threshold = max(int(vert_size_threshold / (expected_zms[0] * expected_zms[1] * expected_zms[2])), 40)
 
-        seg_labels = seg_nii.unique()
+        seg_labels = seg_nii_rdy.unique()
         if 49 not in seg_labels:
             logger.print(f"no corpus ({Location.Vertebra_Corpus_border.value}) labels in this segmentation, cannot proceed", Log_Type.FAIL)
             return None, ErrCode.EMPTY
-
         # get all the 3vert predictions
         vert_predictions, hierarchical_existing_predictions, n_corpus_coms = collect_vertebra_predictions(
             seg_nii=seg_nii_rdy,
@@ -113,7 +112,7 @@ def predict_instance_mask(
         )
         if vert_predictions is None:
             return None, ErrCode.UNKNOWN  # type:ignore
-        logger.print("Vertebra Predictions done!", verbose=verbose)
+        logger.print(f"Vertebra Predictions done! Found {n_corpus_coms} initial candidates.", verbose=verbose)
 
         # debug_data["vert_predictions"] = vert_predictions
         whole_vert_nii, debug_data, errcode = from_vert3_predictions_make_vert_mask(
@@ -175,31 +174,42 @@ def get_corpus_coms(
     verbose: bool = False,
 ) -> list | None:
     seg_nii.assert_affine(orientation=("P", "I", "R"))
-    #
+    dense = False
     # Extract Corpus region and try to find all coms naively (some skips should not matter)
-    corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
-    corpus_nii.erode_msk_(2, connectivity=2, verbose=False)
-    if 1 in corpus_nii.unique() and corpus_size_cleaning > 0:
-        corpus_nii.set_array_(
-            clean_cc_artifacts(
-                corpus_nii,
-                labels=[1],
-                cc_size_threshold=corpus_size_cleaning,
-                only_delete=True,
-                ignore_missing_labels=True,
-                logger=logger,
-                verbose=verbose,
-            ),
-            verbose=False,
-        )
+    if Location.Vertebra_Corpus.value in seg_nii.unique():
+        corpus_nii_cms = seg_nii.extract_label([Location.Vertebra_Corpus])
+        corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border, Location.Vertebra_Corpus])
+        dense = True
+        # process_detect_and_solve_merged_corpi = False
+    else:
+        corpus_nii = seg_nii.extract_label([Location.Vertebra_Corpus_border])
 
-    if 1 not in corpus_nii.unique():
+        corpus_nii.erode_msk_(2, connectivity=2, verbose=False)
+        if corpus_nii.max() != 0 and corpus_size_cleaning > 0:
+            corpus_nii.set_array_(
+                clean_cc_artifacts(
+                    corpus_nii,
+                    labels=[1],
+                    cc_size_threshold=corpus_size_cleaning,
+                    only_delete=True,
+                    ignore_missing_labels=True,
+                    logger=logger,
+                    verbose=verbose,
+                ),
+                verbose=False,
+            )
+        corpus_nii_cms = corpus_nii
+    if corpus_nii_cms.max() == 0:
         logger.print(f"No corpus found after get_corpus_coms post process, cannot make vertebra mask. {corpus_nii.unique()}", Log_Type.FAIL)
         return None
 
     if not process_detect_and_solve_merged_corpi:
-        corpus_coms = corpus_nii.get_segmentation_connected_components_center_of_mass(label=1, sort_by_axis=1)
+        corpus_coms = corpus_nii_cms.get_segmentation_connected_components_center_of_mass(label=1, sort_by_axis=1)
+        if dense:
+            dens_cc = seg_nii.get_segmentation_connected_components_center_of_mass(label=Location.Dens_axis.value)
+            corpus_coms.extend(dens_cc)
         corpus_coms.reverse()  # from bottom to top
+        logger.print(f"Found {len(corpus_coms)} Corpus ccs", verbose=verbose)
         return corpus_coms
 
     ############
@@ -207,7 +217,7 @@ def get_corpus_coms(
     ############
 
     # Get corpus CCs
-    corpus_cc: NII = corpus_nii.get_connected_components(labels=1)
+    corpus_cc: NII = corpus_nii_cms.get_connected_components(labels=1)
     corpus_cc_n = len(corpus_cc.unique())
     logger.print(f"Found {corpus_cc_n} Corpus ccs (naively)", verbose=verbose)
 
@@ -285,7 +295,7 @@ def get_corpus_coms(
                     )
 
                     target_vert_id = list(neighbor_verts.keys())[argmax]
-                    segvert = corpus_cc.extract_label(target_vert_id, inplace=False)
+                    segvert = corpus_cc.extract_label(target_vert_id, inplace=False).get_array()
                     try:
                         logger.print("get_separating_components to split vertebra", verbose=verbose)
                         (spart, tpart, spart_dil, tpart_dil, _) = get_separating_components(segvert, connectivity=3)
@@ -295,10 +305,13 @@ def get_corpus_coms(
                         split_vert = split_by_plane(segvert, plane_split_nii)
                         corpus_cc[split_vert == 2] = corpus_cc.max() + 1
                     except Exception as e:
-                        logger.print(f"Separating Corpi failed with exception {e}")
+                        logger.print(f"Separating Corpi failed with exception {e}", Log_Type.FAIL)
 
     corpus_coms = list(corpus_cc.center_of_masses().values())
     corpus_coms.sort(key=lambda a: a[1])
+    if dense:
+        dens_cc = seg_nii.get_segmentation_connected_components_center_of_mass(label=Location.Dens_axis.value)
+        corpus_coms.extend(dens_cc)
     corpus_coms.reverse()  # from bottom to top
     logger.print(f"Found {len(corpus_coms)} final Corpus ccs", verbose=verbose)
     return corpus_coms
@@ -581,27 +594,9 @@ def collect_vertebra_predictions(
     # print("vert_predict_template", vert_predict_template.shape)
 
     # relabel to the labels expected by the model
-    seg_nii_for_cut: NII = seg_nii.copy().map_labels_(
-        {
-            41: 1,
-            42: 2,
-            43: 3,
-            44: 4,
-            45: 5,
-            46: 6,
-            47: 7,
-            48: 8,
-            49: 9,
-            50: 9,
-            Location.Spinal_Cord.value: 0,
-            Location.Spinal_Canal.value: 0,
-            Location.Vertebra_Disc.value: 0,
-            Location.Endplate.value: 0,
-            26: 0,
-            51: 0,
-        },
-        verbose=False,
-    )
+    # {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9}
+    mapping = {int(a): int(b) for a, b in model.inference_config.mapping.items()}
+    seg_nii_for_cut: NII = seg_nii.copy().extract_label(list(mapping.keys()), keep_label=True).map_labels_(mapping, verbose=False)
     # print("seg_nii_for_cut", seg_nii_for_cut.shape)
 
     logger.print("Vertebra collect in", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
@@ -620,13 +615,10 @@ def collect_vertebra_predictions(
                 break
             seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
 
-        cutout_size2 = cutout_size
-
         # Calc cutout
-        arr_cut, cutout_coords, paddings = np_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size2)
+        arr_cut, cutout_coords, paddings = np_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size)
         cut_nii = seg_nii_for_cut.set_array(arr_cut, verbose=False).reorient_()
         debug_data[f"inst_cutout_vert_nii_{com_idx}_cut"] = cut_nii
-        # print("cut_nii", cut_nii.shape)
         results = model.segment_scan(
             cut_nii,
             resample_to_recommended=False,

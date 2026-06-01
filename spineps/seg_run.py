@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 import shutil
 from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
+from typing import Literal
 
 import numpy as np
 from TPTBox import BIDS_FILE, NII, POI, BIDS_Global_info, Location, Log_Type, Logger
@@ -12,7 +14,7 @@ from TPTBox.spine.snapshot2D.snapshot_templates import mri_snapshot
 from spineps.phase_instance import predict_instance_mask
 from spineps.phase_labeling import VertLabelingClassifier
 from spineps.phase_post import phase_postprocess_combined
-from spineps.phase_pre import preprocess_input
+from spineps.phase_pre import compute_crop, preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
 from spineps.seg_model import Segmentation_Model
@@ -262,6 +264,11 @@ def process_img_nii(  # noqa: C901
     proc_pad_size: int = 4,
     proc_normalize_input: bool = True,
     # Processings
+    # Pre-processing crop
+    crop=None,
+    auto_crop_to_spine: bool | Literal["auto"] = "auto",
+    auto_crop_when_max_res_leq=1.2,
+    auto_crop_req_crop_min_dim=200,
     # Semantic
     proc_sem_crop_input: bool = True,
     proc_sem_n4_bias_correction: bool = True,
@@ -279,6 +286,7 @@ def process_img_nii(  # noqa: C901
     # Both
     proc_fill_3d_holes: bool = True,
     proc_assign_missing_cc: bool = True,
+    proc_assign_missing_cc_fast: bool = False,
     proc_clean_inst_by_sem: bool = True,
     proc_vertebra_inconsistency: bool = True,
     # Misc
@@ -288,7 +296,7 @@ def process_img_nii(  # noqa: C901
     ignore_compatibility_issues: bool = False,
     log_inference_time: bool = True,
     return_output_instead_of_save: bool = False,
-    crop=None,
+    timing=False,
     verbose: bool = False,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty
@@ -314,6 +322,11 @@ def process_img_nii(  # noqa: C901
         snapshot_copy_folder (Path | None | bool, optional): If given a path, will copy all created snapshots in here. Defaults to None.
         do_crop_semantic (bool, optional): _description_. Defaults to True.
 
+        crop: If provided, segment only within the specified crop.
+        auto_crop_to_spine (bool | "auto"): Speeds up high-resolution models by first predicting the spine with VIBESeg (https://link.springer.com/article/10.1007/s00330-025-12035-9) and cropping to the spine region (works for any MR or CT image).
+        auto_crop_when_max_res_leq: Enables automatic spine cropping when auto_crop_to_spine="auto" and the largest spacing value of the semantic model is less than or equal to this threshold.
+        auto_crop_req_crop_min_dim: When auto_crop_to_spine="auto", compute the crop only if the image size exceeds this value cubed.
+
         proc_n4correction (bool, optional): _description_. Defaults to True.
         proc_fillholes (bool, optional): If true, will use fill holes in postprocessing step. Defaults to True.
         proc_clean (bool, optional): If true, will use CC cleaning in postprocessing step. Defaults to True.
@@ -326,6 +339,7 @@ def process_img_nii(  # noqa: C901
         ignore_inference_compatibility (bool, optional): If true, will ignore compatibility issues between models and individual inputs. Defaults to False.
         ignore_bids_filter (bool, optional): _description_. Defaults to False.
         log_inference_time (bool, optional): If true, will log the inference time for each subject. Defaults to True.
+        timing: log the timing for each step
         verbose (bool, optional): If true, will spam your terminal with info. Defaults to False.
 
     Returns:
@@ -347,7 +361,6 @@ def process_img_nii(  # noqa: C901
     out_snap2 = output_paths["out_snap2"]
     out_raw = output_paths["out_raw"]
     out_debug = output_paths["out_debug"]
-
     if isinstance(snapshot_copy_folder, Path):
         snapshot_copy_folder.mkdir(parents=True, exist_ok=True)
 
@@ -370,6 +383,10 @@ def process_img_nii(  # noqa: C901
 
     if Modality.CT in model_semantic.modalities():
         proc_normalize_input = False  # Never normalize input if it is an CT
+        proc_sem_n4_bias_correction = False  # n4_bias_correction is a MRI thing
+        # proc_assign_missing_cc_fast = True  # TODO remove
+        if model_semantic.inference_config.has_c1:
+            vertebra_instance_labeling_offset = 1
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
     compatible_labeling = check_input_model_compatibility(img_ref, model=model_labeling) if model_labeling is not None else True
@@ -379,7 +396,7 @@ def process_img_nii(  # noqa: C901
         else:
             logger.print("Issues are ignored, might not have expected outcome", Log_Type.WARNING)
 
-    start_time = perf_counter()
+    start_time = start_time2 = perf_counter()
     file_dir = img_ref.file["nii.gz"]
 
     logger.print("Processing", file_dir.name)
@@ -389,15 +406,43 @@ def process_img_nii(  # noqa: C901
         input_nii = img_ref.open_nii()
         input_nii.seg = False
         input_nii_ = input_nii.copy()
-        if crop is not None:
-            try:
-                input_nii = input_nii.apply_crop(crop)
-            except Exception:
-                pass
-        logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
-
+        if timing:
+            logger.print(f"Loading files took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+            start_time2 = perf_counter()
         # First stage
         if not out_spine_raw.exists() or override_semantic:
+            resolution_range = model_semantic.inference_config.resolution_range
+
+            max_resolution: float = max(resolution_range[1]) if isinstance(resolution_range[0], tuple) else max(resolution_range)  # type: ignore
+            num_voxels = math.prod(input_nii.shape)
+            if (
+                auto_crop_to_spine is True
+                or (
+                    auto_crop_to_spine == "auto"
+                    and (max_resolution) <= auto_crop_when_max_res_leq
+                    and num_voxels > auto_crop_req_crop_min_dim**3
+                )
+                or model_semantic.inference_config.needs_corp
+            ):
+                logger.print(
+                    "Compute spine crop with VIBESegmentator https://link.springer.com/article/10.1007/s00330-025-12035-9", Log_Type.OK
+                )
+                out_vibeseg = output_paths["out_vibeseg"]
+                crop = compute_crop(input_nii, out_vibeseg, ddevice="cpu" if model_semantic.use_cpu else "cuda", logger=logger)
+                if timing:
+                    logger.print(
+                        f"Compute cropping took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
+                    )
+                    start_time2 = perf_counter()
+
+            if crop is not None:
+                logger.print(f"Change {crop=} from shape={input_nii.shape}")
+                try:
+                    input_nii = input_nii.apply_crop(crop)
+                except Exception:
+                    logger.print_error()
+            logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
+
             input_preprocessed, errcode = preprocess_input(
                 input_nii,
                 pad_size=proc_pad_size,
@@ -407,6 +452,10 @@ def process_img_nii(  # noqa: C901
                 proc_do_n4_bias_correction=proc_sem_n4_bias_correction,
                 verbose=verbose,
             )
+            if timing:
+                logger.print(f"Preprocess input took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
+
             if errcode != ErrCode.OK:
                 logger.print("Got Error from preprocessing", Log_Type.FAIL)
                 return output_paths, errcode
@@ -441,11 +490,13 @@ def process_img_nii(  # noqa: C901
                 if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
                     save_nparray(softmax_logits, out_logits)
             done_something = True
+            if timing:
+                logger.print(f"Predict semantic took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         else:
             logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
             seg_nii_modelres = NII.load(out_spine_raw, seg=True)
-            print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
-
+            logger.print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
         # Second stage
         if not out_vert_raw.exists() or override_instance:
             whole_vert_nii, errcode = predict_instance_mask(
@@ -468,6 +519,9 @@ def process_img_nii(  # noqa: C901
             if save_raw and not return_output_instead_of_save:
                 whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
+            if timing:
+                logger.print(f"Predict instance took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         else:
             logger.print("Vert Mask already exists. Set -override_vert to create it anew")
             whole_vert_nii = NII.load(out_vert_raw, seg=True)
@@ -476,14 +530,16 @@ def process_img_nii(  # noqa: C901
         if not out_spine.exists() or not out_vert.exists() or done_something or override_postpair:
             # back to input space
             #
+            seg_nii_modelres[seg_nii_modelres == 50] = 49
             if not save_modelres_mask:
                 seg_nii_back = seg_nii_modelres.resample_from_to(input_nii_)
                 whole_vert_nii = whole_vert_nii.resample_from_to(input_nii_)
             else:
                 seg_nii_back = seg_nii_modelres
-
             seg_nii_back.assert_affine(other=input_nii_)
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
+            has_c1 = model_semantic.inference_config.has_c1
+            sacrum_ids = model_semantic.inference_config.sacrum_ids
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
                 img_nii=input_nii_,
                 seg_nii=seg_nii_back,
@@ -494,10 +550,12 @@ def process_img_nii(  # noqa: C901
                 labeling_offset=vertebra_instance_labeling_offset - 1,
                 proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                 proc_assign_missing_cc=proc_assign_missing_cc,
+                proc_assign_missing_cc_fast=proc_assign_missing_cc_fast,
                 proc_vertebra_inconsistency=proc_vertebra_inconsistency,
                 verbose=verbose,
+                disable_c1=not has_c1,
+                sacrum_ids=sacrum_ids,
             )
-
             seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
             vert_nii_clean.assert_affine(other=input_nii_)
             # input_package.make_nii_from_this(seg_nii_clean)
@@ -506,6 +564,9 @@ def process_img_nii(  # noqa: C901
                 seg_nii_clean.save(out_spine, verbose=logger)
                 vert_nii_clean.save(out_vert, verbose=logger)
             done_something = True
+            if timing:
+                logger.print(f"Post Postprocess took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         else:
             seg_nii_clean = NII.load(out_spine, seg=True)
             vert_nii_clean = NII.load(out_vert, seg=True)
@@ -520,13 +581,16 @@ def process_img_nii(  # noqa: C901
             )
             ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
             done_something = True
+            if timing:
+                logger.print(f"Centroids took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         else:
             logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
             ctd = POI.load(out_ctd)
 
         # return_output_instead_of_save:
         if return_output_instead_of_save:
-            return seg_nii_clean, vert_nii_clean, ctd, ErrCode.OK
+            return seg_nii_clean, vert_nii_clean, ctd, ErrCode.OK  # type: ignore
 
         # save debug
         if save_debug_data:
@@ -539,6 +603,11 @@ def process_img_nii(  # noqa: C901
                         out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False
                     )
                 logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
+                if timing:
+                    logger.print(
+                        f"Save debug data took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
+                    )
+                    start_time2 = perf_counter()
 
         # Snapshot
         if not out_snap.exists() or done_something:
@@ -559,12 +628,15 @@ def process_img_nii(  # noqa: C901
                 # Fall back for older TPTBox versions TODO remove later
                 mri_snapshot(img_ref, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
+            if timing:
+                logger.print(f"Snapshot took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
         elif not out_snap2.exists():
             logger.print(f"Copying snapshot into {snapshot_copy_folder!s}")
             out_snap2.parent.mkdir(exist_ok=True)
             shutil.copy(out_snap, out_snap2)
 
-    logger.print(f"Pipeline took: {perf_counter() - start_time}", Log_Type.OK, verbose=log_inference_time)
+    logger.print(f"Pipeline took: {perf_counter() - start_time:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
     return output_paths, ErrCode.OK
 
 
@@ -640,6 +712,13 @@ def output_paths_from_input(
         non_strict_mode=non_strict_mode,
         make_parent=False,
     )
+    out_vibeseg = img_ref.get_changed_path(
+        bids_format="msk",
+        parent=derivative_name,
+        info={"seg": "VIBESeg-100", "mod": img_ref.format},
+        non_strict_mode=non_strict_mode,
+        make_parent=False,
+    )
     out_logits = out_raw.joinpath(out_logits.name)
     return {
         "out_spine": out_spine,
@@ -653,6 +732,7 @@ def output_paths_from_input(
         "out_snap2": out_snap2,
         "out_debug": out_debug,
         "out_raw": out_raw,
+        "out_vibeseg": out_vibeseg,
     }
 
 

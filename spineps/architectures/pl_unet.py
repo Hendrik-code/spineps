@@ -4,7 +4,7 @@ from typing import Any
 
 import pytorch_lightning as pl
 import torch
-import torchmetrics.functional as mF  # noqa: N812
+import torchmetrics.functional as mF
 from torch import nn
 from torch.optim import lr_scheduler
 
@@ -12,7 +12,7 @@ from spineps.architectures.unet3D import Unet3D
 
 
 class PLNet(pl.LightningModule):
-    def __init__(self, opt=None, do2D: bool = False, *args: Any, **kwargs: Any) -> None:  # noqa: N803, ARG002
+    def __init__(self, opt=None, do2D: bool = False, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         super().__init__()
         self.save_hyperparameters()
 
@@ -66,7 +66,7 @@ class PLNet(pl.LightningModule):
 
     def _shared_metric_step(self, loss, _, gt, pred_cls):
         dice = mF.dice(pred_cls, gt, num_classes=self.n_classes)
-        diceFG = mF.dice(pred_cls, gt, num_classes=self.n_classes, ignore_index=0)  # noqa: N806
+        diceFG = mF.dice(pred_cls, gt, num_classes=self.n_classes, ignore_index=0)
         dice_p_cls = mF.dice(pred_cls, gt, average=None, num_classes=self.n_classes)
         return {"loss": loss.detach().cpu(), "dice": dice, "diceFG": diceFG, "dice_p_cls": dice_p_cls}
 
