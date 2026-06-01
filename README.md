@@ -14,6 +14,18 @@ This is a segmentation pipeline to automatically, and robustly, segment the whol
 
 ![pipeline_process](spineps/example/figures/pipeline_processflow.png?raw=true)
 
+## Documentation
+
+Full documentation lives in the [`docs/`](docs/) folder and is built with [MkDocs](https://www.mkdocs.org/)
+(Material theme + [mkdocstrings](https://mkdocstrings.github.io/)). To build and preview it locally:
+
+```bash
+pip install mkdocs mkdocs-material "mkdocstrings[python]"
+mkdocs serve   # then open http://127.0.0.1:8000
+```
+
+Start with [`docs/index.md`](docs/index.md) and the [Getting Started](docs/getting-started.md) guide.
+
 ## Citation
 
 If you are using SPINEPS, please cite the following:

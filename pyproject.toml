@@ -49,6 +49,15 @@ flake8 = ">=4.0.1"
 tqdm = ">=4.62.3"
 
 
+[tool.poetry.group.docs]
+optional = true
+
+[tool.poetry.group.docs.dependencies]
+mkdocs = ">=1.6"
+mkdocs-material = ">=9.5"
+mkdocstrings = { extras = ["python"], version = ">=0.25" }
+
+
 [tool.poetry-dynamic-versioning]
 enable = true
 
