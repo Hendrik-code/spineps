@@ -12,6 +12,12 @@ from spineps.seg_enums import ErrCode
 from spineps.seg_pipeline import logger
 from spineps.utils.proc_functions import n4_bias
 
+# Input intensities are rescaled into this range before segmentation.
+NORMALIZE_MIN_VALUE = 0
+NORMALIZE_MAX_VALUE = 1500
+# Voxel margin kept around the detected spine when cropping a Vibe scan.
+VIBE_CROP_MARGIN = 25
+
 
 def _has_logger_arg(func) -> bool:
     return "logger" in inspect.signature(func).parameters
@@ -34,7 +40,7 @@ def compute_crop(nii: NII, out_file, dataset_id=100, ddevice: Literal["cpu", "cu
             Full_Body_Instance_Vibe.sacrum,
         ]
     )
-    return seg.compute_crop(0, dist=25)
+    return seg.compute_crop(0, dist=VIBE_CROP_MARGIN)
 
 
 def preprocess_input(
@@ -53,7 +59,7 @@ def preprocess_input(
         try:
             # Enforce to range [0, 1500]
             if proc_normalize_input:
-                mri_nii.normalize_to_range_(min_value=0, max_value=1500, verbose=False)
+                mri_nii.normalize_to_range_(min_value=NORMALIZE_MIN_VALUE, max_value=NORMALIZE_MAX_VALUE, verbose=False)
                 crop = mri_nii.compute_crop(dist=0) if proc_crop_input else (slice(None, None), slice(None, None), slice(None, None))
             else:
                 crop = (
@@ -74,9 +80,9 @@ def preprocess_input(
             cropped_nii, _ = n4_bias(cropped_nii)  # PIR
             logger.print(f"N4 Bias field correction done in {perf_counter() - n4_start} sec", verbose=True)
 
-        # Enforce to range [0, 1500]
+        # Enforce to range [NORMALIZE_MIN_VALUE, NORMALIZE_MAX_VALUE]
         if proc_normalize_input:
-            cropped_nii.normalize_to_range_(min_value=0, max_value=1500, verbose=logger)
+            cropped_nii.normalize_to_range_(min_value=NORMALIZE_MIN_VALUE, max_value=NORMALIZE_MAX_VALUE, verbose=logger)
 
         # Uncrop again
         # uncropped_input[crop] = cropped_nii.get_array()

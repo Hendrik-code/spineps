@@ -78,7 +78,6 @@ def check_model_modality_acquisition(
 
 
 ignored_text = " (IGNORED)."
-len_ignored_text = len(ignored_text)
 
 
 def add_ignore_text(logger_texts: list[str]):

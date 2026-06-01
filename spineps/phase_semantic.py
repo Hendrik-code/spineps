@@ -9,6 +9,17 @@ from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import fill_holes_labels, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 
+# Connected-component artifacts smaller than this many voxels are removed from the semantic mask.
+SMALL_CC_SIZE_THRESHOLD = 30
+# Vertical (inferior) extent in millimeters kept around the spinal canal.
+CANAL_HEIGHT_MARGIN_MM = 64
+# Semantic label of S1, i.e. the sacrum.
+SACRUM_LABEL = 26
+# More connected components than this in the semantic mask is unexpected and gets logged.
+MAX_EXPECTED_SEMANTIC_CC = 3
+# Voxel margin used when cropping around connected components in the bounding-box clean step.
+CC_BBOX_MARGIN = 4
+
 
 def predict_semantic_mask(
     mri_nii: NII,
@@ -79,7 +90,7 @@ def predict_semantic_mask(
                     ],
                     only_delete=True,
                     ignore_missing_labels=True,
-                    cc_size_threshold=30,  # [
+                    cc_size_threshold=SMALL_CC_SIZE_THRESHOLD,
                 ),
                 verbose=verbose,
             )
@@ -109,12 +120,12 @@ def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
     canal_nii = seg_nii.extract_label([Location.Spinal_Canal.value, Location.Spinal_Cord.value])
     if canal_nii.sum() == 0:
         return seg_nii
-    crop_i = canal_nii.compute_crop(dist=64 / seg_nii.zoom[1])[1]
+    crop_i = canal_nii.compute_crop(dist=CANAL_HEIGHT_MARGIN_MM / seg_nii.zoom[1])[1]
     seg_arr = seg_nii.get_seg_array()
-    sacrum_arr = seg_nii.extract_label(26).get_seg_array()
+    sacrum_arr = seg_nii.extract_label(SACRUM_LABEL).get_seg_array()
     seg_arr[:, 0 : crop_i.start, :] = 0
     seg_arr[:, crop_i.stop :, :] = 0
-    seg_arr[sacrum_arr == 1] = 26
+    seg_arr[sacrum_arr == 1] = SACRUM_LABEL
     return seg_nii.set_array_(seg_arr)
 
 
@@ -125,12 +136,12 @@ def semantic_bounding_box_clean(seg_nii: NII):
         max_count_component=None, labels=1, connectivity=3, keep_label=False
     )
     max_k = int(seg_bin_largest_k_cc_nii.max())
-    if max_k > 3:
+    if max_k > MAX_EXPECTED_SEMANTIC_CC:
         logger.print(f"Found {max_k} unique connected components in semantic mask", Log_Type.STRANGE)
     # PIR
     largest_nii = seg_bin_largest_k_cc_nii.extract_label(1)
     # width fixed, and heigh include all connected components within bounding box, then repeat
-    p_slice, i_slice, r_slice = largest_nii.compute_crop(dist=4)
+    p_slice, i_slice, r_slice = largest_nii.compute_crop(dist=CC_BBOX_MARGIN)
     bboxes = [(p_slice, i_slice, r_slice)]
 
     # PIR -> fixed, extendable, extendable
@@ -140,12 +151,12 @@ def semantic_bounding_box_clean(seg_nii: NII):
         changed = False
         for k in [l for l in range(2, max_k + 1) if l not in incorporated]:
             k_nii = seg_bin_largest_k_cc_nii.extract_label(k)
-            p, i, r = k_nii.compute_crop(dist=4)
+            p, i, r = k_nii.compute_crop(dist=CC_BBOX_MARGIN)
 
             for bbox in bboxes:
                 i_slice_compare = slice(
-                    max(bbox[1].start - 4, 0), bbox[1].stop + 4
-                )  # more margin in inferior direction (allows for gaps of size 15 in spine)
+                    max(bbox[1].start - CC_BBOX_MARGIN, 0), bbox[1].stop + CC_BBOX_MARGIN
+                )  # more margin in inferior direction (allows for gaps in spine)
                 if overlap_slice(bbox[0], p) and overlap_slice(i_slice_compare, i) and overlap_slice(bbox[2], r):
                     # extend bbox
                     bboxes.append((p, i, r))

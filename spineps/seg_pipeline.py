@@ -13,6 +13,11 @@ from spineps.seg_model import Segmentation_Model
 
 logger = No_Logger(prefix="SPINEPS")
 
+# IVD and endplate instances are stored as (vertebra label + offset); these ranges
+# cover all such derived labels and are stripped before centroid computation.
+IVD_LABEL_RANGE = range(100, 134)
+ENDPLATE_LABEL_RANGE = range(200, 234)
+
 fill_holes_labels = [
     Location.Vertebra_Corpus_border.value,
     Location.Spinal_Canal.value,
@@ -54,15 +59,13 @@ def predict_centroids_from_both(
         _type_: _description_
     """
     vert_nii_4_centroids = vert_nii_cleaned.copy()
-    labelmap = dict.fromkeys(range(100, 134), 0)
-    for i in range(200, 234):
-        labelmap[i] = 0
+    labelmap = dict.fromkeys([*IVD_LABEL_RANGE, *ENDPLATE_LABEL_RANGE], 0)
     vert_nii_4_centroids.map_labels_(labelmap, verbose=False)
 
     ctd = poi.calc_poi_from_subreg_vert(vert_nii_4_centroids, seg_nii, verbose=logger)
 
     if v_name2idx["S1"] in vert_nii_cleaned.unique():
-        s1_nii = vert_nii_cleaned.extract_label(26, inplace=False)
+        s1_nii = vert_nii_cleaned.extract_label(v_name2idx["S1"], inplace=False)
         ctd[v_name2idx["S1"], 50] = center_of_mass(s1_nii.get_seg_array())
 
     models_repr = {}
