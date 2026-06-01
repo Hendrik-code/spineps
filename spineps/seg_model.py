@@ -182,7 +182,8 @@ class Segmentation_Model(ABC):
         for k, v in result.items():
             if isinstance(v, NII):  # and k != OutputType.seg_modelres:
                 if resample_output_to_input_space:
-                    v.rescale_(zms_pir, verbose=self.logger).reorient_(orientation, verbose=self.logger)
+                    v.resample_from_to_(inputdict[self.inference_config.expected_inputs[0]])
+                    # v.rescale_(zms_pir, verbose=self.logger).reorient_(orientation, verbose=self.logger)
                     v.pad_to(orig_shape, inplace=True)
                 if k == OutputType.seg:
                     v.map_labels_(self.inference_config.segmentation_labels, verbose=self.logger)
