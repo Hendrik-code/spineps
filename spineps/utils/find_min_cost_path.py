@@ -21,7 +21,7 @@ DEFAULT_REGION_STARTS = (0, 7, 19)
 MAX_REPEATS_PER_CLASS = 2
 
 
-def argmin(lst):
+def argmin(lst: list) -> tuple[int, ...]:
     """Return the index and value of the smallest element in a list.
 
     Args:
@@ -39,7 +39,7 @@ def softmax_T(x, temp):
     return np.exp(np.divide(x, temp)) / np.sum(np.exp(np.divide(x, temp)), axis=0)
 
 
-def c_to_region_idx(c: int, regions: list[int]):
+def c_to_region_idx(c: int, regions: list[int]) -> int:
     """Map a class index to the index of the spinal region it falls into.
 
     Args:
@@ -55,7 +55,7 @@ def c_to_region_idx(c: int, regions: list[int]):
     return len(regions) - 1
 
 
-def internal_to_real_path(p):
+def internal_to_real_path(p: list) -> list:
     """Convert an internal ``(row, class)`` path into the ordered list of class indices.
 
     Args:

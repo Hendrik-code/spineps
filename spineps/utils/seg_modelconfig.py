@@ -129,7 +129,7 @@ class Segmentation_Inference_Config:
             for k in kwargs:
                 logger.print(f"Ignored inference config argument {k}", Log_Type.STRANGE)
 
-    def str_representation(self, short: bool = False):
+    def str_representation(self, short: bool = False) -> str:
         """Render the config's attributes as a comma-separated ``'key'=value`` string.
 
         Args:
@@ -150,7 +150,7 @@ class Segmentation_Inference_Config:
 
         return ", ".join(sb)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return the full string representation.
 
         Returns:
@@ -158,7 +158,7 @@ class Segmentation_Inference_Config:
         """
         return self.str_representation()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return the short string representation.
 
         Returns:
@@ -167,7 +167,7 @@ class Segmentation_Inference_Config:
         return self.str_representation(short=True)
 
 
-def load_inference_config(json_dir: str | Path, logger: Logger_Interface | None = None):
+def load_inference_config(json_dir: str | Path, logger: Logger_Interface | None = None) -> Segmentation_Inference_Config:
     """Load an inference configuration from a JSON file.
 
     Args:

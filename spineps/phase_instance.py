@@ -369,7 +369,9 @@ def get_corpus_coms(
     return corpus_coms
 
 
-def get_separating_components(segvert: np.ndarray, max_iter: int = 10, connectivity: int = 3):
+def get_separating_components(
+    segvert: np.ndarray, max_iter: int = 10, connectivity: int = 3
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Split a binary volume into two spatially separate components (S and T) via erosion and dilation.
 
     Designed for a segmentation that is a single connected component but should be separated into two
@@ -470,7 +472,7 @@ def get_plane_split(
     tpart: np.ndarray,
     spart_dil: np.ndarray,
     tpart_dil: np.ndarray,
-):
+) -> NII:
     """Compute an approximate separating plane between two regions and return it as an NII.
 
     Determines the collision region between the dilated versions of the two components, takes its center of mass
@@ -548,7 +550,7 @@ def get_plane_split(
 def split_by_plane(
     segvert: np.ndarray,
     plane_filled_nii: NII,
-):
+) -> np.ndarray:
     """Split a vertebra volume into two parts using a filled separating plane.
 
     Masks the filled plane (whose values are 1 on one side of the plane and 2 on the other) to the foreground
@@ -574,7 +576,7 @@ def collect_vertebra_predictions(
     seg_nii: NII,
     model: Segmentation_Model,
     corpus_size_cleaning: int,
-    cutout_size,
+    cutout_size: tuple[int, int, int],
     debug_data: dict,
     proc_inst_largest_k_cc: int = 0,
     process_detect_and_solve_merged_corpi: bool = True,
@@ -711,7 +713,7 @@ def post_process_single_3vert_prediction(
     labels: list[int] | None = None,
     largest_cc: int = 0,
     fill_holes: bool = False,
-):
+) -> NII:
     """Post-process a single three-vertebra cutout prediction by filtering components and filling holes.
 
     Args:
@@ -731,7 +733,7 @@ def post_process_single_3vert_prediction(
     return vert_nii
 
 
-def str_id_com_label(com_idx: int, label: int):
+def str_id_com_label(com_idx: int, label: int) -> str:
     """Build the string identifier for a single (corpus-com, label) prediction.
 
     Args:
@@ -798,7 +800,7 @@ def create_prediction_couples(
     hierarchical_predictions: np.ndarray,
     hierarchical_existing_predictions,
     verbose: bool = False,
-):
+) -> dict:
     """Form and rank prediction couples across all hierarchical predictions.
 
     For every (center index, label) prediction, finds its best-agreeing partners and groups them into a couple,
@@ -841,7 +843,7 @@ def create_prediction_couples(
     return coupled_predictions
 
 
-def parallel_dice(anchor, pred, cand_loc):
+def parallel_dice(anchor, pred, cand_loc: tuple) -> tuple[float, tuple]:
     """Compute the Dice score between two masks, tagged with a candidate location.
 
     Args:
@@ -862,7 +864,7 @@ def find_prediction_couple(
     hierarchical_existing_predictions,
     n_predictions,
     verbose: bool = False,
-):
+) -> tuple[tuple | None, float]:
     """Find the best-agreeing partner predictions for one anchor prediction.
 
     Considers candidate predictions within +/-2 of the anchor's center index (all three labels, excluding the

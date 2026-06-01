@@ -20,7 +20,7 @@ class PLNet(pl.LightningModule):
     class prediction.
     """
 
-    def __init__(self, opt=None, do2D: bool = False, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
+    def __init__(self, opt: Any = None, do2D: bool = False, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         """Build the wrapped U-Net and store training hyperparameters.
 
         Args:
@@ -61,7 +61,7 @@ class PLNet(pl.LightningModule):
 
         self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         """Run the wrapped U-Net on an input batch.
 
         Args:
@@ -142,7 +142,7 @@ class PLNet(pl.LightningModule):
             results[m] = torch.mean(stacked) if m != "dice_p_cls" else torch.mean(stacked, dim=0)
         return results
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a short model name including the spatial mode.
 
         Returns:

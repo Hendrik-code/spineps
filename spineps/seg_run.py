@@ -286,10 +286,10 @@ def process_img_nii(  # noqa: C901
     proc_normalize_input: bool = True,
     # Processings
     # Pre-processing crop
-    crop=None,
+    crop: tuple[slice, slice, slice] | None = None,
     auto_crop_to_spine: bool | Literal["auto"] = "auto",
-    auto_crop_when_max_res_leq=1.2,
-    auto_crop_req_crop_min_dim=200,
+    auto_crop_when_max_res_leq: float = 1.2,
+    auto_crop_req_crop_min_dim: int = 200,
     # Semantic
     proc_sem_crop_input: bool = True,
     proc_sem_n4_bias_correction: bool = True,
@@ -690,7 +690,7 @@ def output_paths_from_input(
     snapshot_copy_folder: Path | str | None,
     input_format: str,
     non_strict_mode: bool = False,
-):
+) -> dict[str, Path]:
     """Derives all pipeline output file paths for a given input image.
 
     Builds the BIDS-conform output paths (semantic/vertebra masks, raw masks, centroids, snapshots, logits, debug and

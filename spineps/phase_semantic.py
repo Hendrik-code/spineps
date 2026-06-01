@@ -125,7 +125,7 @@ def predict_semantic_mask(
     return seg_nii, softmax_logits, ErrCode.OK
 
 
-def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
+def remove_nonsacrum_beyond_canal_height(seg_nii: NII) -> NII:
     """Remove non-sacrum labels that lie above or below the spinal-canal extent.
 
     Computes the inferior-axis (I) extent of the spinal canal/cord, expanded by ``CANAL_HEIGHT_MARGIN_MM``,
@@ -154,7 +154,7 @@ def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
     return seg_nii.set_array_(seg_arr)
 
 
-def semantic_bounding_box_clean(seg_nii: NII):
+def semantic_bounding_box_clean(seg_nii: NII) -> NII:
     """Keep only connected components that fall within the spine's growing bounding box.
 
     Binarizes the mask and labels its connected components. Starting from the largest component's bounding box
@@ -225,7 +225,7 @@ def semantic_bounding_box_clean(seg_nii: NII):
     return seg_nii
 
 
-def overlap_slice(slice1: slice, slice2: slice):
+def overlap_slice(slice1: slice, slice2: slice) -> bool:
     """Check whether two ranges defined by slices overlap (borders inclusive).
 
     Args:

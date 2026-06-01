@@ -6,9 +6,12 @@ import inspect
 
 # from utils.predictor import nnUNetPredictor
 from time import perf_counter
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from TPTBox import NII, Log_Type, to_nii
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from spineps.seg_enums import ErrCode
 from spineps.seg_pipeline import logger
@@ -33,7 +36,9 @@ def _has_logger_arg(func) -> bool:
     return "logger" in inspect.signature(func).parameters
 
 
-def compute_crop(nii: NII, out_file, dataset_id=100, ddevice: Literal["cpu", "cuda", "mps"] = "cuda", gpu=0, max_folds=None, logger=None):
+def compute_crop(
+    nii: NII, out_file: str | Path, dataset_id=100, ddevice: Literal["cpu", "cuda", "mps"] = "cuda", gpu=0, max_folds=None, logger=None
+) -> tuple[slice, slice, slice]:
     """Run the Vibe whole-body segmentation and compute a crop region around the spine.
 
     Segments the input with ``run_vibeseg``, keeps only the spine-relevant labels (IVD, vertebra body,

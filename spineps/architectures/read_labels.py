@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -123,8 +124,8 @@ class VertGroup(Enum):
 
 def vert_label_to_vertrel(
     vertlabel: int,
-    last_bwk,
-    last_lwk,
+    last_bwk: int | None,
+    last_lwk: int | None,
     last_hwk=7,
     first_bwk=8,
     first_lwk=20,
@@ -314,7 +315,7 @@ class LabelType(ABC):
             column_name = [column_name]
         self.column_name = column_name
 
-    def __call__(self, entry_dict: dict):
+    def __call__(self, entry_dict: dict) -> object:
         """Read the configured columns from ``entry_dict`` and convert them into a label.
 
         Args:
@@ -373,7 +374,7 @@ class EnumLabelType(LabelType):
         """Number of channels, equal to the number of members in the configured enum."""
         return self.n_channel
 
-    def convert_to_label(self, entry: Enum):
+    def convert_to_label(self, entry: Enum) -> list[int]:
         """One-hot encode an enum member into a label vector.
 
         Args:
@@ -527,7 +528,7 @@ class Objectives:
         return labels if not self.__as_group else {self.targets[idx].name: labels_grouped[idx] for idx in range(len(self.targets))}
 
 
-def flatten(a: list[str | int | list[str] | list[int]]):
+def flatten(a: list[str | int | list[str] | list[int]]) -> Iterator[str | int]:
     """Recursively flatten an arbitrarily nested list of strings and integers.
 
     Args:
@@ -590,7 +591,7 @@ def get_subject_info(
     anomaly_dict: dict,
     vert_subfolders_int: list[int],
     subject_name_int: bool = True,
-):
+) -> SubjectInfo:
     """Build a :class:`SubjectInfo` from a subject's raw vertebra labels and any anomaly overrides.
 
     Applies anomaly handling (label deletion, removal flags, T11/T13 remapping and explicit label overrides), derives the actual

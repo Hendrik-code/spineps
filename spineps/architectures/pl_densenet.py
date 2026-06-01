@@ -30,7 +30,7 @@ from TypeSaveArgParse import Class_to_ArgParse
 def resnet2(
     layers: list[int] | None = None,
     **kwargs,
-):
+) -> ResNet:
     """Build a very small 2-stage MONAI ResNet variant ("resnet2").
 
     Args:
@@ -62,7 +62,7 @@ class MODEL(Enum):
         self,
         opt: ARGS_MODEL,
         remove_classification_head: bool = True,
-    ):
+    ) -> tuple[nn.Module, int]:
         """Instantiate the selected backbone network.
 
         Args:
@@ -168,7 +168,7 @@ class PLClassifier(pl.LightningModule):
         self.mse = nn.MSELoss(reduction="none")
         self.l2_reg_w = opt.l2_regularization_w
 
-    def forward(self, x):
+    def forward(self, x) -> dict[str, torch.Tensor]:
         """Extract features with the backbone and apply every classification head.
 
         Args:
@@ -180,7 +180,7 @@ class PLClassifier(pl.LightningModule):
         features = self.net(x)
         return {k: v(features) for k, v in self.classification_heads.items()}
 
-    def build_classification_heads(self, linear_in: int, convolution_first: bool, fully_connected: bool):
+    def build_classification_heads(self, linear_in: int, convolution_first: bool, fully_connected: bool) -> nn.ModuleDict:
         """Build one classification head per target group as a :class:`~torch.nn.ModuleDict`.
 
         Args:
@@ -229,12 +229,12 @@ class PLClassifier(pl.LightningModule):
 
 
 def get_densenet_architecture(
-    model,
+    model: object,
     in_channel: int = 1,
     out_channel: int = 1,
     pretrained: bool = True,
     remove_classification_head: bool = True,
-):
+) -> tuple[nn.Module, int]:
     """Instantiate a 3D MONAI DenseNet and optionally remove its final classification layer.
 
     Args:
@@ -260,9 +260,9 @@ def get_densenet_architecture(
 
 
 def get_resnet_architecture(
-    model,
+    model: object,
     remove_classification_head: bool = True,
-):
+) -> tuple[nn.Module, int]:
     """Instantiate a 3D MONAI ResNet and optionally remove its fully connected head.
 
     Args:

@@ -10,7 +10,7 @@ from typing_extensions import Self
 class MetaEnum(EnumMeta):
     """Enum metaclass enabling ``item in EnumClass`` membership tests by member name."""
 
-    def __contains__(cls, item):
+    def __contains__(cls, item: object) -> bool:
         """Return whether ``item`` names a member of the enum.
 
         Args:

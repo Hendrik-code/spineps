@@ -195,7 +195,7 @@ class VertLabelingClassifier(Segmentation_Model):
         # find checkpoint yourself, then load from checkpoitn path
 
     @classmethod
-    def from_checkpoint_path(cls, checkpoint_path: str | Path):
+    def from_checkpoint_path(cls, checkpoint_path: str | Path) -> VertLabelingClassifier:
         """Constructs a classifier from a checkpoint file path.
 
         Resolves the model folder as the grandparent of the checkpoint file and instantiates the classifier from it.
@@ -219,7 +219,7 @@ class VertLabelingClassifier(Segmentation_Model):
         logger.print("Model loaded from", checkpoint_path, verbose=True)
         return d
 
-    def run_all_position_instances(self, img: NII, com_list: list[tuple[int, int, int]]):
+    def run_all_position_instances(self, img: NII, com_list: list[tuple[int, int, int]]) -> dict[int, dict[str, np.ndarray]]:
         """Runs the classifier on patches cropped around a list of center-of-mass positions.
 
         Args:
@@ -275,7 +275,9 @@ class VertLabelingClassifier(Segmentation_Model):
             predictions[v] = {"soft": logits_soft, "pred": pred_cls}
         return predictions
 
-    def run_given_seg_pos(self, img: NII, seg: NII, vert_label: int | None = None, angle: float | None = None):
+    def run_given_seg_pos(
+        self, img: NII, seg: NII, vert_label: int | None = None, angle: float | None = None
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         """Runs the classifier on the patch centered on a single vertebra defined by a segmentation.
 
         Selects the given vertebra label (or binarizes the mask if multiple labels are present), computes the center of its
@@ -302,7 +304,9 @@ class VertLabelingClassifier(Segmentation_Model):
             center_of_crop.append(crop[i].start + (size_t // 2))
         return self.run_given_center_pos(img, seg, center_of_crop, angle=angle)  # type: ignore
 
-    def run_given_center_pos(self, img: NII, seg: NII, center_pos: tuple[int, int, int], angle: float | None = None):
+    def run_given_center_pos(
+        self, img: NII, seg: NII, center_pos: tuple[int, int, int], angle: float | None = None
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         """Crops image and segmentation patches around a center point, optionally rotates them, and runs the classifier.
 
         Cuts out a patch larger than the final size (with extra padding for rotation), reorients to (I, P, L), optionally

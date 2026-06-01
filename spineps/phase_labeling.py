@@ -49,7 +49,7 @@ def perform_labeling_step(
     subreg_nii: NII | None = None,
     proc_lab_force_no_tl_anomaly: bool = False,
     disable_c1: bool = True,
-):
+) -> NII:
     """Assign anatomical vertebra labels to a vertebra instance mask using the labeling classifier.
 
     Runs the labeling classifier on each vertebra instance, derives a globally consistent label sequence, and relabels the
@@ -108,7 +108,7 @@ def run_model_for_vert_labeling(
     verbose: bool = False,
     proc_lab_force_no_tl_anomaly: bool = False,
     disable_c1: bool = True,
-):
+) -> tuple[dict[int, int], float, list[int], list[int], list, list, dict]:
     """Run the labeling classifier over a whole image/instance pair and resolve a vertebra label sequence.
 
     Reorients, crops around the vertebrae, rescales to the model's recommended zoom, runs the classifier on every vertebra
@@ -172,7 +172,7 @@ def run_model_for_vert_labeling_cutouts(
     boost_c2: float = 3.0,
     allow_cervical_skip: bool = True,
     verbose: bool = True,
-):
+) -> tuple[dict[int, int], float, list[int], list[int], list, list, dict]:
     """Run the labeling classifier on precomputed per-instance image cutouts and resolve a vertebra label sequence.
 
     Like :func:`run_model_for_vert_labeling`, but skips reorienting/cropping/rescaling and instead consumes already-prepared
@@ -221,7 +221,7 @@ def run_model_for_vert_labeling_cutouts(
     return labelmap, fcost, fpath, fpath_post, costlist, min_costs_path, predictions
 
 
-def region_to_vert(region_softmax_values: np.ndarray):  # shape(1,3)
+def region_to_vert(region_softmax_values: np.ndarray) -> np.ndarray:  # shape(1,3)
     """Broadcast a 3-region (cervical, thoracic, lumbar) softmax into a per-vertebra-class vector.
 
     Args:
@@ -242,7 +242,7 @@ def prepare_vert(
     gaussian_sigma: float = 0.85,
     gaussian_radius: int = 2,
     gaussian_regionwise: bool = True,
-):
+) -> np.ndarray:
     """Smooth and normalize a per-vertebra-class softmax vector.
 
     Optionally applies a 1-D Gaussian filter (either per spinal region or across all classes) and then normalizes to sum to 1.
@@ -273,7 +273,7 @@ def prepare_vertgrp(
     gaussian_sigma: float = 0.85,
     gaussian_radius: int = 2,
     gaussian_regionwise: bool = True,
-):
+) -> np.ndarray:
     """Expand a vertebra-group softmax to per-vertebra classes, then smooth and normalize it.
 
     Distributes each vertebra-group probability onto its member vertebra classes (via ``vert_group_idx_to_exact_idx_dict``),
@@ -302,7 +302,7 @@ def prepare_vertgrp(
     return softmax_values
 
 
-def prepare_visible(predictions: dict, visible_w: float = 1.0, gaussian_sigma: float = 0.8, gaussian_radius: int = 2):
+def prepare_visible(predictions: dict, visible_w: float = 1.0, gaussian_sigma: float = 0.8, gaussian_radius: int = 2) -> np.ndarray:
     """Build a per-instance confidence-weighting chain from the classifier's "fully visible" head.
 
     For each instance, reads the probability of being fully visible (if the ``FULLYVISIBLE`` head is present, else assumes 1),
@@ -336,7 +336,7 @@ def prepare_visible(predictions: dict, visible_w: float = 1.0, gaussian_sigma: f
     return visible_chain
 
 
-def prepare_region(region_softmax_values: np.ndarray, gaussian_sigma: float = 0.75, gaussian_radius: int = 1):
+def prepare_region(region_softmax_values: np.ndarray, gaussian_sigma: float = 0.75, gaussian_radius: int = 1) -> np.ndarray:
     """Broadcast a region softmax to per-vertebra classes, then smooth and normalize it.
 
     Args:
@@ -354,7 +354,7 @@ def prepare_region(region_softmax_values: np.ndarray, gaussian_sigma: float = 0.
     return softmax_values
 
 
-def prepare_vertrel_columns(vertrel_matrix: np.ndarray, gaussian_sigma: float = 0.75, gaussian_radius: int = 1):
+def prepare_vertrel_columns(vertrel_matrix: np.ndarray, gaussian_sigma: float = 0.75, gaussian_radius: int = 1) -> np.ndarray:
     """Smooth and column-normalize the relative-position (VertRel) cost matrix.
 
     For each VertRel label (column, skipping the first), optionally Gaussian-smooths the values along the instance axis and
@@ -380,7 +380,7 @@ def prepare_vertrel_columns(vertrel_matrix: np.ndarray, gaussian_sigma: float = 
     return vertrel_matrix
 
 
-def prepare_vertt13_columns(vertt13_matrix: np.ndarray):
+def prepare_vertt13_columns(vertt13_matrix: np.ndarray) -> np.ndarray:
     """Column-normalize the T13-anomaly (VertT13) cost matrix.
 
     Normalizes each VertT13 label (column, skipping the first) so it sums to 1 along the instance axis.
@@ -397,7 +397,7 @@ def prepare_vertt13_columns(vertt13_matrix: np.ndarray):
     return vertt13_matrix
 
 
-def prepare_vertrel(vertrel_softmax_values: np.ndarray, gaussian_sigma: float = 0.75, gaussian_radius: int = 1):
+def prepare_vertrel(vertrel_softmax_values: np.ndarray, gaussian_sigma: float = 0.75, gaussian_radius: int = 1) -> np.ndarray:
     """Optionally Gaussian-smooth a relative-position (VertRel) softmax vector.
 
     Args:
@@ -446,7 +446,7 @@ def find_vert_path_from_predictions(
     proc_lab_force_no_tl_anomaly: bool = False,
     #
     verbose: bool = False,
-):
+) -> tuple[float, list[int], list[int], list, list, dict]:
     """Combine the classifier's prediction heads into a cost matrix and solve for the most probable vertebra label sequence.
 
     Builds a per-instance / per-class cost matrix by weighting and summing the available prediction heads (VERT, VERTGRP,

@@ -272,7 +272,7 @@ class Segmentation_Model(ABC):
             dict[OutputType, NII | None]: Mapping of output type to result NII produced by the model.
         """
 
-    def print(self, *text, verbose: bool | None = None):
+    def print(self, *text: object, verbose: bool | None = None):
         """Logs text via the model's logger.
 
         Args:
@@ -288,7 +288,7 @@ class Segmentation_Model(ABC):
         self.print(self.modelid(include_log_name=False), verbose=True)
         self.print("Config:", self.inference_config, verbose=True)
 
-    def modelid(self, include_log_name: bool = False):
+    def modelid(self, include_log_name: bool = False) -> str:
         """Returns an identifier string for this model.
 
         Args:
@@ -304,7 +304,7 @@ class Segmentation_Model(ABC):
             return name
         return self.inference_config.log_name
 
-    def dict_representation(self):
+    def dict_representation(self) -> dict[str, str]:
         """Builds a summary dictionary describing this model.
 
         Returns:
@@ -322,7 +322,7 @@ class Segmentation_Model(ABC):
         #    info["resolution_processed"] = str(proc_zms)
         return info
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Returns the model id together with its inference config representation.
 
         Returns:

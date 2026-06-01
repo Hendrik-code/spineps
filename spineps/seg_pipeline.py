@@ -48,7 +48,7 @@ def predict_centroids_from_both(
     seg_nii: NII,
     models: list[Segmentation_Model | None],
     parameter: dict[str, Any],
-):
+) -> poi.POI:
     """Calculate the centroids of each vertebra corpus using both the semantic and instance masks.
 
     Strips the IVD and endplate derived instance labels from the instance mask, computes the per-vertebra centroids from the
@@ -90,7 +90,7 @@ def predict_centroids_from_both(
     return ctd
 
 
-def pipeline_version():
+def pipeline_version() -> str:
     """Return the pipeline version string derived from the git commit count on ``main``.
 
     Returns:
@@ -106,7 +106,7 @@ def pipeline_version():
     return "v1." + str(label)
 
 
-def pipeline_revision():
+def pipeline_revision() -> str:
     """Return the current git revision string for the pipeline.
 
     Returns:

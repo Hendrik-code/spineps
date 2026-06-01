@@ -27,7 +27,7 @@ def n4_bias(
     spline_param: int = 100,
     dtype2nii: bool = False,
     norm: int = -1,
-):
+) -> tuple[NII, NII]:
     """Apply N4 bias field correction to a NIfTI image.
 
     Builds a foreground mask by thresholding (and filling its bounding box), runs N4 correction restricted to
@@ -202,7 +202,7 @@ def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbo
     return subreg_cc, subreg_cc_stats
 
 
-def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger) -> NII:
+def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger: Logger_Interface) -> NII:
     """Reassign misattributed posterior vertebra fragments to the correct instance label.
 
     For every vertebra instance that splits into multiple connected components, each extra component consisting

@@ -55,7 +55,7 @@ def check_model_modality_acquisition(
     model: Segmentation_Model,
     mod_pair: Modality_Pair,
     verbose: bool = True,
-):
+) -> bool:
     """Check whether a model supports a given modality/acquisition pair.
 
     Compares the model's supported modalities and acquisition against the requested pair and logs a warning describing any
@@ -99,7 +99,7 @@ def check_model_modality_acquisition(
 ignored_text = " (IGNORED)."
 
 
-def add_ignore_text(logger_texts: list[str]):
+def add_ignore_text(logger_texts: list[str]) -> None:
     """Mark the last accumulated log message as ignored.
 
     Drops the trailing character of the last message (its period) and appends an "(IGNORED)." suffix in place.

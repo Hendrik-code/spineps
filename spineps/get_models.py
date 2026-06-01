@@ -197,7 +197,7 @@ def check_available_models(
     return _modelid2folder_semantic, _modelid2folder_instance, _modelid2folder_labeling
 
 
-def modeltype2class(modeltype: ModelType):
+def modeltype2class(modeltype: ModelType) -> type:
     """Maps a ModelType to the corresponding model class.
 
     Args:

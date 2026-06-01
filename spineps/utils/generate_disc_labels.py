@@ -43,7 +43,7 @@ DISCS_MAP = {
 }
 
 
-def get_parser():
+def get_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser for disc-label generation.
 
     Returns:
@@ -100,7 +100,7 @@ def main():
     print("-" * 80)
 
 
-def default_name_discs(path_in, suffix="_label-discs_dlabel"):
+def default_name_discs(path_in: Path | str, suffix="_label-discs_dlabel") -> Path:
     """Derive the default output path for disc labels by swapping in a disc suffix.
 
     Args:
@@ -119,7 +119,7 @@ def default_name_discs(path_in, suffix="_label-discs_dlabel"):
     return path_out
 
 
-def extract_discs_label(label, mapping):
+def extract_discs_label(label: Image, mapping: dict) -> Image:
     """Derive single-voxel disc labels from a vertebrae segmentation.
 
     Remaps vertebra label values to disc values, locates each disc's posterior tip by shifting a centerline
@@ -195,7 +195,7 @@ def extract_discs_label(label, mapping):
     return label.change_orientation(orig_orientation)
 
 
-def extract_centroids_3d(arr):
+def extract_centroids_3d(arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Extract connected-component centroids and bounding boxes from a 3D array, sorted along the vertical axis.
 
     Args:
@@ -217,7 +217,7 @@ def extract_centroids_3d(arr):
     return centroids_sorted.astype(int), bb_sorted
 
 
-def project_point_on_line(point, line):
+def project_point_on_line(point: np.ndarray, line: np.ndarray) -> tuple[np.ndarray, float]:
     """Project a point onto a polyline by finding the closest line point.
 
     Copied from https://github.com/spinalcordtoolbox/spinalcordtoolbox.
@@ -235,7 +235,7 @@ def project_point_on_line(point, line):
     return line[np.argmin(dist)], np.min(dist)
 
 
-def closest_point_seg_to_line(discs_seg, centerline, bounding_boxes):
+def closest_point_seg_to_line(discs_seg: np.ndarray, centerline: np.ndarray, bounding_boxes: np.ndarray) -> np.ndarray:
     """Find, per disc, the segmented voxel closest to a reference centerline.
 
     Args:

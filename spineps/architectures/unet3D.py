@@ -102,7 +102,13 @@ class Unet3D(nn.Module):
         self.final_conv = nn.Conv3d(dim, self.out_dim, 1)
         self.first_forward = False
 
-    def forward(self, x, time=None, label=None, embedding=None) -> torch.Tensor:  # time  # noqa: ARG002
+    def forward(
+        self,
+        x,
+        time: torch.Tensor | None = None,
+        label: torch.Tensor | None = None,  # noqa: ARG002
+        embedding: torch.Tensor | None = None,  # noqa: ARG002
+    ) -> torch.Tensor:  # time
         """Run the U-Net forward pass on a 5D input volume.
 
         Args:
@@ -199,7 +205,7 @@ class Block3D(nn.Module):
         self.norm = nn.GroupNorm(groups, dim_out)
         self.act = nn.LeakyReLU()
 
-    def forward(self, x, scale_shift=None):
+    def forward(self, x, scale_shift=None) -> torch.Tensor:
         """Apply convolution, normalization, optional scale/shift modulation and activation.
 
         Args:
@@ -240,7 +246,7 @@ class ResnetBlock3D(nn.Module):
         self.block2 = Block3D(dim_out, dim_out, groups=groups)
         self.res_conv = nn.Conv3d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
 
-    def forward(self, x, time_emb=None):
+    def forward(self, x, time_emb=None) -> torch.Tensor:
         """Apply the two conv blocks plus residual connection, optionally modulated by a time embedding.
 
         Args:
@@ -264,7 +270,7 @@ class ResnetBlock3D(nn.Module):
         return h + self.res_conv(x)
 
 
-def default(val, d):
+def default(val: object, d: object) -> object:
     """Return ``val`` if it is not None, otherwise a default value.
 
     Args:

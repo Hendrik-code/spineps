@@ -51,7 +51,7 @@ download_names = {
 }
 
 
-def download_if_missing(key, url, phase: SpinepsPhase):
+def download_if_missing(key: str, url: Union[Path, str], phase: SpinepsPhase) -> Path:
     """Return the local model folder for a model, downloading and extracting its weights if absent.
 
     The target folder name combines the model's download name with the version resolved for its phase (and the
@@ -73,7 +73,7 @@ def download_if_missing(key, url, phase: SpinepsPhase):
     return out_path
 
 
-def download_weights(weights_url, out_path) -> None:
+def download_weights(weights_url: Union[Path, str], out_path: Union[Path, str]) -> None:
     """Download a weights zip archive, extract it into ``out_path`` and remove the archive.
 
     Shows a progress bar during download. If the extracted archive nests its contents in an extra subfolder

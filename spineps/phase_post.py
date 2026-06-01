@@ -367,7 +367,7 @@ def assign_missing_cc(
     return target_arr, reference_arr, deletion_map
 
 
-def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
+def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True) -> tuple[np.ndarray, np.ndarray]:
     """Attach intervertebral-disc and endplate instance labels and split endplates into superior/inferior.
 
     Reorients both masks to PIR, computes each vertebra corpus center of mass along the inferior-superior axis, then assigns
@@ -519,7 +519,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
     return vert_t.set_array_(vert_arr).reorient_(orientation).get_seg_array(), seg_t.reorient_(orientation).get_seg_array()
 
 
-def find_nearest_lower(seq, x):
+def find_nearest_lower(seq, x) -> float:
     """Return the largest element of ``seq`` strictly smaller than ``x``, or the minimum if none exists.
 
     Args:
@@ -535,7 +535,7 @@ def find_nearest_lower(seq, x):
     return max(values_lower)
 
 
-def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0):
+def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0) -> tuple[NII, np.ndarray]:
     """Relabel vertebra instances consecutively from top to bottom by center-of-mass height.
 
     Reorients to PIR, sorts the instances by their center of mass along the inferior-superior axis, and assigns consecutive
@@ -570,7 +570,7 @@ def assign_vertebra_inconsistency(
         Location.Inferior_Articular_Left,
         Location.Inferior_Articular_Right,
     ),
-):
+) -> None:
     """Reassign articular-process components to the vertebra instance they most overlap with.
 
     For each given articular subregion location, finds its connected components in the semantic mask and, for each component,
@@ -629,7 +629,7 @@ def assign_vertebra_inconsistency(
         vert_nii.set_array_(vert_arr)
 
 
-def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII):
+def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII) -> tuple[NII, NII]:
     """Detect and merge a vertebra (typically C2) that was split into two stacked instances.
 
     Builds a height-sorted list of IVD components and vertebra instances. If the two topmost entries are both vertebrae, the
