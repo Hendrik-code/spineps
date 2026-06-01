@@ -1,3 +1,5 @@
+"""Citation reminder utilities that prompt users to cite SPINEPS when the package is used."""
+
 from __future__ import annotations
 
 import atexit
@@ -26,6 +28,7 @@ def citation_reminder(func):
 
 
 def print_citation_reminder():
+    """Print a formatted reminder with the SPINEPS GitHub and ArXiv links asking users to cite the work."""
     console = Console()
     console.rule("Thank you for using [bold]SPINEPS[/bold]")
     console.print(

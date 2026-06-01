@@ -1,3 +1,5 @@
+"""Segmentation post-processing helpers: n4 bias correction, connected-component cleaning and instance fixes."""
+
 from __future__ import annotations
 
 import cc3d
@@ -26,17 +28,23 @@ def n4_bias(
     dtype2nii: bool = False,
     norm: int = -1,
 ):
-    """Applies n4 bias field correction to a nifty
+    """Apply N4 bias field correction to a NIfTI image.
+
+    Builds a foreground mask by thresholding (and filling its bounding box), runs N4 correction restricted to
+    that mask, optionally rescales the result to a target maximum and optionally casts back to the input dtype.
 
     Args:
-        nii (NII): Input nifty
-        threshold (int, optional): Threshold to use for masking, every input value < threshold is used. Defaults to 60.
-        spline_param (int, optional): _description_. Defaults to 200.
-        dtype2nii (bool, optional): _description_. Defaults to False.
-        norm (int, optional): _description_. Defaults to -1.
+        nii (NII): Input image to correct.
+        threshold (int, optional): Intensity threshold for the foreground mask; voxels below it are excluded.
+            Defaults to 60.
+        spline_param (int, optional): Spline distance parameter passed to the N4 correction. Defaults to 100.
+        dtype2nii (bool, optional): If True, cast the corrected image back to the input image's dtype. Defaults
+            to False.
+        norm (int, optional): If not -1, rescale the corrected image so its maximum equals this value. Defaults
+            to -1.
 
     Returns:
-        _type_: _description_
+        tuple[NII, NII]: The bias-corrected image and the binary foreground mask used for correction.
     """
     from ants.utils.convert_nibabel import from_nibabel  # they keep renaming that thing. (version 0.4.2)
 
@@ -66,20 +74,31 @@ def clean_cc_artifacts(
     only_delete: bool = False,
     ignore_missing_labels: bool = False,
 ) -> np.ndarray:
-    """Cleans artifacts based on connected components analysis
+    """Clean small connected-component artifacts in a segmentation mask.
+
+    For each requested label, finds connected components below the size threshold and either deletes them or, if
+    they border enough other foreground voxels, relabels them by majority vote of their dilated neighborhood.
 
     Args:
-        mask (NII | np.ndarray): input segmentation mask
-        logger (Logger_Interface): logger
-        labels (list[int], optional): labels to analyze in the input. Defaults to [1, 2, 3].
-        cc_size_threshold (int | list[int], optional): threshold on which to clean, can be a number for all labels or a list of values for each different label. Defaults to 100.
-        neighbor_factor_2_delete (float, optional): Percentage of existing neighbor pixels to not just delete the CC. Defaults to 0.1.
-        verbose (bool, optional): _description_. Defaults to True.
-        only_delete (bool, optional): If set, will delete each analyse CC. Defaults to False.
-        ignore_missing_labels (bool, optional): If true, will not crash if some labels are not found. Defaults to False.
+        mask (NII | np.ndarray): Input segmentation mask.
+        logger (Logger_Interface): Logger for progress and cleaning reports.
+        labels (list[int], optional): Labels to analyze. Defaults to [1, 2, 3].
+        cc_size_threshold (int | list[int], optional): Minimum component size in voxels; a single value applies to
+            all labels, or one value per label. Defaults to 100.
+        neighbor_factor_2_delete (float, optional): Fraction of neighboring foreground voxels below which a
+            component is deleted instead of relabeled. Defaults to 0.1.
+        verbose (bool, optional): If True, log per-component details and show a progress bar. Defaults to True.
+        only_delete (bool, optional): If True, delete every analyzed component without majority-vote relabeling.
+            Defaults to False.
+        ignore_missing_labels (bool, optional): If True, skip labels not present instead of asserting. Defaults to
+            False.
 
     Returns:
-        np.ndarray: _description_
+        np.ndarray: The cleaned segmentation array.
+
+    Raises:
+        AssertionError: If requested labels are missing (when ``ignore_missing_labels`` is False) or the length of
+            ``cc_size_threshold`` does not match the number of labels.
     """
     mask_arr = mask.get_seg_array() if isinstance(mask, NII) else mask.copy()
     result_arr = mask_arr.copy()
@@ -163,15 +182,17 @@ def clean_cc_artifacts(
 
 
 def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbose: bool = False) -> tuple[dict, dict]:  # noqa: ARG001
-    """Applies 3d connected components
+    """Compute 3D connected components per label together with their statistics.
 
     Args:
-        mask_image: input mask
-        connectivity: in range [1,3]. For 2D images, 2 and 3 is the same.
-        verbose:
+        mask_image (np.ndarray): Input (multi-label) mask.
+        connectivity (int, optional): Voxel connectivity in range [1, 3]. For 2D images 2 and 3 are equivalent.
+            Defaults to 3.
+        verbose (bool, optional): Currently unused. Defaults to False.
 
     Returns:
-
+        tuple[dict, dict]: A dict mapping each label to its connected-component array, and a dict mapping each
+        label to its ``cc3d`` component statistics.
     """
     subreg_cc = np_connected_components_per_label(
         mask_image,
@@ -182,6 +203,23 @@ def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbo
 
 
 def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger) -> NII:
+    """Reassign misattributed posterior vertebra fragments to the correct instance label.
+
+    For every vertebra instance that splits into multiple connected components, each extra component consisting
+    only of posterior elements (arcus vertebrae and/or spinous process) is relabeled to the single neighboring
+    instance it touches, if any. Operates on copies and restores the original orientation before returning.
+
+    Args:
+        seg_sem (NII): Semantic segmentation (subregion labels) aligned with ``seg_inst``.
+        seg_inst (NII): Vertebra instance segmentation to correct.
+        logger: Logger used to report each relabeling decision.
+
+    Returns:
+        NII: The corrected instance segmentation in the original orientation.
+
+    Raises:
+        AssertionError: If ``seg_sem`` and ``seg_inst`` do not share the same affine.
+    """
     seg_sem = seg_sem.copy()
     seg_inst = seg_inst.copy()
     orientation = seg_sem.orientation

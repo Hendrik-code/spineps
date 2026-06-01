@@ -1,3 +1,5 @@
+"""Post-processing phase: clean and reconcile the semantic and vertebra-instance masks and attach IVD/endplate instance labels."""
+
 from __future__ import annotations
 
 # from utils.predictor import nnUNetPredictor
@@ -69,6 +71,37 @@ def phase_postprocess_combined(
     disable_c1=True,
     sacrum_ids=(v_name2idx["S1"],),
 ) -> tuple[NII, NII]:
+    """Run the combined semantic/instance post-processing pipeline and return cleaned, anatomically labeled masks.
+
+    Crops both masks to the segmentation, optionally fixes superior/inferior articular inconsistencies, reconciles the
+    instance and semantic masks (reassigning or deleting unmatched connected components), splits accidentally merged vertebrae,
+    fixes mislabeled posterior elements, labels instances top-to-bottom, optionally runs the anatomical labeling classifier,
+    forces the sacrum and dens labels, attaches IVD and endplate instance labels (splitting endplates into superior/inferior),
+    and finally un-crops back to the original field of view.
+
+    Args:
+        img_nii (NII): Input MRI image.
+        seg_nii (NII): Subregion semantic segmentation mask.
+        vert_nii (NII): Vertebra instance segmentation mask.
+        model_labeling (VertLabelingClassifier | None): Anatomical labeling classifier; if None, instances keep their
+            top-to-bottom labels.
+        debug_data (dict | None): Optional dict that intermediate results are written into; created if None.
+        labeling_offset (int): Offset added to the top-to-bottom instance labels.
+        proc_lab_force_no_tl_anomaly (bool): If True, disallow T13 transitional-vertebra anomalies during labeling.
+        proc_assign_missing_cc (bool): If True, reassign semantic connected components not covered by the instance mask.
+        proc_assign_missing_cc_fast (bool): If True, use the faster infect-based missing-CC assignment.
+        proc_clean_inst_by_sem (bool): If True, mask the instance mask by the semantic mask before processing.
+        n_vert_bodies (int | None): Number of vertebra bodies; inferred from the instance mask if None.
+        process_merge_vertebra (bool): If True, detect and merge accidentally split adjacent vertebrae.
+        proc_vertebra_inconsistency (bool): If True, reassign inconsistent articular substructures by instance overlap.
+        proc_assign_posterior_instance_label (bool): If True, fix wrongly labeled posterior instance elements.
+        verbose (bool): If True, print verbose progress.
+        disable_c1 (bool): If True (and ``labeling_offset >= 1``), do not predict a C1 label.
+        sacrum_ids (tuple): Semantic label id(s) treated as sacrum and mapped to the S1 instance label.
+
+    Returns:
+        tuple[NII, NII]: The cleaned ``(seg_uncropped, vert_uncropped)`` semantic and vertebra-instance masks.
+    """
     logger.print("Post process", Log_Type.STAGE)
     with logger:
         img_nii.assert_affine(other=seg_nii)
@@ -162,6 +195,27 @@ def mask_cleaning_other(
     proc_assign_missing_cc_fast=False,
     verbose: bool = False,
 ) -> tuple[NII, NII]:
+    """Reconcile the vertebra instance mask with the vertebra portion of the semantic mask.
+
+    Extracts the vertebra subregions from the semantic mask and (optionally) reassigns semantic connected components that the
+    instance mask missed, either via a fast infect pass or via :func:`assign_missing_cc`; deleted components are removed from the
+    semantic mask. Logs a warning when the unmatched vertebra volume between the two masks is anomalously large.
+
+    Args:
+        whole_vert_nii (NII): Vertebra instance segmentation mask.
+        seg_nii (NII): Subregion semantic segmentation mask.
+        n_vert_bodies (int): Number of vertebra bodies, used to scale the unmatched-volume warning.
+        proc_assign_missing_cc (bool): If True, reassign missed semantic components via :func:`assign_missing_cc`.
+        proc_assign_missing_cc_fast (bool): If True, additionally run a fast infect-based assignment first.
+        verbose (bool): If True, print verbose progress.
+
+    Returns:
+        tuple[NII, NII]: The cleaned ``(whole_vert_nii, seg_nii)`` instance and semantic masks.
+
+    Raises:
+        AssertionError: If, with ``proc_assign_missing_cc`` enabled, the instance mask still has more vertebra voxels than the
+            semantic mask (which should be impossible).
+    """
     subreg_vert_nii = seg_nii.extract_label(vertebra_subreg_labels)
 
     if proc_assign_missing_cc_fast:
@@ -212,6 +266,27 @@ def assign_missing_cc(
     verbose_deletion: bool = False,
     proc_assign_missing_dilate_first: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Assign reference-mask connected components that the target mask does not cover to a neighboring target label.
+
+    Finds connected components of ``reference_arr`` (e.g. the vertebra semantic mask) that have no overlap with ``target_arr``
+    (the instance mask). Optionally dilates the target mask once first to absorb thin gaps. Each remaining component is dilated
+    locally and assigned to the most common neighboring target label; components with no labeled neighbor are deleted from the
+    reference mask and recorded in a deletion map.
+
+    Args:
+        target_arr (np.ndarray): Instance label array that components are assigned to.
+        reference_arr (np.ndarray): Reference (semantic) label array whose uncovered components are processed.
+        verbose (bool): If True, log each assignment.
+        verbose_deletion (bool): If True, log each deletion even when ``verbose`` is False.
+        proc_assign_missing_dilate_first (bool): If True, dilate the target mask once before searching for uncovered components.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray]: ``(target_arr, reference_arr, deletion_map)`` with the updated instance and
+            reference arrays and a binary map of voxels removed from the reference mask.
+
+    Raises:
+        AssertionError: If ``target_arr`` and ``reference_arr`` do not share the same shape.
+    """
     assert target_arr.shape == reference_arr.shape
 
     deletion_map = np.zeros_like(reference_arr, dtype=np.uint8)
@@ -293,6 +368,23 @@ def assign_missing_cc(
 
 
 def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
+    """Attach intervertebral-disc and endplate instance labels and split endplates into superior/inferior.
+
+    Reorients both masks to PIR, computes each vertebra corpus center of mass along the inferior-superior axis, then assigns
+    every IVD and endplate connected component to the nearest lower vertebra. IVD voxels are written into the instance array
+    with ``IVD_LABEL_OFFSET`` added; endplate voxels with ``ENDPLATE_LABEL_OFFSET`` added. Endplates are further divided into
+    inferior/superior plates by iteratively dilating each vertebra into the endplate region. Logs the number of assigned
+    components and restores the original orientation before returning.
+
+    Args:
+        whole_vert_nii (NII): Vertebra instance segmentation mask.
+        seg_nii (NII): Subregion semantic segmentation mask (must contain disc/endplate/corpus labels).
+        verbose (bool): If True, print endplate-detection progress.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: ``(vert_arr, seg_arr)`` arrays in the original orientation: the instance array with IVD
+            and endplate instance labels added, and the semantic array with endplates split into superior/inferior plates.
+    """
     # PIR
     orientation = whole_vert_nii.orientation
     vert_t = whole_vert_nii.reorient()
@@ -428,6 +520,15 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
 
 
 def find_nearest_lower(seq, x):
+    """Return the largest element of ``seq`` strictly smaller than ``x``, or the minimum if none exists.
+
+    Args:
+        seq (Sequence[float]): Values to search.
+        x (float): Reference value.
+
+    Returns:
+        float: The greatest element below ``x``, or ``min(seq)`` when no element is below ``x``.
+    """
     values_lower = [item for item in seq if item < x]
     if len(values_lower) == 0:
         return min(seq)
@@ -435,6 +536,18 @@ def find_nearest_lower(seq, x):
 
 
 def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0):
+    """Relabel vertebra instances consecutively from top to bottom by center-of-mass height.
+
+    Reorients to PIR, sorts the instances by their center of mass along the inferior-superior axis, and assigns consecutive
+    labels (``1 + labeling_offset`` upward) from top to bottom, then restores the original orientation.
+
+    Args:
+        vert_nii (NII): Vertebra instance segmentation mask (modified in place).
+        labeling_offset (int): Offset added to the consecutive labels.
+
+    Returns:
+        tuple[NII, np.ndarray]: The relabeled instance mask and its array of unique labels.
+    """
     ori = vert_nii.orientation
     vert_nii.reorient_()
     vert_arr = vert_nii.get_seg_array()
@@ -458,6 +571,20 @@ def assign_vertebra_inconsistency(
         Location.Inferior_Articular_Right,
     ),
 ):
+    """Reassign articular-process components to the vertebra instance they most overlap with.
+
+    For each given articular subregion location, finds its connected components in the semantic mask and, for each component,
+    reassigns its instance label to the vertebra whose overlap volume dominates the second-largest by ``ARTICULAR_DOMINANCE_RATIO``.
+    Updates ``vert_nii`` in place.
+
+    Args:
+        vert_nii (NII): Vertebra instance segmentation mask (modified in place).
+        seg_nii (NII): Subregion semantic segmentation mask.
+        locations (tuple[Location, ...]): Articular subregion locations to reconcile.
+
+    Returns:
+        None: ``vert_nii`` is modified in place.
+    """
     seg_nii.assert_affine(shape=vert_nii.shape)
     seg_arr = seg_nii.get_seg_array()
     vert_arr = vert_nii.get_seg_array()
@@ -503,6 +630,19 @@ def assign_vertebra_inconsistency(
 
 
 def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII):
+    """Detect and merge a vertebra (typically C2) that was split into two stacked instances.
+
+    Builds a height-sorted list of IVD components and vertebra instances. If the two topmost entries are both vertebrae, the
+    upper one is significantly smaller (below ``MERGED_VERTEBRA_SIZE_RATIO`` of the other), and the two masks touch in more than
+    ``MERGED_VERTEBRA_MIN_CONTACT_VOXELS`` voxels, the smaller instance is merged into the larger one in ``vert_nii``.
+
+    Args:
+        seg_nii (NII): Subregion semantic segmentation mask.
+        vert_nii (NII): Vertebra instance segmentation mask (modified in place when a merge occurs).
+
+    Returns:
+        tuple[NII, NII]: The ``(seg_nii, vert_nii)`` masks (``vert_nii`` possibly with two instances merged).
+    """
     seg_sem = seg_nii.map_labels({Location.Endplate.value: Location.Vertebra_Disc.value}, verbose=False)
     # get all ivd CCs from seg_sem
 

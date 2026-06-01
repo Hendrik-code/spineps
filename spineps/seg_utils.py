@@ -1,3 +1,5 @@
+"""Utilities for matching segmentation models to inputs by modality, acquisition, and resolution compatibility."""
+
 from __future__ import annotations
 
 # from utils.predictor import nnUNetPredictor
@@ -17,6 +19,20 @@ def find_best_matching_model(
     modality_pair: Modality_Pair,
     expected_resolution: ZOOMS | None,  # actual resolution here?
 ) -> Segmentation_Model:
+    """Select the segmentation model best matching a modality/acquisition pair and resolution.
+
+    Not yet implemented: intended to iterate over model configs and pick the one best matching the requested resolution.
+
+    Args:
+        modality_pair (Modality_Pair): The desired ``(modality(ies), acquisition)`` pair.
+        expected_resolution (ZOOMS | None): The desired voxel resolution, or None.
+
+    Returns:
+        Segmentation_Model: The best-matching model (once implemented).
+
+    Raises:
+        NotImplementedError: Always, as this function is not yet implemented; also for an unmapped modality pair.
+    """
     raise NotImplementedError("find_best_matching_model()")
     logger.print(expected_resolution)
     # TODO replace with automatic going through model configs to find best matching the resolution
@@ -40,15 +56,18 @@ def check_model_modality_acquisition(
     mod_pair: Modality_Pair,
     verbose: bool = True,
 ):
-    """Checks if a model is compatible with a specified Modality_Pair
+    """Check whether a model supports a given modality/acquisition pair.
+
+    Compares the model's supported modalities and acquisition against the requested pair and logs a warning describing any
+    mismatch when ``verbose`` is True.
 
     Args:
-        model (Segmentation_Model): _description_
-        mod_pair (Modality_Pair): _description_
-        verbose (bool, optional): _description_. Defaults to True.
+        model (Segmentation_Model): The model to check.
+        mod_pair (Modality_Pair): The required ``(modality(ies), acquisition)`` pair.
+        verbose (bool): If True, log a warning when incompatible.
 
     Returns:
-        _type_: _description_
+        bool: True if the model supports all required modalities and the acquisition, otherwise False.
     """
     compatible = True
 
@@ -81,6 +100,16 @@ ignored_text = " (IGNORED)."
 
 
 def add_ignore_text(logger_texts: list[str]):
+    """Mark the last accumulated log message as ignored.
+
+    Drops the trailing character of the last message (its period) and appends an "(IGNORED)." suffix in place.
+
+    Args:
+        logger_texts (list[str]): Accumulated log messages; the last entry is modified in place.
+
+    Returns:
+        None: ``logger_texts`` is modified in place.
+    """
     logger_texts[-1] = logger_texts[-1][:-1]
     logger_texts[-1] += ignored_text
 
@@ -93,17 +122,22 @@ def check_input_model_compatibility(
     ignore_labelkey: bool = False,
     verbose: bool = True,
 ) -> bool:
-    """Checks if a model is compatible with a specified input
+    """Check whether an input image file is compatible with a model's expected modality, acquisition, and naming.
+
+    Validates the input's format/modality, acquisition plane, and BIDS keys against what the model expects. Individual mismatches
+    can be tolerated via the ``ignore_*`` flags (annotated as "(IGNORED)" in the log). Debug files are always rejected, and the
+    image plane must be isotropic or one of the model's allowed acquisitions. Warnings are logged when ``verbose`` is True.
 
     Args:
-        img_ref (BIDS_FILE): _description_
-        model (Segmentation_Model): _description_
-        ignore_modality (bool, optional): _description_. Defaults to False.
-        ignore_acquisition (bool, optional): _description_. Defaults to False.
-        verbose (bool, optional): _description_. Defaults to True.
+        img_ref (BIDS_FILE): Reference to the input image file.
+        model (Segmentation_Model): The model to check against.
+        ignore_modality (bool): If True, tolerate a modality/format mismatch.
+        ignore_acquisition (bool): If True, tolerate an acquisition mismatch.
+        ignore_labelkey (bool): If True, tolerate an unexpected ``label`` key in the filename.
+        verbose (bool): If True, log warnings describing incompatibilities.
 
     Returns:
-        bool: _description_
+        bool: True if the input is compatible with the model (after applying the ignore flags), otherwise False.
     """
     model_modalities = model.modalities()
     model_acquisition = model.acquisition()

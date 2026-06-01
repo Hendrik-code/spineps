@@ -1,3 +1,5 @@
+"""Segmentation-pipeline helpers: shared logger, subregion label sets, centroid computation, and pipeline version reporting."""
+
 from __future__ import annotations
 
 # from utils.predictor import nnUNetPredictor
@@ -47,16 +49,20 @@ def predict_centroids_from_both(
     models: list[Segmentation_Model | None],
     parameter: dict[str, Any],
 ):
-    """Calculates the centroids of each vertebra corpus by using both semantic and instance mask
+    """Calculate the centroids of each vertebra corpus using both the semantic and instance masks.
+
+    Strips the IVD and endplate derived instance labels from the instance mask, computes the per-vertebra centroids from the
+    instance and semantic masks, adds an S1 corpus centroid when sacrum is present, and records pipeline metadata (model
+    descriptions, version, revision, timestamp, and the given parameters) on the result.
 
     Args:
-        vert_nii_cleaned (NII): _description_
-        seg_nii (NII): _description_
-        models (list[Segmentation_Model]): _description_
-        input_zms_pir (ZOOMS | None, optional): _description_. Defaults to None.
+        vert_nii_cleaned (NII): Cleaned vertebra instance segmentation mask.
+        seg_nii (NII): Subregion semantic segmentation mask.
+        models (list[Segmentation_Model | None]): Models used in the pipeline, recorded in the centroid metadata.
+        parameter (dict[str, Any]): Pipeline parameters to record on the centroid metadata.
 
     Returns:
-        _type_: _description_
+        POI: The computed point-of-interest / centroid object with pipeline metadata attached.
     """
     vert_nii_4_centroids = vert_nii_cleaned.copy()
     labelmap = dict.fromkeys([*IVD_LABEL_RANGE, *ENDPLATE_LABEL_RANGE], 0)
@@ -85,6 +91,11 @@ def predict_centroids_from_both(
 
 
 def pipeline_version():
+    """Return the pipeline version string derived from the git commit count on ``main``.
+
+    Returns:
+        str: A version like ``"v1.<commit-count>"``, or ``"Version not found"`` if git is unavailable.
+    """
     try:
         label = subprocess.check_output(["git", "rev-list", "--count", "main"]).strip()
         label = str(label).replace("'", "")
@@ -96,6 +107,11 @@ def pipeline_version():
 
 
 def pipeline_revision():
+    """Return the current git revision string for the pipeline.
+
+    Returns:
+        str: ``"<git-describe>::<full-commit-hash>"``; either part is empty if the corresponding git call fails.
+    """
     label = ""
     rev = ""
     try:

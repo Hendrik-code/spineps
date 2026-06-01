@@ -1,3 +1,5 @@
+"""Pre-processing phase: crop, N4 bias correction, and intensity normalization of the input MRI before segmentation."""
+
 from __future__ import annotations
 
 import inspect
@@ -20,10 +22,35 @@ VIBE_CROP_MARGIN = 25
 
 
 def _has_logger_arg(func) -> bool:
+    """Check whether a callable accepts a ``logger`` keyword argument.
+
+    Args:
+        func (Callable): The function whose signature is inspected.
+
+    Returns:
+        bool: True if ``logger`` is among the function's parameters, else False.
+    """
     return "logger" in inspect.signature(func).parameters
 
 
 def compute_crop(nii: NII, out_file, dataset_id=100, ddevice: Literal["cpu", "cuda", "mps"] = "cuda", gpu=0, max_folds=None, logger=None):
+    """Run the Vibe whole-body segmentation and compute a crop region around the spine.
+
+    Segments the input with ``run_vibeseg``, keeps only the spine-relevant labels (IVD, vertebra body,
+    vertebra posterior elements, and sacrum), and returns a bounding-box crop expanded by ``VIBE_CROP_MARGIN`` voxels.
+
+    Args:
+        nii (NII): Input MRI image to segment and crop.
+        out_file: Path where the Vibe segmentation output is written.
+        dataset_id (int, optional): Vibe model/dataset identifier passed to ``run_vibeseg``. Defaults to 100.
+        ddevice (Literal["cpu", "cuda", "mps"], optional): Compute device for inference. Defaults to "cuda".
+        gpu (int, optional): GPU index used when running on CUDA. Defaults to 0.
+        max_folds (int | None, optional): Maximum number of model folds to ensemble. Defaults to None (all folds).
+        logger (optional): Logger forwarded to ``run_vibeseg`` when that version supports it. Defaults to None.
+
+    Returns:
+        tuple[slice, slice, slice]: The crop slices around the segmented spine, with a ``VIBE_CROP_MARGIN`` margin.
+    """
     from TPTBox.core.vert_constants import Full_Body_Instance_Vibe
     from TPTBox.segmentation import run_vibeseg
 
@@ -52,6 +79,25 @@ def preprocess_input(
     proc_crop_input: bool = True,
     verbose: bool = False,
 ) -> tuple[NII | None, ErrCode]:
+    """Pre-process an input MRI for segmentation: normalize, crop, N4-correct, and pad.
+
+    Optionally rescales intensities to ``[NORMALIZE_MIN_VALUE, NORMALIZE_MAX_VALUE]``, crops away empty
+    background to speed up computation, applies N4 bias field correction on the crop, re-normalizes,
+    writes the processed crop back into the full image, and finally pads the volume by ``pad_size`` on every side.
+
+    Args:
+        mri_nii (NII): Input grayscale MRI image.
+        debug_data (dict): Dictionary for collecting intermediate results (unused here, reserved for parity).
+        pad_size (int, optional): Number of voxels of edge padding added on each side per axis. Defaults to 4.
+        proc_normalize_input (bool, optional): Whether to rescale intensities into the normalization range. Defaults to True.
+        proc_do_n4_bias_correction (bool, optional): Whether to apply N4 bias field correction. Defaults to True.
+        proc_crop_input (bool, optional): Whether to crop away background before processing. Defaults to True.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
+
+    Returns:
+        tuple[NII | None, ErrCode]: The padded, pre-processed image and ``ErrCode.OK``; or ``(None, ErrCode.EMPTY)``
+        if the input image is empty.
+    """
     logger.print("Prepare input image", Log_Type.STAGE)
     mri_nii = mri_nii.copy()
     with logger:

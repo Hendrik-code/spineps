@@ -1,3 +1,5 @@
+"""SPINEPS: spine MRI segmentation package exposing the model loaders, pipeline phases and run entry points."""
+
 from spineps.entrypoint import entry_point
 from spineps.get_models import get_instance_model, get_labeling_model, get_semantic_model
 from spineps.phase_instance import predict_instance_mask

@@ -44,8 +44,10 @@ DISCS_MAP = {
 
 
 def get_parser():
-    """
-    Parser to generate discs labels
+    """Build the command-line argument parser for disc-label generation.
+
+    Returns:
+        argparse.ArgumentParser: Parser accepting the input vertebrae label path and the optional output path.
     """
     # parse command line arguments
     parser = argparse.ArgumentParser(description="Generate discs labels from spineps' vertebrae segmentation.")
@@ -67,8 +69,10 @@ def get_parser():
 
 
 def main():
-    """
-    Main function to extract discs labels
+    """Run the disc-label generation CLI.
+
+    Parses arguments, loads the SPINEPS vertebrae segmentation, derives single-voxel disc labels from it and
+    writes the result to the chosen (or default) output path.
     """
     # Load parser
     parser = get_parser()
@@ -97,8 +101,14 @@ def main():
 
 
 def default_name_discs(path_in, suffix="_label-discs_dlabel"):
-    """
-    Generate default discs label name
+    """Derive the default output path for disc labels by swapping in a disc suffix.
+
+    Args:
+        path_in: Path to the input vertebrae label file (may include compound extensions like ``.nii.gz``).
+        suffix (str, optional): Suffix inserted before the extension. Defaults to ``"_label-discs_dlabel"``.
+
+    Returns:
+        Path: The default output path with the disc suffix applied.
     """
     # Fetch suffixes
     path_obj = Path(path_in)
@@ -110,8 +120,18 @@ def default_name_discs(path_in, suffix="_label-discs_dlabel"):
 
 
 def extract_discs_label(label, mapping):
-    """
-    Extract discs from mapping
+    """Derive single-voxel disc labels from a vertebrae segmentation.
+
+    Remaps vertebra label values to disc values, locates each disc's posterior tip by shifting a centerline
+    (interpolated through the disc centroids) posteriorly and picking the closest segmented voxel, inserts disc 2
+    between discs 1 and 3 when both are present, and writes one labeled voxel per disc into the image.
+
+    Args:
+        label (Image): Vertebrae segmentation image; its data is replaced in place with the disc labels.
+        mapping (dict): Mapping from vertebra label values to disc label values.
+
+    Returns:
+        Image: The image holding the disc labels, restored to its original orientation.
     """
     # Store input orientation
     orig_orientation = label.orientation
@@ -176,9 +196,14 @@ def extract_discs_label(label, mapping):
 
 
 def extract_centroids_3d(arr):
-    """
-    Extract centroids and bouding boxes from a 3D numpy array
-    :param arr: 3D numpy array
+    """Extract connected-component centroids and bounding boxes from a 3D array, sorted along the vertical axis.
+
+    Args:
+        arr (np.ndarray): 3D label array (assumed RSP orientation, so axis 1 is the superior-inferior axis).
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: Integer centroid coordinates and the matching bounding boxes, both sorted
+        by the vertical (axis-1) coordinate, with the background component removed.
     """
     stats = cc3d.statistics(cc3d.connected_components(arr))
     centroids = stats["centroids"][1:]  # Remove backgroud <0>
@@ -193,14 +218,16 @@ def extract_centroids_3d(arr):
 
 
 def project_point_on_line(point, line):
-    """
-    Project the input point on the referenced line by finding the minimal distance
+    """Project a point onto a polyline by finding the closest line point.
 
-    :param point: coordinates of a point and its value: point = numpy.array([x y z])
-    :param line: list of points coordinates which composes the line
-    :returns: closest coordinate to the referenced point on the line:
-    projected_point = numpy.array([X Y Z])
-    Copied from https://github.com/spinalcordtoolbox/spinalcordtoolbox
+    Copied from https://github.com/spinalcordtoolbox/spinalcordtoolbox.
+
+    Args:
+        point (np.ndarray): Coordinates of the point, ``numpy.array([x, y, z])``.
+        line (np.ndarray): Coordinates of the points composing the line.
+
+    Returns:
+        tuple[np.ndarray, float]: The closest point on the line and the squared distance to it.
     """
     # Calculate distances between the referenced point and the line then keep the closest point
     dist = np.sum((line - point) ** 2, axis=1)
@@ -209,8 +236,15 @@ def project_point_on_line(point, line):
 
 
 def closest_point_seg_to_line(discs_seg, centerline, bounding_boxes):
-    """
-    Find closest point from segmentation to a line
+    """Find, per disc, the segmented voxel closest to a reference centerline.
+
+    Args:
+        discs_seg (np.ndarray): Disc-labeled segmentation array.
+        centerline (np.ndarray): Coordinates of the points composing the reference line.
+        bounding_boxes (np.ndarray): Bounding box (slice tuple) for each disc, used to isolate it.
+
+    Returns:
+        np.ndarray: Array of ``[x, y, z, disc_value]`` rows, one per disc, giving the closest voxel and its label.
     """
     discs_list = []
     for x, y, z in bounding_boxes:

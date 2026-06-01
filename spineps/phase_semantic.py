@@ -1,3 +1,5 @@
+"""Semantic phase: predict and post-process the subregion (semantic) segmentation mask of the spine."""
+
 from __future__ import annotations
 
 # from utils.predictor import nnUNetPredictor
@@ -31,19 +33,27 @@ def predict_semantic_mask(
     proc_clean_small_cc_artifacts: bool = True,
     verbose: bool = False,
 ) -> tuple[NII | None, NII | None, ErrCode]:
-    """Predicts the semantic mask, takes care of rescaling, and back
+    """Predict the semantic (subregion) segmentation mask and run post-processing on it.
+
+    Runs the model on the input MRI (resampling to the model's recommended zoom), then optionally removes
+    structures beyond the spinal-canal height, cleans small connected-component artifacts, restricts the mask
+    to the largest bounding box of connected components, and fills 3D holes.
 
     Args:
-        mri_nii (NII): input mri image (grayscal, must be in range 0 -> ?)
-        model (Segmentation_Model): Model to semantically segment with
-        do_n4 (bool, optional): Wherever to apply n4 bias field correction. Defaults to True.
-        fill_holes (bool, optional): Whether to fill holes in the output mask. Defaults to True.
-        clean_artifacts (bool, optional): Whether to try and clean possible artifacts. Defaults to True.
-        do_crop (bool, optional): Whether to apply cropping in order to speedup computation (min value in scan must be 0!). Defaults to True.
-        verbose (bool, optional): If you want some more infos on whats happening. Defaults to False.
+        mri_nii (NII): Input grayscale MRI image (intensities must start at 0).
+        model (Segmentation_Model): Model used to produce the semantic segmentation.
+        debug_data (dict): Dictionary for collecting intermediate results (e.g. the raw segmentation).
+        proc_fill_3d_holes (bool, optional): Whether to fill 3D holes in the output mask. Defaults to True.
+        proc_clean_beyond_largest_bounding_box (bool, optional): Whether to keep only connected components within
+            the largest bounding box. Defaults to True.
+        proc_remove_inferior_beyond_canal (bool, optional): Whether to remove non-sacrum structures below the
+            spinal-canal height. Defaults to False.
+        proc_clean_small_cc_artifacts (bool, optional): Whether to delete small connected-component artifacts. Defaults to True.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
-        tuple[NII | None, NII | None, NII | None, np.ndarray, ErrCode]: seg_nii, seg_nii_modelres, unc_nii, softmax_logits, ErrCode
+        tuple[NII | None, NII | None, ErrCode]: The post-processed semantic mask, the softmax logits, and an
+        error code (``ErrCode.OK`` on success, ``ErrCode.EMPTY`` if the predicted mask is empty).
     """
     logger.print("Predict Semantic Mask", Log_Type.STAGE)
     with logger:
@@ -116,6 +126,21 @@ def predict_semantic_mask(
 
 
 def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
+    """Remove non-sacrum labels that lie above or below the spinal-canal extent.
+
+    Computes the inferior-axis (I) extent of the spinal canal/cord, expanded by ``CANAL_HEIGHT_MARGIN_MM``,
+    and zeroes out everything outside that range. The sacrum (``SACRUM_LABEL``) is kept regardless of position.
+    If no canal/cord is present, the mask is returned unchanged.
+
+    Args:
+        seg_nii (NII): Semantic segmentation mask in ("P", "I", "R") orientation.
+
+    Returns:
+        NII: The segmentation mask with structures beyond the canal height removed (sacrum preserved).
+
+    Raises:
+        AssertionError: If ``seg_nii`` is not in ("P", "I", "R") orientation.
+    """
     seg_nii.assert_affine(orientation=("P", "I", "R"))
     canal_nii = seg_nii.extract_label([Location.Spinal_Canal.value, Location.Spinal_Cord.value])
     if canal_nii.sum() == 0:
@@ -130,6 +155,20 @@ def remove_nonsacrum_beyond_canal_height(seg_nii: NII):
 
 
 def semantic_bounding_box_clean(seg_nii: NII):
+    """Keep only connected components that fall within the spine's growing bounding box.
+
+    Binarizes the mask and labels its connected components. Starting from the largest component's bounding box
+    (expanded by ``CC_BBOX_MARGIN``), it iteratively merges in any other component whose bounding box overlaps
+    the current region in all three axes (with extra inferior margin to tolerate gaps in the spine). Voxels
+    outside the resulting region, and any non-incorporated components, are removed. Components are dropped if the
+    binary mask has more than ``MAX_EXPECTED_SEMANTIC_CC`` parts (logged as strange).
+
+    Args:
+        seg_nii (NII): Semantic segmentation mask to clean.
+
+    Returns:
+        NII: The cleaned segmentation mask, restored to its original orientation.
+    """
     ori = seg_nii.orientation
     seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
     seg_bin_largest_k_cc_nii: NII = seg_binary.filter_connected_components(
@@ -187,11 +226,14 @@ def semantic_bounding_box_clean(seg_nii: NII):
 
 
 def overlap_slice(slice1: slice, slice2: slice):
-    """checks if two ranges defined by slices overlapping (including border!)
+    """Check whether two ranges defined by slices overlap (borders inclusive).
 
     Args:
-        slice1 (slice): _description_
-        slice2 (slice): _description_
+        slice1 (slice): First range, using its ``start`` and ``stop`` bounds.
+        slice2 (slice): Second range, using its ``start`` and ``stop`` bounds.
+
+    Returns:
+        bool: True if the two ranges overlap or touch at a border, else False.
     """
     slice1s = slice1.start
     slice1e = slice1.stop

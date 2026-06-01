@@ -1,3 +1,5 @@
+"""Segmentation model abstractions: the abstract Segmentation_Model and its nnU-Net and Unet3D subclasses."""
+
 from __future__ import annotations
 
 import os
@@ -28,10 +30,21 @@ LEGACY_LABEL_NORMALIZATION = 9
 
 
 class Segmentation_Model(ABC):
-    """Abstract Segmentation Model class
+    """Abstract base class wrapping a segmentation network together with its inference configuration.
 
-    Args:
-        ABC (_type_): _description_
+    Subclasses implement load() and run() for a concrete backend (e.g. nnU-Net or Unet3D). The class handles input
+    preparation (reorientation, rescaling to the recommended zoom, padding), running the model and mapping the output back
+    into the input space.
+
+    Attributes:
+        name (str): Optional human-readable model name.
+        logger (No_Logger): Logger used for all model output.
+        use_cpu (bool): If true, runs inference on CPU instead of GPU.
+        inference_config (Segmentation_Inference_Config): Configuration describing expected inputs, resolution range and labels.
+        default_verbose (bool): Default verbosity for printing.
+        default_allow_tqdm (bool): Whether a progress bar is shown during segmentation by default.
+        model_folder (str): Path to the model's folder on disk.
+        predictor: The loaded backend predictor, or None until load() is called.
     """
 
     def __init__(
@@ -42,13 +55,18 @@ class Segmentation_Model(ABC):
         default_verbose: bool = False,
         default_allow_tqdm: bool = True,
     ):
-        """Initializes the segmentation model, finding and loading the corresponding inference config for that model
+        """Initializes the segmentation model, finding and loading the corresponding inference config for that model.
 
         Args:
-            model_folder (str | Path): Path to that model's folder
-            inference_config (Segmentation_Inference_Config | None, optional): Path to the inference config (if different from model folder). Defaults to None.
-            default_verbose (bool): If true, will spam a lot more when using. Defaults to True.
-            default_allow_tqdm (bool, optional): If true, will showcase a progress bar while segmenting. Defaults to True.
+            model_folder (str | Path): Path to that model's folder.
+            inference_config (Segmentation_Inference_Config | None, optional): Inference config to use; if None, loads
+                "inference_config.json" from the model folder. Defaults to None.
+            use_cpu (bool, optional): If true, runs inference on CPU instead of GPU. Defaults to False.
+            default_verbose (bool, optional): If true, prints more information when used. Defaults to False.
+            default_allow_tqdm (bool, optional): If true, shows a progress bar while segmenting. Defaults to True.
+
+        Raises:
+            AssertionError: If model_folder does not exist.
         """
         self.name: str = ""
         assert Path(model_folder).exists(), f"model_folder does not exist, got {model_folder}"
@@ -73,21 +91,28 @@ class Segmentation_Model(ABC):
 
     @abstractmethod
     def load(self, folds: tuple[str, ...] | None = None) -> Self:
-        """Loads the weights from disk
+        """Loads the model weights from disk.
+
+        Args:
+            folds (tuple[str, ...] | None, optional): Which folds to load; if None, uses the folds from the inference config.
+                Defaults to None.
 
         Returns:
-            Self: Segmentation_Model, but with loaded weights
+            Self: This model with its predictor loaded.
         """
         return self
 
     def calc_recommended_resampling_zoom(self, input_zoom: ZOOMS) -> ZOOMS:
-        """Calculates the resolution a corresponding input should be resampled to for this model
+        """Calculates the resolution a corresponding input should be resampled to for this model.
+
+        If the inference config defines a (min, max) resolution range, each axis of the input zoom is clamped into that
+        range; otherwise the fixed configured resolution is returned.
 
         Args:
-            input_zoom (ZOOMS): _description_
+            input_zoom (ZOOMS): Voxel spacing (mm) of the input image, per axis.
 
         Returns:
-            ZOOMS: _description_
+            ZOOMS: Recommended voxel spacing (mm) to resample the input to before inference.
         """
         if len(self.inference_config.resolution_range) != 2:
             return self.inference_config.resolution_range
@@ -101,6 +126,15 @@ class Segmentation_Model(ABC):
         return output_zoom
 
     def same_modelzoom_as_model(self, model: Self, input_zoom: ZOOMS) -> bool:
+        """Checks whether another model would resample a given input to the same resolution as this model.
+
+        Args:
+            model (Self): The other segmentation model to compare against.
+            input_zoom (ZOOMS): Voxel spacing (mm) of the input image, per axis.
+
+        Returns:
+            bool: True if both models' recommended resampling zooms agree on every axis within ZOOM_MATCH_TOLERANCE.
+        """
         self_zms = self.calc_recommended_resampling_zoom(input_zoom=input_zoom)
         model_zms = model.calc_recommended_resampling_zoom(input_zoom=self_zms)
         match: bool = bool(np.all([self_zms[i] - model_zms[i] < ZOOM_MATCH_TOLERANCE for i in range(3)]))
@@ -116,17 +150,25 @@ class Segmentation_Model(ABC):
         resample_output_to_input_space: bool = True,
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
-        """Segments a given input with this model
+        """Segments a given input with this model.
+
+        Prepares each expected input (optional padding, reorientation to the model orientation and rescaling to the
+        recommended zoom), runs the model and maps the outputs back into the input space.
 
         Args:
-            input (Image_Reference | dict[InputType, Image_Reference]): input
-            pad_size (int, optional): Padding in each dimension (times two more pixels in each dim). Defaults to 4.
-            step_size (float | None, optional): _description_. Defaults to None.
-            resample_to_recommended (bool, optional): _description_. Defaults to True.
-            verbose (bool, optional): _description_. Defaults to False.
+            input_image (Image_Reference | dict[InputType, Image_Reference]): A single image, or a mapping from InputType to
+                image for multi-input models.
+            pad_size (int, optional): Padding added in each dimension (this many extra voxels on each side per axis), removed
+                again from the output. Defaults to 0.
+            step_size (float | None, optional): Sliding-window tile step size; if None, uses the config default. Defaults to None.
+            resample_to_recommended (bool, optional): If true, rescales each input to the model's recommended zoom. Defaults to True.
+            resample_output_to_input_space (bool, optional): If true, resamples and pads the outputs back to the original input
+                space. Defaults to True.
+            verbose (bool, optional): If true, prints verbose information. Defaults to False.
 
         Returns:
-            dict[OutputType, NII]: _description_
+            dict[OutputType, NII | None]: Mapping of output type to result NII (e.g. the segmentation mask, optionally softmax
+                logits).
         """
         if self.predictor is None:
             self.load()
@@ -203,36 +245,58 @@ class Segmentation_Model(ABC):
         return result
 
     def modalities(self) -> list[Modality]:
-        """Returns the modalities this model supports
+        """Returns the modalities this model supports.
 
         Returns:
-            list[Modality]: _description_
+            list[Modality]: Modalities the model was trained for, as listed in its inference config.
         """
         return self.inference_config.modalities
 
     def acquisition(self) -> Acquisition:
-        """Returns the acquisition this model supports
+        """Returns the acquisition this model supports.
 
         Returns:
-            Acquisition: _description_
+            Acquisition: Acquisition plane/type the model expects, as listed in its inference config.
         """
         return self.inference_config.acquisition
 
     @abstractmethod
     def run(self, input_nii: list[NII], verbose: bool = False) -> dict[OutputType, NII | None]:
-        pass
+        """Runs the backend predictor on the prepared inputs.
+
+        Args:
+            input_nii (list[NII]): Inputs already reoriented and rescaled to the model's expectation, in the configured order.
+            verbose (bool, optional): If true, prints verbose information. Defaults to False.
+
+        Returns:
+            dict[OutputType, NII | None]: Mapping of output type to result NII produced by the model.
+        """
 
     def print(self, *text, verbose: bool | None = None):
+        """Logs text via the model's logger.
+
+        Args:
+            *text: Items to print.
+            verbose (bool | None, optional): Overrides the default verbosity; if None, uses default_verbose. Defaults to None.
+        """
         if verbose is None:
             verbose = self.default_verbose
         self.logger.print(*text, verbose=verbose)
 
     def print_self(self):
-        """Prints own model id"""
+        """Prints the model id and its inference config."""
         self.print(self.modelid(include_log_name=False), verbose=True)
         self.print("Config:", self.inference_config, verbose=True)
 
     def modelid(self, include_log_name: bool = False):
+        """Returns an identifier string for this model.
+
+        Args:
+            include_log_name (bool, optional): If true and a name is set, appends the config log name. Defaults to False.
+
+        Returns:
+            str: The model name, or the inference config's log name if no name is set.
+        """
         name: str = str(self.name)
         if name != "":
             if include_log_name:
@@ -241,6 +305,11 @@ class Segmentation_Model(ABC):
         return self.inference_config.log_name
 
     def dict_representation(self):
+        """Builds a summary dictionary describing this model.
+
+        Returns:
+            dict[str, str]: Model id, model path, modalities, acquisition and resolution range as strings.
+        """
         info = {
             "name": self.modelid(),  # self.inference_config.__repr__()
             "model_path": str(self.model_folder),
@@ -254,13 +323,25 @@ class Segmentation_Model(ABC):
         return info
 
     def __str__(self):
+        """Returns the model id together with its inference config representation.
+
+        Returns:
+            str: Human-readable description of the model.
+        """
         return self.modelid(include_log_name=True) + "\nConfig: " + self.inference_config.__repr__()
 
     def __repr__(self) -> str:
+        """Returns the same representation as __str__.
+
+        Returns:
+            str: Human-readable description of the model.
+        """
         return str(self)
 
 
 class Segmentation_Model_NNunet(Segmentation_Model):
+    """Segmentation_Model backed by an nnU-Net predictor."""
+
     def __init__(
         self,
         model_folder: str | Path,
@@ -269,9 +350,28 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         default_verbose: bool = False,
         default_allow_tqdm: bool = True,
     ):
+        """Initializes an nnU-Net-backed segmentation model.
+
+        Args:
+            model_folder (str | Path): Path to the nnU-Net model folder.
+            inference_config (Segmentation_Inference_Config | None, optional): Inference config; if None, loads it from the
+                model folder. Defaults to None.
+            use_cpu (bool, optional): If true, runs inference on CPU instead of GPU. Defaults to False.
+            default_verbose (bool, optional): If true, prints more information when used. Defaults to False.
+            default_allow_tqdm (bool, optional): If true, shows a progress bar while segmenting. Defaults to True.
+        """
         super().__init__(model_folder, inference_config, use_cpu, default_verbose, default_allow_tqdm)
 
     def load(self, folds: tuple[str, ...] | None = None) -> Self:
+        """Loads the nnU-Net predictor and its ensemble folds from the model folder.
+
+        Args:
+            folds (tuple[str, ...] | None, optional): Folds to load; if None, uses the folds from the inference config.
+                Defaults to None.
+
+        Returns:
+            Self: This model with its nnU-Net predictor loaded.
+        """
         global threads_started  # noqa: PLW0603
         if not os.path.exists(self.model_folder):  # noqa: PTH110
             self.print(f"Model weights not found in {self.model_folder}", Log_Type.FAIL)
@@ -303,6 +403,16 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         input_nii: list[NII],
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
+        """Runs nnU-Net inference on the prepared inputs.
+
+        Args:
+            input_nii (list[NII]): Inputs in the model's expected orientation and resolution, in the configured order.
+            verbose (bool, optional): If true, prints verbose information. Defaults to False.
+
+        Returns:
+            dict[OutputType, NII | None]: The segmentation mask under OutputType.seg and the softmax logits under
+                OutputType.softmax_logits.
+        """
         self.print("Segmenting...")
         seg_nii, softmax_logits = run_inference(input_nii, self.predictor)
         self.print("Segmentation done!")
@@ -311,6 +421,12 @@ class Segmentation_Model_NNunet(Segmentation_Model):
 
 
 class Segmentation_Model_Unet3D(Segmentation_Model):
+    """Segmentation_Model backed by a single-input 3D U-Net (PyTorch Lightning PLNet).
+
+    Used as the instance (vertebra) model: it takes a segmentation mask as input and refines it into the vertebra instance
+    output. Supports both the current multi-channel network and a legacy single-channel network.
+    """
+
     def __init__(
         self,
         model_folder: str | Path,
@@ -319,10 +435,34 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         default_verbose: bool = False,
         default_allow_tqdm: bool = True,
     ):
+        """Initializes a 3D U-Net-backed segmentation model.
+
+        Args:
+            model_folder (str | Path): Path to the model folder containing the checkpoint.
+            inference_config (Segmentation_Inference_Config | None, optional): Inference config; if None, loads it from the
+                model folder. Defaults to None.
+            use_cpu (bool, optional): If true, runs inference on CPU instead of GPU. Defaults to False.
+            default_verbose (bool, optional): If true, prints more information when used. Defaults to False.
+            default_allow_tqdm (bool, optional): If true, shows a progress bar while segmenting. Defaults to True.
+
+        Raises:
+            AssertionError: If the inference config expects more than one input.
+        """
         super().__init__(model_folder, inference_config, use_cpu, default_verbose, default_allow_tqdm)
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
 
     def load(self, folds: tuple[str, ...] | None = None) -> Self:  # noqa: ARG002
+        """Loads the 3D U-Net checkpoint, trying the current then the legacy PLNet implementation.
+
+        Args:
+            folds (tuple[str, ...] | None, optional): Unused; present for interface compatibility. Defaults to None.
+
+        Returns:
+            Self: This model with its 3D U-Net predictor loaded and moved to the selected device.
+
+        Raises:
+            AssertionError: If exactly one checkpoint file is not found in the model folder.
+        """
         assert os.path.exists(self.model_folder)  # noqa: PTH110
 
         chktpath = search_path(self.model_folder, "**/*weights*.ckpt")
@@ -340,6 +480,21 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         return self
 
     def run(self, input_nii: list[NII], verbose: bool = False) -> dict[OutputType, NII | None]:
+        """Runs the 3D U-Net on a single input segmentation mask.
+
+        Converts the input mask to a network tensor (one-hot encoded for the multi-channel network, or intensity-normalized
+        for the legacy single-channel network), runs the forward pass and returns the per-voxel argmax class as a mask.
+
+        Args:
+            input_nii (list[NII]): A single-element list containing the input segmentation mask.
+            verbose (bool, optional): If true, prints verbose information. Defaults to False.
+
+        Returns:
+            dict[OutputType, NII | None]: The predicted segmentation mask under OutputType.seg.
+
+        Raises:
+            AssertionError: If more than one input is provided.
+        """
         assert len(input_nii) == 1, "Unet3D does not support more than one input"
         input_nii_ = input_nii[0]
 

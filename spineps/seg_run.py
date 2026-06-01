@@ -1,3 +1,5 @@
+"""Top-level SPINEPS pipeline orchestration for running spine segmentation over datasets and single niftys."""
+
 from __future__ import annotations
 
 import math
@@ -70,42 +72,61 @@ def process_dataset(
     log_inference_time: bool = True,
     verbose: bool = False,
 ):
-    """Runs the SPINEPS framework over a whole BIDS-conform dataset
+    """Runs the SPINEPS framework over a whole BIDS-conform dataset.
+
+    Iterates over every subject in the BIDS dataset, queries the matching scans for each requested modality pair and runs
+    process_img_nii on each, producing semantic (subregion), vertebra (instance) and centroid outputs plus a snapshot.
 
     Args:
-        dataset_path (Path): Path to the dataset
-        model_instance (Segmentation_Model): Model for the vertebra segmentation
-        model_semantic (list[Segmentation_Model] | Segmentation_Model | None, optional): Models for the subregion segmentation. If none, will attempt to find the correct one. Defaults to None.
+        dataset_path (Path): Path to the BIDS dataset.
+        model_instance (Segmentation_Model): Model for the vertebra (instance) segmentation.
+        model_semantic (list[Segmentation_Model] | Segmentation_Model | None, optional): Models for the subregion (semantic)
+            segmentation, one per modality pair. If None, attempts to find a matching model for each modality. Defaults to None.
+        model_labeling (VertLabelingClassifier | None, optional): Classifier used to label the vertebra instances. Defaults to None.
         rawdata_name (str, optional): Name of the rawdata folder. Defaults to "rawdata".
-        derivative_name (str, optional): Name of the derivatives folder. Defaults to "derivatives_seg".
-        modalities (list[Modality_Pair] | Modality_Pair, optional): List of modalities you want to segment in the dataset. Defaults to [(Modality.T2w, Acquisition.sag)].
-
-        save_debug_data (bool, optional): If true, saves debug data. Increases space usage! Defaults to False.
-        #save_uncertainty_image (bool, optional): If true, saves a uncertainty image for the semantic segmentation. Defaults to False.
-        save_modelres_mask (bool, optional): If true, will additionally save the semantic mask in the resolution of the model. Defaults to False.
-        save_softmax_logits (bool, optional): If true, additionally saves the softmax logits (averaged over folds) as an npz. Defaults to False.
-        save_log_data (bool, optional): If true, will save the log to a file. Defaults to True.
-
-        override_subreg (bool, optional): If true, will redo existing subregion segmentations. Defaults to False.
-        override_vert (bool, optional): If true, will redo existing vertebra segmentations. Defaults to False.
-        override_ctd (bool, optional): If true, will redo existing cetnroid files. Defaults to False.
-
-        snapshot_copy_folder (Path | None | bool, optional): If given a path, will copy all created snapshots in here. Defaults to None.
-        do_crop_semantic (bool, optional): _description_. Defaults to True.
-
-        proc_n4correction (bool, optional): _description_. Defaults to True.
-        proc_fillholes (bool, optional): If true, will use fill holes in postprocessing step. Defaults to True.
-        proc_clean (bool, optional): If true, will use CC cleaning in postprocessing step. Defaults to True.
-        proc_corpus_clean (bool, optional): _description_. Defaults to True.
-        proc_cleanvert (bool, optional): If true, will use CC cleaning in vertebra postprocessing. Defaults to True.
-        proc_assign_missing_cc (bool, optional): _description_. Defaults to True.
-        proc_largest_cc (int, optional): _description_. Defaults to 0.
-
-        ignore_model_compatibility (bool, optional): If true, will ignore initialization compatibility issues. Defaults to False.
-        ignore_inference_compatibility (bool, optional): If true, will ignore compatibility issues between models and individual inputs. Defaults to False.
-        ignore_bids_filter (bool, optional): _description_. Defaults to False.
-        log_inference_time (bool, optional): If true, will log the inference time for each subject. Defaults to True.
-        verbose (bool, optional): If true, will spam your terminal with info. Defaults to False.
+        derivative_name (str, optional): Name of the derivatives output folder. Defaults to "derivatives_seg".
+        modalities (list[Modality_Pair] | Modality_Pair, optional): Modality/acquisition pairs to segment in the dataset.
+            Defaults to [(Modality.T2w, Acquisition.sag)].
+        save_debug_data (bool, optional): If true, saves intermediate debug data. Increases space usage. Defaults to False.
+        save_modelres_mask (bool, optional): If true, additionally saves the semantic mask in the resolution of the model.
+            Defaults to False.
+        save_softmax_logits (bool, optional): If true, additionally saves the softmax logits (averaged over folds) as an npz.
+            Defaults to False.
+        save_log_data (bool, optional): If true, writes the log to a file in the dataset folder. Defaults to True.
+        override_semantic (bool, optional): If true, redoes existing semantic segmentations. Defaults to False.
+        override_instance (bool, optional): If true, redoes existing instance segmentations. Defaults to False.
+        override_postpair (bool, optional): If true, redoes the combined post-processing step. Defaults to False.
+        override_ctd (bool, optional): If true, redoes existing centroid files. Defaults to False.
+        snapshot_copy_folder (Path | None | bool, optional): If a path, copies all created snapshots there; if True, uses a
+            "snaps_seg" subfolder of the dataset; if None/False, no copy is made. Defaults to None.
+        pad_size (int, optional): Padding added in each dimension before inference. Defaults to 4.
+        proc_sem_crop_input (bool, optional): If true, crops the input to the foreground before semantic segmentation. Defaults to True.
+        proc_sem_n4_bias_correction (bool, optional): If true, applies N4 bias field correction before semantic segmentation
+            (MRI only). Defaults to True.
+        proc_sem_remove_inferior_beyond_canal (bool, optional): If true, removes semantic structures inferior to and beyond the
+            spinal canal. Defaults to False.
+        proc_sem_clean_beyond_largest_bounding_box (bool, optional): If true, removes semantic voxels outside the largest
+            bounding box. Defaults to True.
+        proc_sem_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
+            semantic mask. Defaults to True.
+        proc_inst_corpus_clean (bool, optional): If true, cleans the vertebra corpus during instance processing. Defaults to True.
+        proc_inst_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
+            instance mask. Defaults to True.
+        proc_inst_largest_k_cc (int, optional): If greater than 0, keeps only the largest k connected components of the instance
+            mask. Defaults to 0.
+        proc_inst_detect_and_solve_merged_corpi (bool, optional): If true, detects and splits merged vertebra corpi. Defaults to True.
+        proc_lab_force_no_tl_anomaly (bool, optional): If true, forces the labeling to assume no thoracolumbar transition anomaly.
+            Defaults to False.
+        proc_fill_3d_holes (bool, optional): If true, fills 3D holes during post-processing. Defaults to True.
+        proc_assign_missing_cc (bool, optional): If true, assigns unlabeled connected components to the nearest instance. Defaults to True.
+        proc_clean_inst_by_sem (bool, optional): If true, cleans the instance mask using the semantic mask. Defaults to True.
+        proc_vertebra_inconsistency (bool, optional): If true, detects and resolves vertebra labeling inconsistencies. Defaults to True.
+        ignore_model_compatibility (bool, optional): If true, ignores model/modality initialization compatibility issues. Defaults to False.
+        ignore_inference_compatibility (bool, optional): If true, ignores compatibility issues between models and individual inputs.
+            Defaults to False.
+        ignore_bids_filter (bool, optional): If true, disables the BIDS query filters and processes all niftys found. Defaults to False.
+        log_inference_time (bool, optional): If true, logs the inference time of each step. Defaults to True.
+        verbose (bool, optional): If true, prints verbose information. Defaults to False.
     """
     global logger  # noqa: PLW0603
     logger.print(f"Initialize setup for dataset in {dataset_path}", Log_Type.BOLD)
@@ -299,51 +320,74 @@ def process_img_nii(  # noqa: C901
     timing=False,
     verbose: bool = False,
 ) -> tuple[dict[str, Path], ErrCode]:
-    """Runs the SPINEPS framework over one nifty
+    """Runs the SPINEPS framework over one nifty.
+
+    Runs the full pipeline on a single input image: semantic (subregion) segmentation, vertebra (instance) segmentation,
+    combined post-processing/labeling, centroid computation and a snapshot. Existing outputs are reused unless overridden.
 
     Args:
-        img_ref (BIDS_FILE): input BIDS_FILE
-        model_instance (Segmentation_Model): Model for the vertebra segmentation
-        model_semantic (list[Segmentation_Model] | Segmentation_Model | None, optional): Models for the subregion segmentation. If none, will attempt to find the correct one. Defaults to None.
-        rawdata_name (str, optional): Name of the rawdata folder. Defaults to "rawdata".
-        derivative_name (str, optional): Name of the derivatives folder. Defaults to "derivatives_seg".
-        modalities (list[Modality_Pair] | Modality_Pair, optional): List of modalities you want to segment in the dataset. Defaults to [(Modality.T2w, Acquisition.sag)].
-
-        save_debug_data (bool, optional): If true, saves debug data. Increases space usage! Defaults to False.
-        #save_uncertainty_image (bool, optional): If true, saves a uncertainty image for the semantic segmentation. Defaults to False.
-        save_modelres_mask (bool, optional): If true, will additionally save the semantic mask in the resolution of the model. Defaults to False.
-        save_softmax_logits (bool, optional): If true, additionally saves the softmax logits (averaged over folds) as an npz. Defaults to False.
-        save_log_data (bool, optional): If true, will save the log to a file. Defaults to True.
-
-        override_semantic (bool, optional): If true, will redo existing semantic segmentations. Defaults to False.
-        override_instance (bool, optional): If true, will redo existing instance segmentations. Defaults to False.
-        override_ctd (bool, optional): If true, will redo existing cetnroid files. Defaults to False.
-
-        snapshot_copy_folder (Path | None | bool, optional): If given a path, will copy all created snapshots in here. Defaults to None.
-        do_crop_semantic (bool, optional): _description_. Defaults to True.
-
+        img_ref (BIDS_FILE): Input BIDS_FILE referencing the image to segment.
+        model_semantic (Segmentation_Model): Model for the subregion (semantic) segmentation.
+        model_instance (Segmentation_Model): Model for the vertebra (instance) segmentation.
+        model_labeling (VertLabelingClassifier | None, optional): Classifier used to label the vertebra instances. Defaults to None.
+        derivative_name (str, optional): Name of the derivatives output folder. Defaults to "derivatives_seg".
+        save_modelres_mask (bool, optional): If true, additionally saves the semantic mask in the resolution of the model.
+            Defaults to False.
+        save_softmax_logits (bool, optional): If true, additionally saves the softmax logits (averaged over folds) as an npz.
+            Defaults to False.
+        save_debug_data (bool, optional): If true, saves intermediate debug data. Increases space usage. Defaults to False.
+        save_raw (bool, optional): If true, saves the raw (pre-cleanup) semantic and vertebra masks. Defaults to True.
+        override_semantic (bool, optional): If true, redoes an existing semantic segmentation. Defaults to False.
+        override_instance (bool, optional): If true, redoes an existing instance segmentation. Defaults to False.
+        override_postpair (bool, optional): If true, redoes the combined post-processing step. Defaults to False.
+        override_ctd (bool, optional): If true, redoes an existing centroid file. Defaults to False.
+        proc_pad_size (int, optional): Padding added in each dimension before inference. Defaults to 4.
+        proc_normalize_input (bool, optional): If true, normalizes the input intensities (disabled automatically for CT). Defaults to True.
         crop: If provided, segment only within the specified crop.
-        auto_crop_to_spine (bool | "auto"): Speeds up high-resolution models by first predicting the spine with VIBESeg (https://link.springer.com/article/10.1007/s00330-025-12035-9) and cropping to the spine region (works for any MR or CT image).
-        auto_crop_when_max_res_leq: Enables automatic spine cropping when auto_crop_to_spine="auto" and the largest spacing value of the semantic model is less than or equal to this threshold.
+        auto_crop_to_spine (bool | "auto"): Speeds up high-resolution models by first predicting the spine with VIBESeg
+            (https://link.springer.com/article/10.1007/s00330-025-12035-9) and cropping to the spine region (works for any MR or
+            CT image).
+        auto_crop_when_max_res_leq: Enables automatic spine cropping when auto_crop_to_spine="auto" and the largest spacing value
+            of the semantic model is less than or equal to this threshold.
         auto_crop_req_crop_min_dim: When auto_crop_to_spine="auto", compute the crop only if the image size exceeds this value cubed.
-
-        proc_n4correction (bool, optional): _description_. Defaults to True.
-        proc_fillholes (bool, optional): If true, will use fill holes in postprocessing step. Defaults to True.
-        proc_clean (bool, optional): If true, will use CC cleaning in postprocessing step. Defaults to True.
-        proc_corpus_clean (bool, optional): _description_. Defaults to True.
-        proc_cleanvert (bool, optional): If true, will use CC cleaning in vertebra postprocessing. Defaults to True.
-        proc_assign_missing_cc (bool, optional): _description_. Defaults to True.
-        proc_largest_cc (int, optional): _description_. Defaults to 0.
-
-        ignore_model_compatibility (bool, optional): If true, will ignore initialization compatibility issues. Defaults to False.
-        ignore_inference_compatibility (bool, optional): If true, will ignore compatibility issues between models and individual inputs. Defaults to False.
-        ignore_bids_filter (bool, optional): _description_. Defaults to False.
-        log_inference_time (bool, optional): If true, will log the inference time for each subject. Defaults to True.
-        timing: log the timing for each step
-        verbose (bool, optional): If true, will spam your terminal with info. Defaults to False.
+        proc_sem_crop_input (bool, optional): If true, crops the input to the foreground before semantic segmentation. Defaults to True.
+        proc_sem_n4_bias_correction (bool, optional): If true, applies N4 bias field correction before semantic segmentation
+            (MRI only). Defaults to True.
+        proc_sem_remove_inferior_beyond_canal (bool, optional): If true, removes semantic structures inferior to and beyond the
+            spinal canal. Defaults to False.
+        proc_sem_clean_beyond_largest_bounding_box (bool, optional): If true, removes semantic voxels outside the largest
+            bounding box. Defaults to True.
+        proc_sem_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
+            semantic mask. Defaults to True.
+        proc_inst_corpus_clean (bool, optional): If true, cleans the vertebra corpus during instance processing. Defaults to True.
+        proc_inst_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
+            instance mask. Defaults to True.
+        proc_inst_largest_k_cc (int, optional): If greater than 0, keeps only the largest k connected components of the instance
+            mask. Defaults to 0.
+        proc_inst_detect_and_solve_merged_corpi (bool, optional): If true, detects and splits merged vertebra corpi. Defaults to True.
+        vertebra_instance_labeling_offset (int, optional): Offset applied when mapping instance ids to vertebra labels (set to 1
+            for CT models that include C1). Defaults to 2.
+        proc_lab_force_no_tl_anomaly (bool, optional): If true, forces the labeling to assume no thoracolumbar transition anomaly.
+            Defaults to False.
+        proc_fill_3d_holes (bool, optional): If true, fills 3D holes during post-processing. Defaults to True.
+        proc_assign_missing_cc (bool, optional): If true, assigns unlabeled connected components to the nearest instance. Defaults to True.
+        proc_assign_missing_cc_fast (bool, optional): If true, uses the faster variant of the missing-cc assignment. Defaults to False.
+        proc_clean_inst_by_sem (bool, optional): If true, cleans the instance mask using the semantic mask. Defaults to True.
+        proc_vertebra_inconsistency (bool, optional): If true, detects and resolves vertebra labeling inconsistencies. Defaults to True.
+        lambda_semantic (Callable[[NII], NII] | None, optional): Optional function applied to the semantic mask before saving.
+            Defaults to None.
+        snapshot_copy_folder (Path | None, optional): If given, copies the created snapshot there. Defaults to None.
+        ignore_bids_filter (bool, optional): If true, builds output paths in non-strict mode. Defaults to False.
+        ignore_compatibility_issues (bool, optional): If true, continues despite input/model incompatibilities. Defaults to False.
+        log_inference_time (bool, optional): If true, logs the inference time of each step. Defaults to True.
+        return_output_instead_of_save (bool, optional): If true, returns the result NIIs/centroids instead of saving them.
+            Defaults to False.
+        timing (bool, optional): If true, logs the timing of each pipeline step. Defaults to False.
+        verbose (bool, optional): If true, prints verbose information. Defaults to False.
 
     Returns:
-        ErrCode: Error code depicting whether the operation was successful or not
+        tuple[dict[str, Path], ErrCode]: Mapping of output names to their file paths and an error code indicating success.
+            If return_output_instead_of_save is True, instead returns (seg_nii, vert_nii, centroids, ErrCode).
     """
     arguments = locals()
     input_format = img_ref.format
@@ -647,6 +691,22 @@ def output_paths_from_input(
     input_format: str,
     non_strict_mode: bool = False,
 ):
+    """Derives all pipeline output file paths for a given input image.
+
+    Builds the BIDS-conform output paths (semantic/vertebra masks, raw masks, centroids, snapshots, logits, debug and
+    VIBESeg crop) used throughout the pipeline, keyed by a descriptive name.
+
+    Args:
+        img_ref (BIDS_FILE): Input BIDS_FILE the outputs are derived from.
+        derivative_name (str): Name of the derivatives output folder.
+        snapshot_copy_folder (Path | str | None): If given, location to which the snapshot is additionally copied
+            (used to build out_snap2).
+        input_format (str): Format string of the input, used to name the debug and raw output subfolders.
+        non_strict_mode (bool, optional): If true, builds the paths in non-strict BIDS mode. Defaults to False.
+
+    Returns:
+        dict[str, Path]: Mapping of output names (e.g. "out_spine", "out_vert", "out_ctd", "out_snap") to their file paths.
+    """
     out_spine = img_ref.get_changed_path(
         bids_format="msk",
         parent=derivative_name,

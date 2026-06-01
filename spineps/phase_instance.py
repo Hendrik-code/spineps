@@ -1,3 +1,5 @@
+"""Instance phase: turn the subregion semantic mask into per-vertebra instance labels via cutout prediction and merging."""
+
 from __future__ import annotations
 
 # from utils.predictor import nnUNetPredictor
@@ -52,14 +54,28 @@ def predict_instance_mask(
     proc_inst_largest_k_cc: int = 0,
     verbose: bool = False,
 ) -> tuple[NII | None, ErrCode]:
-    """Based on subregion segmentation, feeds individual arcus coms to a network to get the vertebra body segmentations
+    """Build a per-vertebra instance mask from a subregion semantic segmentation.
+
+    Reorients and rescales the input to the model's recommended zoom, crops to the segmentation, derives one
+    cutout per corpus center of mass, runs the instance model on each cutout, merges the overlapping per-vertebra
+    predictions into a single label map, optionally cleans and fills it, then uncrops back to the original space.
 
     Args:
-        seg_nii (NII): _description_
-        cutout_size (tuple[int, int, int], optional): _description_. Defaults to (128, 88, 32).
+        seg_nii (NII): Subregion (semantic) segmentation mask used as input.
+        model (Segmentation_Model): Instance model producing the per-vertebra-body cutout predictions.
+        debug_data (dict): Dictionary for collecting intermediate results across the pipeline.
+        pad_size (int, optional): Edge padding added before processing and removed afterwards. Defaults to 0.
+        proc_inst_fill_3d_holes (bool, optional): Whether to fill 3D holes in the final vertebra mask. Defaults to True.
+        proc_detect_and_solve_merged_corpi (bool, optional): Whether to detect and split merged vertebral bodies. Defaults to True.
+        proc_corpus_clean (bool, optional): Whether to clean small corpus connected-component artifacts. Defaults to True.
+        proc_inst_clean_small_cc_artifacts (bool, optional): Whether to delete small instance artifacts. Defaults to True.
+        proc_inst_largest_k_cc (int, optional): Keep only the largest k connected components per cutout label; 0 disables. Defaults to 0.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
-        tuple[NII | None, ErrCode]: whole_vert_nii, errcode
+        tuple[NII | None, ErrCode]: The vertebra instance mask in the input space and an error code. Returns
+        ``(None, ErrCode.EMPTY)`` if no corpus labels are present, ``(None, ErrCode.UNKNOWN)`` if no predictions
+        are produced, or ``(None, errcode)`` if merging fails.
     """
     logger.print("Predict instance mask", Log_Type.STAGE)
     with logger:
@@ -189,6 +205,26 @@ def get_corpus_coms(
     process_detect_and_solve_merged_corpi: bool = True,
     verbose: bool = False,
 ) -> list | None:
+    """Compute the center of mass of every vertebral corpus, optionally splitting merged bodies.
+
+    Extracts the corpus region (using the dense corpus label when available, otherwise the eroded and cleaned
+    corpus-border label) and returns one center of mass per corpus, sorted from bottom to top (plus the dens
+    when present). When ``process_detect_and_solve_merged_corpi`` is set, it cross-checks the vertebra/IVD
+    height alternation: neighbors at the same height are merged, and a corpus whose volume exceeds the neighbor
+    average by ``MERGED_CORPUS_VOLUME_RATIO`` is split via a separating plane.
+
+    Args:
+        seg_nii (NII): Subregion semantic mask in ("P", "I", "R") orientation.
+        corpus_size_cleaning (int): Voxel threshold for removing small corpus-border artifacts; 0 disables cleaning.
+        process_detect_and_solve_merged_corpi (bool, optional): Whether to detect and split merged corpora. Defaults to True.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
+
+    Returns:
+        list | None: Corpus center-of-mass coordinates ordered from bottom to top, or None if no corpus is found.
+
+    Raises:
+        AssertionError: If ``seg_nii`` is not in ("P", "I", "R") orientation.
+    """
     seg_nii.assert_affine(orientation=("P", "I", "R"))
     dense = False
     # Extract Corpus region and try to find all coms naively (some skips should not matter)
@@ -334,54 +370,27 @@ def get_corpus_coms(
 
 
 def get_separating_components(segvert: np.ndarray, max_iter: int = 10, connectivity: int = 3):
-    """
-    Attempts to split a binary volumetric segmentation into two spatially separate components (S and T)
-    by iterative erosion and connected component analysis.
+    """Split a binary volume into two spatially separate components (S and T) via erosion and dilation.
 
-    This function is designed for cases where an initial segmentation is a single connected component,
-    but the goal is to identify two meaningful subregions. It uses morphological erosion to find a
-    splitting point and then recovers the two regions through dilation.
+    Designed for a segmentation that is a single connected component but should be separated into two
+    meaningful subregions. Morphological erosion is applied until the volume breaks into multiple connected
+    components (the splitting point), then the two regions are recovered through dilation. Useful for
+    anatomical structures that are initially connected (e.g., two merged vertebral bodies).
 
-    Parameters
-    ----------
-    segvert : np.ndarray
-        A 3D binary (or labeled) numpy array representing the segmented volume to split.
-    max_iter : int, optional
-        Maximum number of erosion iterations allowed to find separable components. Default is 10.
-    connectivity : int, optional
-        Connectivity used for morphological operations (e.g., 1=6-connectivity, 2=18, 3=26). Default is 3.
+    Args:
+        segvert (np.ndarray): 3D binary (or labeled) array representing the volume to split.
+        max_iter (int, optional): Maximum number of erosion iterations allowed to find separable components. Defaults to 10.
+        connectivity (int, optional): Connectivity for morphological operations (1=6-, 2=18-, 3=26-connectivity). Defaults to 3.
 
-    Returns
-    -------
-    spart : np.ndarray
-        Binary mask of the first separated component (S).
-    tpart : np.ndarray
-        Binary mask of the second separated component (T).
-    spart_dil : np.ndarray
-        Dilated version of spart until contact with tpart.
-    tpart_dil : np.ndarray
-        Dilated version of tpart until contact with spart.
-    stpart : np.ndarray
-        Combined map of dilated S and T, with values:
-        - 0: background
-        - 1: spart_dil only
-        - 2: tpart_dil only
-        - 3: overlapping region between spart_dil and tpart_dil
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]: A 5-tuple ``(spart, tpart, spart_dil,
+        tpart_dil, stpart)`` where ``spart``/``tpart`` are the two separated binary components, ``spart_dil``/``tpart_dil``
+        are their dilations grown until contact, and ``stpart`` is their combined map (0=background, 1=spart_dil only,
+        2=tpart_dil only, 3=overlap of the two dilations).
 
-    Raises
-    ------
-    Exception
-        If the input volume cannot be split into two parts within the allowed number of iterations,
-        or if resulting parts are empty.
-    IndentationError
-        If the maximum number of iterations is reached without successful separation.
-
-    Notes
-    -----
-    - The function assumes that `np_erode_msk`, `np_dilate_msk`, `np_connected_components`,
-      `np_volume`, `np_filter_connected_components` are available in the environment.
-    - This method is particularly useful for anatomical structures that are initially connected
-      (e.g., left and right organs) but should be separated for downstream analysis.
+    Raises:
+        Exception: If the volume cannot be split into two parts within the iterations, or if a resulting part is empty.
+        IndentationError: If the maximum number of erosion iterations is reached without successful separation.
     """
     check_connectivity = 3
     vol = segvert.copy()
@@ -462,50 +471,28 @@ def get_plane_split(
     spart_dil: np.ndarray,
     tpart_dil: np.ndarray,
 ):
-    """
-    Computes an approximate separating plane between two regions (spart and tpart)
-    based on their dilated overlap and returns it as a NIfTI image.
+    """Compute an approximate separating plane between two regions and return it as an NII.
 
-    This function determines the collision region between the dilated versions
-    of two separated segmentation components. It then estimates a plane orthogonal
-    to the vector between their centers of mass and passing through the point
-    of contact. The resulting binary plane is filled in the axial direction
-    and returned in NIfTI format for visualization or further processing.
+    Determines the collision region between the dilated versions of the two components, takes its center of mass
+    as a point on the plane, and builds a plane orthogonal to the vector between the centers of mass of ``spart``
+    and ``tpart``. The plane is then filled along the superior axis and returned as an NII matching the input
+    orientation. If the dilated masks do not touch, an empty volume is returned and a warning is logged.
 
-    Parameters
-    ----------
-    segvert : np.ndarray
-        Original 3D binary or labeled segmentation volume.
-    compare_nii : NII
-        NIfTI image object used as a reference for orientation and spatial metadata.
-    spart : np.ndarray
-        Binary mask of the first component (S).
-    tpart : np.ndarray
-        Binary mask of the second component (T).
-    spart_dil : np.ndarray
-        Dilated mask of spart.
-    tpart_dil : np.ndarray
-        Dilated mask of tpart.
+    Note:
+        TODO: Improve accuracy by projecting the collision point onto the line connecting both COMs rather than
+        relying on the COM of the overlap region.
 
-    Returns
-    -------
-    plane_filled_nii : NII
-        A NIfTI image containing a filled binary plane separating spart and tpart,
-        reoriented to match the input NIfTI image. If no collision is detected,
-        returns an empty image.
+    Args:
+        segvert (np.ndarray): Original 3D binary or labeled segmentation volume.
+        compare_nii (NII): Reference image providing orientation and spatial metadata for the output.
+        spart (np.ndarray): Binary mask of the first component (S).
+        tpart (np.ndarray): Binary mask of the second component (T).
+        spart_dil (np.ndarray): Dilated mask of ``spart``.
+        tpart_dil (np.ndarray): Dilated mask of ``tpart``.
 
-    Notes
-    -----
-    - The function uses the collision area between the dilated masks to find
-      a center of mass and constructs a plane orthogonal to the vector between
-      the COMs of spart and tpart.
-    - Filling the plane ensures better visualization and compatibility with downstream tasks.
-    - If the dilated masks do not overlap, an empty volume is returned and a warning is logged.
-
-    TODO
-    ----
-    - Improve accuracy by using the line connecting both COMs and projecting the collision
-      point onto this vector, rather than relying on the COM of the overlap region.
+    Returns:
+        NII: A filled binary plane separating ``spart`` and ``tpart``, in the input orientation; an empty image
+        if no collision between the dilated masks is detected.
     """
 
     s_dilint = spart_dil.astype(np.uint8)
@@ -562,6 +549,18 @@ def split_by_plane(
     segvert: np.ndarray,
     plane_filled_nii: NII,
 ):
+    """Split a vertebra volume into two parts using a filled separating plane.
+
+    Masks the filled plane (whose values are 1 on one side of the plane and 2 on the other) to the foreground
+    of ``segvert``, yielding a label map that partitions the vertebra into the two sides.
+
+    Args:
+        segvert (np.ndarray): Binary vertebra volume to split.
+        plane_filled_nii (NII): Filled separating plane (1 above, 2 below) as produced by ``get_plane_split``.
+
+    Returns:
+        np.ndarray: The vertebra voxels labeled 1 (above the plane) and 2 (below the plane); background stays 0.
+    """
     plane_filled_arr = plane_filled_nii.get_array()
     # 1 above, 2 below
     plane_filled_arr[segvert == 0] = 0
@@ -582,6 +581,29 @@ def collect_vertebra_predictions(
     proc_inst_fill_holes: bool = False,
     verbose: bool = False,
 ) -> tuple[np.ndarray | None, list[str], int]:
+    """Run the instance model on a cutout around each corpus center of mass and collect per-label predictions.
+
+    Computes corpus centers of mass, and for each one extracts a ``cutout_size`` window (nudged inferiorly until
+    it lands on segmentation), relabels it to the model's expected labels, runs the model, post-processes the
+    cutout, and stores each predicted label (1/2/3, the three-vertebra hierarchy) as a binary map placed back
+    into the full-volume frame.
+
+    Args:
+        seg_nii (NII): Subregion semantic mask used for the cutouts.
+        model (Segmentation_Model): Instance model producing the three-vertebra-body cutout predictions.
+        corpus_size_cleaning (int): Voxel threshold for cleaning small corpus artifacts when finding coms; 0 disables.
+        cutout_size: Cutout window size (per axis) extracted around each center of mass.
+        debug_data (dict): Dictionary for collecting per-cutout intermediate results.
+        proc_inst_largest_k_cc (int, optional): Keep only the largest k connected components per cutout label; 0 disables. Defaults to 0.
+        process_detect_and_solve_merged_corpi (bool, optional): Whether to detect and split merged corpora. Defaults to True.
+        proc_inst_fill_holes (bool, optional): Whether to fill holes in each cutout prediction. Defaults to False.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
+
+    Returns:
+        tuple[np.ndarray | None, list[str], int]: A hierarchical prediction array of shape
+        ``(n_corpus_coms, 3, *seg_shape)``, a list of ``"comidx_label"`` identifiers for the predictions actually
+        produced, and the number of corpus centers of mass. Returns ``(None, [], 0)`` if no corpus is found.
+    """
     corpus_coms = get_corpus_coms(
         seg_nii,
         corpus_size_cleaning=corpus_size_cleaning,
@@ -690,6 +712,17 @@ def post_process_single_3vert_prediction(
     largest_cc: int = 0,
     fill_holes: bool = False,
 ):
+    """Post-process a single three-vertebra cutout prediction by filtering components and filling holes.
+
+    Args:
+        vert_nii (NII): The cutout prediction mask to clean.
+        labels (list[int] | None, optional): Labels to restrict the connected-component filter to. Defaults to None (all labels).
+        largest_cc (int, optional): Keep only the largest ``largest_cc`` connected components per label; 0 disables. Defaults to 0.
+        fill_holes (bool, optional): Whether to fill holes in the prediction. Defaults to False.
+
+    Returns:
+        NII: The post-processed cutout prediction mask.
+    """
     if largest_cc > 0:  # 5 seems like a good number (if three, then at least center must be fully visible)
         vert_nii = vert_nii.filter_connected_components(max_count_component=largest_cc, labels=labels, keep_label=True)
     if fill_holes:
@@ -699,6 +732,15 @@ def post_process_single_3vert_prediction(
 
 
 def str_id_com_label(com_idx: int, label: int):
+    """Build the string identifier for a single (corpus-com, label) prediction.
+
+    Args:
+        com_idx (int): Index of the corpus center of mass.
+        label (int): Label index within that center's three-vertebra prediction.
+
+    Returns:
+        str: The identifier ``"{com_idx}_{label}"``.
+    """
     return str(com_idx) + "_" + str(label)
 
 
@@ -711,6 +753,24 @@ def from_vert3_predictions_make_vert_mask(
     proc_inst_clean_small_cc_artifacts: bool = True,
     verbose: bool = False,
 ) -> tuple[NII, dict, ErrCode]:
+    """Merge the hierarchical three-vertebra predictions into a single vertebra instance mask.
+
+    Each per-label prediction looks among neighboring predictions (center index -2 to +2, all three labels) for
+    its most-agreeing partners (by Dice), forming prediction couples. The couples are then merged into one
+    instance label map, optionally cleaning small connected-component artifacts.
+
+    Args:
+        seg_nii (NII): Reference segmentation providing shape and spatial metadata.
+        vert_predictions (np.ndarray): Hierarchical predictions of shape ``(com_idx, label, *shape)``.
+        hierarchical_existing_predictions (list[str]): Identifiers of the predictions that were actually produced.
+        vert_size_threshold (int): Voxel threshold for removing small instance artifacts.
+        debug_data (dict): Dictionary for collecting intermediate results.
+        proc_inst_clean_small_cc_artifacts (bool, optional): Whether to delete small instance artifacts. Defaults to True.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
+
+    Returns:
+        tuple[NII, dict, ErrCode]: The merged vertebra instance mask, the (updated) debug data, and an error code.
+    """
     # instance approach: each 1/2/3 pred finds it most agreeing partner in surrounding predictions (com idx -2 to +2 all three pred)
     # Then sort by agreement, and segment each (this would be able to add more vertebra than input coms if one is skipped)
     # each one that has been used for fixing a segmentation cannot be used again (so object loose their partners if too weird)
@@ -739,6 +799,21 @@ def create_prediction_couples(
     hierarchical_existing_predictions,
     verbose: bool = False,
 ):
+    """Form and rank prediction couples across all hierarchical predictions.
+
+    For every (center index, label) prediction, finds its best-agreeing partners and groups them into a couple,
+    averaging the agreement scores of duplicate couples. The result is sorted so that larger, higher-agreement
+    couples come first (key = ``(len(couple) + 1) * mean_agreement``).
+
+    Args:
+        hierarchical_predictions (np.ndarray): Hierarchical predictions of shape ``(com_idx, label, *shape)``.
+        hierarchical_existing_predictions (list[str]): Identifiers of the predictions that were actually produced.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
+
+    Returns:
+        dict: Mapping from each couple (a tuple of ``(com_idx, label)`` members) to its mean agreement score,
+        ordered by descending size-weighted agreement.
+    """
     n_predictions = hierarchical_predictions.shape[0]
 
     coupled_predictions = {}
@@ -767,6 +842,16 @@ def create_prediction_couples(
 
 
 def parallel_dice(anchor, pred, cand_loc):
+    """Compute the Dice score between two masks, tagged with a candidate location.
+
+    Args:
+        anchor (np.ndarray): Anchor prediction mask.
+        pred (np.ndarray): Candidate prediction mask to compare against.
+        cand_loc: Candidate location identifier carried through unchanged.
+
+    Returns:
+        tuple[float, Any]: The Dice score between ``anchor`` and ``pred`` and the passed-through ``cand_loc``.
+    """
     return float(np_dice(anchor, pred)), cand_loc
 
 
@@ -778,6 +863,24 @@ def find_prediction_couple(
     n_predictions,
     verbose: bool = False,
 ):
+    """Find the best-agreeing partner predictions for one anchor prediction.
+
+    Considers candidate predictions within +/-2 of the anchor's center index (all three labels, excluding the
+    anchor itself), ranks them by Dice with the anchor, and keeps up to the two best whose Dice exceeds 0.3.
+    The anchor itself is appended, and the members are returned sorted by center index.
+
+    Args:
+        idx (int): Center-of-mass index of the anchor prediction.
+        pred (int): Label index of the anchor prediction.
+        hierarchical_predictions (np.ndarray): Hierarchical predictions of shape ``(com_idx, label, *shape)``.
+        hierarchical_existing_predictions (list[str]): Identifiers of the predictions that were actually produced.
+        n_predictions (int): Total number of corpus centers of mass.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
+
+    Returns:
+        tuple[tuple | None, float]: The couple (a sorted tuple of ``(com_idx, label)`` members including the
+        anchor) and its mean partner agreement. Returns ``(None, 0)`` if the anchor prediction does not exist.
+    """
     if str_id_com_label(idx, pred) not in hierarchical_existing_predictions:
         logger.print(f"{str_id_com_label(idx, pred)} not in predictions {hierarchical_existing_predictions}", verbose=verbose)
         return None, 0
@@ -842,6 +945,26 @@ def merge_coupled_predictions(
     vert_size_threshold: int = 0,
     verbose: bool = False,
 ) -> tuple[NII, dict, ErrCode]:
+    """Assemble the final vertebra instance mask from ranked prediction couples.
+
+    Iterates over the couples in priority order, summing their member maps and thresholding by voxel agreement
+    (requiring overlap from at least two members unless the couple is small or low-agreement). Each accepted
+    couple is written as a new instance label into voxels not yet claimed; couples overlapping established
+    vertebrae by more than 60% are skipped. Small connected-component artifacts are optionally cleaned afterwards.
+
+    Args:
+        seg_nii (NII): Reference segmentation providing shape and spatial metadata.
+        coupled_predictions (dict): Mapping from couple to mean agreement, ordered by priority.
+        hierarchical_predictions (np.ndarray): Hierarchical predictions of shape ``(com_idx, label, *shape)``.
+        debug_data (dict): Dictionary for collecting intermediate results.
+        proc_clean_small_cc_artifacts (bool, optional): Whether to delete small instance artifacts. Defaults to True.
+        vert_size_threshold (int, optional): Voxel threshold for removing small instance artifacts. Defaults to 0.
+        verbose (bool, optional): Emit additional progress logging. Defaults to False.
+
+    Returns:
+        tuple[NII, dict, ErrCode]: The vertebra instance mask, the (updated) debug data, and an error code
+        (``ErrCode.OK`` on success, ``ErrCode.EMPTY`` if a couple produces an empty mask or the result is empty).
+    """
     whole_vert_nii = seg_nii.copy()
     whole_vert_arr = np.zeros(whole_vert_nii.shape, dtype=np.uint16)  # this is fixed segmentations from vert
 

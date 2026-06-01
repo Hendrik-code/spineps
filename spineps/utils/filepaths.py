@@ -1,3 +1,5 @@
+"""File-path helpers for locating the SPINEPS model weights directory and individual model folders."""
+
 from __future__ import annotations
 
 import os
