@@ -97,7 +97,7 @@ class VertLabelingClassifier(Segmentation_Model):
 
         chktpath = search_path(self.model_folder, "**/*val_f1=*valf1-weights.ckpt")
         assert len(chktpath) >= 1, chktpath
-        model = PLClassifier.load_from_checkpoint(checkpoint_path=chktpath[-1])
+        model = PLClassifier.load_from_checkpoint(checkpoint_path=chktpath[-1], weights_only=False)
         if hasattr(model.opt, "final_size"):
             self.final_size = model.opt.final_size
             self.transform = Compose(
