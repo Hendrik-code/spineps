@@ -7,6 +7,17 @@ from warnings import warn
 import numpy as np
 from TPTBox import Log_Type, No_Logger
 
+# Default softmax temperature used when cost smoothing is enabled.
+DEFAULT_SOFTMAX_TEMP = 0.2
+# Class indices of anatomically special vertebrae within the labeling cost matrix.
+T11_CLASS_IDX = 17  # a single skip is permitted at this class
+T12_CLASS_IDX = 18  # transitional vertebra; may appear twice in a path
+L5_CLASS_IDX = 23  # transitional vertebra; may appear twice in a path
+# Region start indices (cervical, thoracic, lumbar) along the class axis.
+DEFAULT_REGION_STARTS = (0, 7, 19)
+# A class flagged as "multiple-allowed" may appear at most this many times in a path.
+MAX_REPEATS_PER_CLASS = 2
+
 
 def argmin(lst):
     m = min(lst)
@@ -43,7 +54,7 @@ def find_most_probably_sequence(  # noqa: C901
     invert_cost: bool = True,
     #
     softmax_cost: bool = False,
-    softmax_temp: float = 0.2,
+    softmax_temp: float = DEFAULT_SOFTMAX_TEMP,
     #
     allow_multiple_at_class: list[int] | None = None,  # T12 and L5
     punish_multiple_sequence: float = 0.0,
@@ -62,11 +73,11 @@ def find_most_probably_sequence(  # noqa: C901
     if allow_skip_at_region is None:
         allow_skip_at_region = [0]
     if allow_skip_at_class is None:
-        allow_skip_at_class = [17]
+        allow_skip_at_class = [T11_CLASS_IDX]
     if allow_multiple_at_class is None:
-        allow_multiple_at_class = [18, 23]
+        allow_multiple_at_class = [T12_CLASS_IDX, L5_CLASS_IDX]
     if regions is None:
-        regions = [0, 7, 19]
+        regions = list(DEFAULT_REGION_STARTS)
     # convert to np arrays
     if isinstance(cost, list):
         cost = np.asarray(cost)
@@ -157,7 +168,7 @@ def find_most_probably_sequence(  # noqa: C901
             # allow two subsequent of same class
             if c in allow_multiple_at_class:
                 cost_add = punish_multiple_sequence
-                if c == 18:
+                if c == T12_CLASS_IDX:
                     cost_add += t13_cost_single(r + 1, c)
                 with logger:
                     add_option_path(options, r + 1, c, cost_add)
@@ -182,7 +193,7 @@ def find_most_probably_sequence(  # noqa: C901
             cost_value += rel_cost(r, c, pnext, region_cur)
             # constraint: cannot have more than 2 T12 and L5
             for amac in allow_multiple_at_class:
-                if amac in cnt and cnt[amac] > 2:
+                if amac in cnt and cnt[amac] > MAX_REPEATS_PER_CLASS:
                     cost_value = sys.maxsize
                     break
             # setting to memory

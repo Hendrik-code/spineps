@@ -15,6 +15,9 @@ from TPTBox.core.np_utils import (
 )
 from tqdm import tqdm
 
+# Vertebra instance labels span 1..25 (cervical, thoracic and lumbar); 26 denotes the sacrum.
+MAX_VERTEBRA_INSTANCE_LABEL = 25
+
 
 def n4_bias(
     nii: NII,
@@ -188,7 +191,7 @@ def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger) -> N
 
     seg_inst_arr_proc = seg_inst.get_seg_array()
 
-    instance_labels = [i for i in seg_inst.unique() if 1 <= i <= 25]
+    instance_labels = [i for i in seg_inst.unique() if 1 <= i <= MAX_VERTEBRA_INSTANCE_LABEL]
 
     for vert in instance_labels:
         inst_vert = seg_inst.extract_label(vert)

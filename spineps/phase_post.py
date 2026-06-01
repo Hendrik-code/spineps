@@ -25,6 +25,30 @@ from spineps.seg_pipeline import logger, vertebra_subreg_labels
 from spineps.utils.compat import zip_strict
 from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 
+# --- Label-id conventions for combined post-processing ---
+# Intervertebral discs (IVDs) and vertebral endplates reuse their parent vertebra's
+# instance label, shifted by a fixed offset so they can be told apart from vertebrae.
+IVD_LABEL_OFFSET = 100
+ENDPLATE_LABEL_OFFSET = 200
+# The dens (odontoid process) anatomically belongs to the C2 vertebra (instance label 2).
+C2_INSTANCE_LABEL = 2
+# Raw vertebra instance labels stay below this bound; anything above is an IVD/endplate/derived label.
+INSTANCE_LABEL_LIMIT = 40
+
+# --- Heuristic thresholds for combined post-processing ---
+# Voxel margin kept around the segmentation when cropping before processing.
+POSTPROCESS_CROP_MARGIN = 2
+# Warn when a vertebra's unmatched semantic volume exceeds this fraction of an average vertebra.
+UNMATCHED_VOLUME_WARN_FRACTION = 0.5
+# Endplate splitting dilates iteratively with radius 1 up to (but excluding) this value.
+MAX_ENDPLATE_DILATION = 15
+# Two stacked vertebrae are merged only if the smaller is below this fraction of the larger...
+MERGED_VERTEBRA_SIZE_RATIO = 0.5
+# ...and the two masks share at least this many contact voxels.
+MERGED_VERTEBRA_MIN_CONTACT_VOXELS = 20
+# An articular substructure CC is reassigned when its largest overlap dominates the second by this ratio.
+ARTICULAR_DOMINANCE_RATIO = 0.5
+
 
 def phase_postprocess_combined(
     img_nii: NII,
@@ -59,7 +83,7 @@ def phase_postprocess_combined(
 
         if proc_clean_inst_by_sem:
             vert_nii.apply_mask(seg_nii, inplace=True)
-        crop_slices = seg_nii.compute_crop(dist=2)
+        crop_slices = seg_nii.compute_crop(dist=POSTPROCESS_CROP_MARGIN)
 
         # Save uncropped to uncrop later
         vert_uncropped = vert_nii.copy()
@@ -110,7 +134,7 @@ def phase_postprocess_combined(
         logger.print("seg_nii", seg_nii_cleaned.unique())
 
         whole_vert_nii_cleaned[seg_nii_cleaned.extract_label(sacrum_ids).get_seg_array() == 1] = v_name2idx["S1"]
-        whole_vert_nii_cleaned[seg_nii_cleaned == Location.Dens_axis.value] = 2
+        whole_vert_nii_cleaned[seg_nii_cleaned == Location.Dens_axis.value] = C2_INSTANCE_LABEL
         vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
         #
         #
@@ -175,7 +199,7 @@ def mask_cleaning_other(
                 f"A volume of {n_vert_pixels_rel_diff} * avg_vertebra_volume in vertebra not matched in semantic mask, set proc_assign_missing_cc=TRUE to circumvent this",
                 Log_Type.WARNING,
             )
-    elif n_vert_pixels_rel_diff > 0.5:
+    elif n_vert_pixels_rel_diff > UNMATCHED_VOLUME_WARN_FRACTION:
         logger.print(f"A volume of {n_vert_pixels_rel_diff} * avg_vertebra_volume in subreg not matched by vertebra mask", Log_Type.WARNING)
 
     return whole_vert_nii.set_array(vert_arr_cleaned), seg_nii.set_array(subreg_arr)
@@ -328,8 +352,8 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
         subreg_ivd = subreg_cc.copy()
         n_ivd_unique = len(np.unique(to_mapped_labels))
         subreg_ivd = np_map_labels(subreg_ivd, label_map=mapping_cc_to_vert_label)
-        subreg_ivd += 100
-        subreg_ivd[subreg_ivd == 100] = 0
+        subreg_ivd += IVD_LABEL_OFFSET
+        subreg_ivd[subreg_ivd == IVD_LABEL_OFFSET] = 0
         vert_arr[subreg_arr == Location.Vertebra_Disc.value] = subreg_ivd[subreg_arr == Location.Vertebra_Disc.value]
     n_eps = 0
     n_eps_unique = 0
@@ -353,8 +377,8 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
         subreg_ep = ep_cc.copy()
         n_eps_unique = len(np.unique(list(mapping_ep_cc_to_vert_label.values())))
         subreg_ep = np_map_labels(subreg_ep, label_map=mapping_ep_cc_to_vert_label)
-        subreg_ep += 200
-        subreg_ep[subreg_ep == 200] = 0
+        subreg_ep += ENDPLATE_LABEL_OFFSET
+        subreg_ep[subreg_ep == ENDPLATE_LABEL_OFFSET] = 0
         vert_arr[subreg_arr == Location.Endplate.value] = subreg_ep[subreg_arr == Location.Endplate.value]
         vert_t.set_array_(vert_arr)
 
@@ -362,7 +386,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
         out = seg_t * 0
         pref = 1
         old_vol = -1
-        for dil in range(1, 15):
+        for dil in range(1, MAX_ENDPLATE_DILATION):
             curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
             new_vol = curr.sum()
             total = seg_t.extract_label(Location.Endplate.value).sum()
@@ -374,7 +398,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
                 logger.print("Found all Endplates                                      ")
                 break
             for i in vert_t.unique():
-                if i >= 40:
+                if i >= INSTANCE_LABEL_LIMIT:
                     break
                 curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
                 v = vert_t.extract_label(i).dilate_msk(dil, verbose=False)
@@ -383,8 +407,8 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True):
                 plates = vert_t * end
                 plates.map_labels_(
                     {
-                        i + 200: Location.Vertebral_Body_Endplate_Inferior.value,
-                        pref + 200: Location.Vertebral_Body_Endplate_Superior.value,
+                        i + ENDPLATE_LABEL_OFFSET: Location.Vertebral_Body_Endplate_Inferior.value,
+                        pref + ENDPLATE_LABEL_OFFSET: Location.Vertebral_Body_Endplate_Superior.value,
                     },
                     verbose=False,
                 )
@@ -467,7 +491,7 @@ def assign_vertebra_inconsistency(
 
             # print(biggest_volume, second_volume)
 
-            if biggest_volume[1] * 0.50 > second_volume[1]:
+            if biggest_volume[1] * ARTICULAR_DOMINANCE_RATIO > second_volume[1]:
                 to_label = biggest_volume[0] - 1  # int(list(gt_volume.keys())[argmax] - 1)
 
                 vert_arr[cc_map == 1] = to_label
@@ -506,14 +530,14 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII):
     first_stats, second_stats = stats_by_height[first_key], stats_by_height[second_key]
     if first_stats[1] is False and second_stats[1] is False:  # noqa: SIM102
         # both vertebra
-        if first_stats[2] < 0.5 * second_stats[2]:
+        if first_stats[2] < MERGED_VERTEBRA_SIZE_RATIO * second_stats[2]:
             # first is significantly smaller than second and they are close in height
             # how many pixels are touching
             vert_firsttwo_arr = vert_nii.extract_label(first_key).get_seg_array()
             vert_firsttwo_arr2 = vert_nii.extract_label(second_key).get_seg_array()
             vert_firsttwo_arr += vert_firsttwo_arr2 + 1
             contacts = np_contacts(vert_firsttwo_arr, connectivity=3)
-            if contacts[(1, 2)] > 20:
+            if contacts[(1, 2)] > MERGED_VERTEBRA_MIN_CONTACT_VOXELS:
                 logger.print("Found first two instance weird, will merge", Log_Type.STRANGE)
                 vert_nii.map_labels_({first_key: second_key}, verbose=False)
 
