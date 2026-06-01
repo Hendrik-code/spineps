@@ -377,11 +377,11 @@ class Segmentation_Model_NNunet(Segmentation_Model):
             self.print(f"Model weights not found in {self.model_folder}", Log_Type.FAIL)
         conf_folds = self.inference_config.available_folds
         if isinstance(conf_folds, int):
-            conf_folds = tuple([str(i) for i in range(conf_folds)])
+            conf_folds = tuple(str(i) for i in range(conf_folds))
         elif isinstance(conf_folds, str):
             conf_folds = (conf_folds,)
         else:
-            conf_folds = tuple([str(i) for i in conf_folds])
+            conf_folds = tuple(str(i) for i in conf_folds)
         self.predictor = load_inf_model(
             model_folder=self.model_folder,
             step_size=self.inference_config.default_step_size,

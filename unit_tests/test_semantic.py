@@ -101,7 +101,7 @@ class Test_Semantic_Phase(unittest.TestCase):
     def test_phase_preprocess(self):
         mri, _subreg, _vert, _label = get_test_mri()
         for pad_size in range(7):
-            origin_diff = max([d * float(pad_size) for d in mri.zoom]) + 1e-4
+            origin_diff = max(d * float(pad_size) for d in mri.zoom) + 1e-4
             # print(origin_diff)
             preprossed_input, errcode = preprocess_input(mri, debug_data={}, pad_size=pad_size, verbose=True)
             print(mri)

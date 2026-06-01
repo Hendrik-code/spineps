@@ -343,7 +343,7 @@ def get_corpus_coms(
             n_neighbors_without_target = len(neighbor_volumes) - 1
             if n_neighbors_without_target > MIN_NEIGHBORS_FOR_VOLUME_CHECK:
                 argmax = np.argmax(neighbor_volumes)
-                n_avg_volume = sum([neighbor_volumes[i] for i in range(len(neighbor_volumes)) if i != argmax]) / n_neighbors_without_target
+                n_avg_volume = sum(neighbor_volumes[i] for i in range(len(neighbor_volumes)) if i != argmax) / n_neighbors_without_target
 
                 diff_volume = neighbor_volumes[argmax] / n_avg_volume
                 if diff_volume > MERGED_CORPUS_VOLUME_RATIO:
