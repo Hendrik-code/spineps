@@ -26,6 +26,19 @@ LUMB = slice(19, None)  # 19 to end (23)
 
 DIVIDE_BY_ZERO_OFFSET = 1e-8
 
+# Cost-matrix class indices (0-based, matching VertExact) of anatomically special vertebrae.
+C1_CLASS_IDX = 0
+C2_CLASS_IDX = 1
+T11_CLASS_IDX = 17
+T12_CLASS_IDX = 18
+L5_CLASS_IDX = 23
+# Region start indices along the class axis (cervical, thoracic, lumbar).
+REGION_STARTS = (0, 7, 19)
+# Post-processing label for the (anomalous) T13 vertebra; it has no VertExact class.
+T13_LABEL = 28
+# Crop margin in millimeters kept around the vertebrae before labeling.
+LABELING_CROP_MARGIN_MM = 128
+
 
 def perform_labeling_step(
     model: VertLabelingClassifier,
@@ -83,7 +96,7 @@ def run_model_for_vert_labeling(
     zms_pir = img.zoom
 
     # crop
-    crop = vert.compute_crop(dist=128 / min(img.zoom))
+    crop = vert.compute_crop(dist=LABELING_CROP_MARGIN_MM / min(img.zoom))
     img.apply_crop_(crop)
     vert.apply_crop_(crop)
 
@@ -290,8 +303,8 @@ def find_vert_path_from_predictions(
     #
     n_vert = len(predictions)
     #
-    cost_matrix = np.zeros((n_vert, 24))  # TODO 24 fix?
-    relative_cost_matrix = np.zeros((n_vert, 6))  # TODO 6 fix?
+    cost_matrix = np.zeros((n_vert, VERT_CLASSES))
+    relative_cost_matrix = np.zeros((n_vert, len(VertRel)))
     visible_chain = prepare_visible(predictions, visible_w)
     # print(visible_chain)
 
@@ -371,7 +384,7 @@ def find_vert_path_from_predictions(
         # normalize
         final_vert_pred /= np.sum(final_vert_pred) + DIVIDE_BY_ZERO_OFFSET
         # boost c2 if enabled
-        if boost_c2 > 0.0 and np.argmax(final_vert_pred) == 1:
+        if boost_c2 > 0.0 and np.argmax(final_vert_pred) == C2_CLASS_IDX:
             final_vert_pred = np.multiply(final_vert_pred, boost_c2)
         # then multiply with visible factor
         final_vert_pred = np.multiply(final_vert_pred, visible_chain[idx])
@@ -394,8 +407,8 @@ def find_vert_path_from_predictions(
         min_costs_path = [[]]
         fpath = list(np.argmax(cost_matrix, axis=1))
     else:
-        allow_multiple_at_class = [18, 23] if not proc_lab_force_no_tl_anomaly else [23]  # T12 and L5
-        allow_skip_at_class = [17] if not proc_lab_force_no_tl_anomaly else []  # T11
+        allow_multiple_at_class = [T12_CLASS_IDX, L5_CLASS_IDX] if not proc_lab_force_no_tl_anomaly else [L5_CLASS_IDX]
+        allow_skip_at_class = [T11_CLASS_IDX] if not proc_lab_force_no_tl_anomaly else []
         allow_skip_at_region = []
         if allow_cervical_skip:
             allow_skip_at_region.append(0)
@@ -406,7 +419,7 @@ def find_vert_path_from_predictions(
         fcost, fpath, min_costs_path = find_most_probably_sequence(
             # input
             cost_matrix,
-            min_start_class=0 if not disable_c1 else 1,
+            min_start_class=C1_CLASS_IDX if not disable_c1 else C2_CLASS_IDX,
             region_rel_cost=relative_cost_matrix,
             vertt13_cost=vertt13_values,
             invert_cost=True,
@@ -414,9 +427,9 @@ def find_vert_path_from_predictions(
             punish_multiple_sequence=punish_multiple_sequence,
             punish_skip_sequence=punish_skip_sequence,
             # no touch
-            regions=[0, 7, 19],
-            allow_multiple_at_class=allow_multiple_at_class,  # T12 and L5
-            allow_skip_at_class=allow_skip_at_class,  # T11
+            regions=list(REGION_STARTS),
+            allow_multiple_at_class=allow_multiple_at_class,
+            allow_skip_at_class=allow_skip_at_class,
             #
             allow_skip_at_region=allow_skip_at_region,
             punish_skip_at_region_sequence=punish_skip_at_region_sequence,
@@ -434,16 +447,16 @@ def fpath_post_processing(fpath) -> list[int]:
     if VertExact.T12.value in fpath_post:
         tidx = fpath_post.index(VertExact.T12.value)
         if tidx != 0 and fpath_post[tidx - 1] == VertExact.T12.value:
-            fpath_post[tidx] = 28
+            fpath_post[tidx] = T13_LABEL
         elif tidx != len(fpath_post) - 1 and fpath_post[tidx + 1] == VertExact.T12.value:
-            fpath_post[tidx + 1] = 28
+            fpath_post[tidx + 1] = T13_LABEL
     # Two L5 -> L5, L6
     if (VertExact.L5.value in fpath_post and len(fpath_post) >= 2) and (
         fpath_post[-1] == VertExact.L5.value and fpath_post[-2] == VertExact.L5.value
     ):
         fpath_post[-1] += 1
 
-    fpath_post = [f + 1 if f != 28 else 28 for f in fpath_post]
+    fpath_post = [f + 1 if f != T13_LABEL else T13_LABEL for f in fpath_post]
     return fpath_post
 
 

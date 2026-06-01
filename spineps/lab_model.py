@@ -18,6 +18,9 @@ from spineps.utils.filepaths import search_path
 
 logger = No_Logger(prefix="VertLabelingClassifier")
 
+# Default spatial size (voxels) of the cropped patch fed to the vertebra-labeling classifier.
+DEFAULT_CLASSIFIER_INPUT_SIZE = (152, 168, 32)
+
 
 def unit_vector(vector):
     """Returns the unit vector of the vector."""
@@ -83,7 +86,7 @@ class VertLabelingClassifier(Segmentation_Model):
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
         # self.model: PLClassifier = model
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.final_size: tuple[int, int, int] = (152, 168, 32)
+        self.final_size: tuple[int, int, int] = DEFAULT_CLASSIFIER_INPUT_SIZE
         self.totensor = ToTensor()
         self.transform = Compose(
             [
