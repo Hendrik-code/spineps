@@ -182,6 +182,7 @@ def assign_missing_cc(
     reference_arr: np.ndarray,
     verbose: bool = False,
     verbose_deletion: bool = False,
+    proc_assign_missing_dilate_first: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     # pipeline: target = vert, reference = subregion
     assert target_arr.shape == reference_arr.shape
@@ -193,6 +194,27 @@ def assign_missing_cc(
     if len(label_rest) == 1 and label_rest[0] == 0:
         logger.print("No CC had to be assigned", Log_Type.OK, verbose=verbose)
         return target_arr, reference_arr, deletion_map
+
+    # dilate once first
+    if proc_assign_missing_dilate_first:
+        target_arr_ = np_dilate_msk(
+            target_arr,
+            None,
+            n_pixel=2,
+            connectivity=1,
+            mask=reference_arr,
+            use_crop=False,
+        )
+        subreg_arr_vert_rest = reference_arr.copy()
+        subreg_arr_vert_rest[target_arr_ != 0] = 0
+        deletion_map = np.zeros(reference_arr.shape)
+
+        label_rest = np_unique(subreg_arr_vert_rest)
+        if len(label_rest) == 1 and label_rest[0] == 0:
+            logger.print("No CC had to be assigned", Log_Type.OK, verbose=verbose)
+            return target_arr_, reference_arr, deletion_map
+
+        target_arr = target_arr_
     # subreg_arr_vert_rest is not hit pixels bei vertebra prediction
     subreg_cc = np_connected_components_per_label(subreg_arr_vert_rest, connectivity=2)
     loop_counts = 0
