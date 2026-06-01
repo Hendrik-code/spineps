@@ -24,16 +24,23 @@ from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger
 from spineps.utils.proc_functions import clean_cc_artifacts
+from spineps.utils.resolution import (
+    INFERIOR_AXIS_PIR,
+    REFERENCE_VOXEL_VOLUME_MM3,
+    REFERENCE_ZOOM,
+    mm3_to_voxels,
+    mm_to_voxels_axis,
+)
 
 # --- Instance-segmentation geometry and merged-corpus heuristics ---
-# Voxel margin kept around the segmentation when cropping before instance prediction.
-INSTANCE_CROP_MARGIN = 5
-# Lower bound (in voxels) for the resolution-scaled corpus/vertebra cleaning thresholds.
-MIN_VOXEL_THRESHOLD = 40
+# Physical margin kept around the segmentation when cropping before instance prediction.
+INSTANCE_CROP_MARGIN_MM = 5 * min(REFERENCE_ZOOM)
+# Lower bound (physical volume) for the resolution-scaled corpus/vertebra cleaning thresholds.
+MIN_CLEANING_VOLUME_MM3 = 40 * REFERENCE_VOXEL_VOLUME_MM3
 # IVD connected-component labels are offset by this so they stay distinct from corpus CC labels.
 IVD_CC_LABEL_OFFSET = 100
-# Two neighboring structures at nearly the same height (within this many voxels) are merged.
-SAME_HEIGHT_MERGE_THRESHOLD = 10
+# Two neighboring structures at nearly the same height (within this physical distance) are merged.
+SAME_HEIGHT_MERGE_THRESHOLD_MM = 10 * REFERENCE_ZOOM[INFERIOR_AXIS_PIR]
 # Relative index window of neighbors inspected when fixing a merged corpus (excludes self).
 NEIGHBOR_OFFSETS = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
 # A merged corpus is only split when there are more than this many neighbors to estimate volume from.
@@ -113,7 +120,7 @@ def predict_instance_mask(
         debug_data["inst_uncropped_Subreg_nii_b_zms"] = seg_nii_uncropped.copy()
         uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape, dtype=seg_nii_uncropped.dtype)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
-        crop = seg_nii_rdy.compute_crop(dist=INSTANCE_CROP_MARGIN)
+        crop = seg_nii_rdy.compute_crop(dist=INSTANCE_CROP_MARGIN_MM / min(seg_nii_rdy.zoom))
         # logger.print("Crop", crop, verbose=verbose)
         seg_nii_rdy.apply_crop_(crop)
         logger.print(f"Crop down from {uncropped_vert_mask.shape} to {seg_nii_rdy.shape}", verbose=verbose)
@@ -123,8 +130,9 @@ def predict_instance_mask(
         #
         # make threshold in actual mm
         corpus_border_threshold = int(corpus_border_threshold / expected_zms[1])
-        corpus_size_cleaning = max(int(corpus_size_cleaning / (expected_zms[0] * expected_zms[1] * expected_zms[2])), MIN_VOXEL_THRESHOLD)
-        vert_size_threshold = max(int(vert_size_threshold / (expected_zms[0] * expected_zms[1] * expected_zms[2])), MIN_VOXEL_THRESHOLD)
+        min_cleaning_voxels = mm3_to_voxels(MIN_CLEANING_VOLUME_MM3, expected_zms)
+        corpus_size_cleaning = max(int(corpus_size_cleaning / (expected_zms[0] * expected_zms[1] * expected_zms[2])), min_cleaning_voxels)
+        vert_size_threshold = max(int(vert_size_threshold / (expected_zms[0] * expected_zms[1] * expected_zms[2])), min_cleaning_voxels)
 
         seg_labels = seg_nii_rdy.unique()
         if Location.Vertebra_Corpus_border.value not in seg_labels:
@@ -314,7 +322,7 @@ def get_corpus_coms(
                 verbose=verbose,
             )
             # check if same heigh, then just merge ivd label
-            if abs(neighborheight - selfheight) < SAME_HEIGHT_MERGE_THRESHOLD:
+            if abs(neighborheight - selfheight) < mm_to_voxels_axis(SAME_HEIGHT_MERGE_THRESHOLD_MM, seg_nii.zoom, INFERIOR_AXIS_PIR):
                 logger.print("Same height, just merge")
                 stats_by_height.pop(vl)
                 stats_by_height = dict(sorted(stats_by_height.items(), key=lambda x: x[1][0]))
