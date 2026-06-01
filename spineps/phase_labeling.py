@@ -17,7 +17,13 @@ from spineps.architectures.read_labels import (
 )
 from spineps.get_models import get_actual_model
 from spineps.lab_model import VertLabelingClassifier
-from spineps.utils.find_min_cost_path import find_most_probably_sequence
+from spineps.utils.find_min_cost_path import (
+    DEFAULT_REGION_STARTS,
+    L5_CLASS_IDX,
+    T11_CLASS_IDX,
+    T12_CLASS_IDX,
+    find_most_probably_sequence,
+)
 
 logger = No_Logger(prefix="LabelingPhase")
 
@@ -29,13 +35,10 @@ LUMB = slice(19, None)  # 19 to end (23)
 DIVIDE_BY_ZERO_OFFSET = 1e-8
 
 # Cost-matrix class indices (0-based, matching VertExact) of anatomically special vertebrae.
+# T11/T12/L5 and the region starts (DEFAULT_REGION_STARTS) are imported from find_min_cost_path,
+# their canonical home (the path solver that consumes them).
 C1_CLASS_IDX = 0
 C2_CLASS_IDX = 1
-T11_CLASS_IDX = 17
-T12_CLASS_IDX = 18
-L5_CLASS_IDX = 23
-# Region start indices along the class axis (cervical, thoracic, lumbar).
-REGION_STARTS = (0, 7, 19)
 # Post-processing label for the (anomalous) T13 vertebra; it has no VertExact class.
 T13_LABEL = 28
 # Crop margin in millimeters kept around the vertebrae before labeling.
@@ -629,7 +632,7 @@ def find_vert_path_from_predictions(
             punish_multiple_sequence=punish_multiple_sequence,
             punish_skip_sequence=punish_skip_sequence,
             # no touch
-            regions=list(REGION_STARTS),
+            regions=list(DEFAULT_REGION_STARTS),
             allow_multiple_at_class=allow_multiple_at_class,
             allow_skip_at_class=allow_skip_at_class,
             #

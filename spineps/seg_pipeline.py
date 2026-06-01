@@ -15,10 +15,15 @@ from spineps.seg_model import Segmentation_Model
 
 logger = No_Logger(prefix="SPINEPS")
 
-# IVD and endplate instances are stored as (vertebra label + offset); these ranges
-# cover all such derived labels and are stripped before centroid computation.
-IVD_LABEL_RANGE = range(100, 134)
-ENDPLATE_LABEL_RANGE = range(200, 234)
+# IVD and endplate instances are stored as (vertebra label + offset). These offsets are the canonical
+# home for the convention; other modules import them from here.
+IVD_LABEL_OFFSET = 100
+ENDPLATE_LABEL_OFFSET = 200
+# Number of derived label ids reserved per type; the ranges below cover all IVD/endplate labels and are
+# stripped before centroid computation.
+_MAX_DERIVED_LABELS_PER_TYPE = 34
+IVD_LABEL_RANGE = range(IVD_LABEL_OFFSET, IVD_LABEL_OFFSET + _MAX_DERIVED_LABELS_PER_TYPE)
+ENDPLATE_LABEL_RANGE = range(ENDPLATE_LABEL_OFFSET, ENDPLATE_LABEL_OFFSET + _MAX_DERIVED_LABELS_PER_TYPE)
 
 fill_holes_labels = [
     Location.Vertebra_Corpus_border.value,

@@ -23,16 +23,14 @@ from TPTBox.core.np_utils import (
 )
 
 from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
-from spineps.seg_pipeline import logger, vertebra_subreg_labels
+from spineps.seg_pipeline import ENDPLATE_LABEL_OFFSET, IVD_LABEL_OFFSET, logger, vertebra_subreg_labels
 from spineps.utils.compat import zip_strict
 from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 from spineps.utils.resolution import REFERENCE_VOXEL_VOLUME_MM3, REFERENCE_ZOOM, isotropic_area_to_voxels
 
 # --- Label-id conventions for combined post-processing ---
-# Intervertebral discs (IVDs) and vertebral endplates reuse their parent vertebra's
-# instance label, shifted by a fixed offset so they can be told apart from vertebrae.
-IVD_LABEL_OFFSET = 100
-ENDPLATE_LABEL_OFFSET = 200
+# Intervertebral discs (IVDs) and vertebral endplates reuse their parent vertebra's instance label,
+# shifted by IVD_LABEL_OFFSET / ENDPLATE_LABEL_OFFSET (imported from seg_pipeline, their canonical home).
 # The dens (odontoid process) anatomically belongs to the C2 vertebra (instance label 2).
 C2_INSTANCE_LABEL = 2
 # Raw vertebra instance labels stay below this bound; anything above is an IVD/endplate/derived label.

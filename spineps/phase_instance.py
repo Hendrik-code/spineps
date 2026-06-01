@@ -22,7 +22,7 @@ from tqdm import tqdm
 
 from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import Segmentation_Model
-from spineps.seg_pipeline import logger
+from spineps.seg_pipeline import IVD_LABEL_OFFSET, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 from spineps.utils.resolution import (
     INFERIOR_AXIS_PIR,
@@ -37,8 +37,6 @@ from spineps.utils.resolution import (
 INSTANCE_CROP_MARGIN_MM = 5 * min(REFERENCE_ZOOM)
 # Lower bound (physical volume) for the resolution-scaled corpus/vertebra cleaning thresholds.
 MIN_CLEANING_VOLUME_MM3 = 40 * REFERENCE_VOXEL_VOLUME_MM3
-# IVD connected-component labels are offset by this so they stay distinct from corpus CC labels.
-IVD_CC_LABEL_OFFSET = 100
 # Two neighboring structures at nearly the same height (within this physical distance) are merged.
 SAME_HEIGHT_MERGE_THRESHOLD_MM = 10 * REFERENCE_ZOOM[INFERIOR_AXIS_PIR]
 # Relative index window of neighbors inspected when fixing a merged corpus (excludes self).
@@ -285,7 +283,7 @@ def get_corpus_coms(
     seg_sem = seg_nii.map_labels({Location.Endplate.value: Location.Vertebra_Disc.value}, verbose=False)
     has_ivd: bool = Location.Vertebra_Disc.value in seg_sem.unique()
     subreg_cc: NII = seg_sem.get_connected_components(labels=Location.Vertebra_Disc.value)
-    subreg_cc[subreg_cc > 0] += IVD_CC_LABEL_OFFSET
+    subreg_cc[subreg_cc > 0] += IVD_LABEL_OFFSET  # offset IVD CC labels to keep them distinct from corpus CC labels
     subreg_cc_n = len(subreg_cc.unique())
     logger.print(f"Found {subreg_cc_n} IVD ccs (naively)", verbose=verbose)
     coms = subreg_cc.center_of_masses()
