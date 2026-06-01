@@ -59,7 +59,7 @@ class Test_ExtractCentroids3d(unittest.TestCase):
         arr = np.zeros((10, 10, 10), dtype=int)
         arr[1:3, 1:3, 1:3] = 5  # lower along axis 1 (S-I axis in RSP)
         arr[1:3, 6:8, 1:3] = 7  # higher along axis 1
-        centroids, bounding_boxes = extract_centroids_3d(arr)
+        centroids, _bounding_boxes = extract_centroids_3d(arr)
 
         self.assertEqual(len(centroids), 2)
         # Centroid of a 2x2x2 block starting at (1,1,1) is (1,1,1) after int truncation; same for (1,6,1).

@@ -145,7 +145,7 @@ class Test_Labeling_Inference_Mocked(unittest.TestCase):
 
 class Test_Segment_Scan_Mocked(unittest.TestCase):
     def test_segment_scan_padding_round_trip(self):
-        mri, subreg, _vert, _label = get_test_mri()
+        mri, _subreg, _vert, _label = get_test_mri()
         model = Segmentation_Model_Dummy()
         # run() echoes its (padded, reoriented) input back as the segmentation.
         model.run = MagicMock(side_effect=lambda input_nii, verbose=False: {OutputType.seg: input_nii[0], OutputType.softmax_logits: None})  # noqa: ARG005
