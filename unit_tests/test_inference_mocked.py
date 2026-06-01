@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock
 
 import numpy as np
+import torch
 from TPTBox import NII, No_Logger
 from TPTBox.tests.test_utils import get_test_mri
 from typing_extensions import Self
@@ -227,6 +229,91 @@ class Test_Instance_Inference_Mocked(unittest.TestCase):
         result, errcode = predict_instance_mask(no_corpus, model, debug_data={}, proc_corpus_clean=False)
         self.assertIsNone(result)
         self.assertEqual(errcode, ErrCode.EMPTY)
+
+
+class FakeClassifierPredictor:
+    """Stand-in for a loaded PLClassifier: a multi-head network returning deterministic logits.
+
+    Implements the small surface that VertLabelingClassifier._run_array uses: ``eval``, ``to``,
+    ``forward`` (returning a per-head logits dict) and ``softmax``. Zero logits give a uniform,
+    deterministic softmax, which is all the surrounding code needs.
+    """
+
+    HEADS: ClassVar[dict[str, int]] = {"VERT": VERT_CLASSES, "VERTGRP": 12, "REGION": 3, "VERTREL": 6, "VERTT13": 2, "FULLYVISIBLE": 2}
+
+    def eval(self) -> FakeClassifierPredictor:
+        return self
+
+    def to(self, device) -> FakeClassifierPredictor:  # noqa: ARG002
+        return self
+
+    def softmax(self, v: torch.Tensor) -> torch.Tensor:
+        return torch.softmax(v, dim=1)
+
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        batch = x.shape[0]
+        return {name: torch.zeros((batch, n_classes)) for name, n_classes in self.HEADS.items()}
+
+    __call__ = forward
+
+
+def _make_classifier_with_fake_predictor(cutout: tuple[int, int, int] = (32, 32, 16)) -> Labeling_Model_Dummy:
+    """Build a labeling model wired to a FakeClassifierPredictor, running entirely on CPU."""
+    from monai.transforms import CenterSpatialCropd, Compose, NormalizeIntensityd
+
+    model = Labeling_Model_Dummy()
+    model.device = torch.device("cpu")
+    model.final_size = cutout
+    model.cutout_size = cutout  # normally set from the checkpoint in load()
+    model.transform = Compose(
+        [
+            NormalizeIntensityd(keys=["img"], nonzero=True, channel_wise=False),
+            CenterSpatialCropd(keys=["img", "seg"], roi_size=cutout),
+        ]
+    )
+    model.predictor = FakeClassifierPredictor()
+    return model
+
+
+class Test_Classifier_Forward_Mocked(unittest.TestCase):
+    def test_run_array(self):
+        model = _make_classifier_with_fake_predictor()
+        img_arr = np.arange(32 * 32 * 16, dtype=np.float32).reshape(32, 32, 16)
+        seg_arr = (img_arr > img_arr.mean()).astype(np.float32)
+
+        logits_soft, pred_cls = model._run_array(img_arr, seg_arr)
+        # One entry per network head, with the VERT head holding a full class vector.
+        self.assertEqual(set(logits_soft.keys()), set(FakeClassifierPredictor.HEADS.keys()))
+        self.assertEqual(logits_soft["VERT"].shape, (VERT_CLASSES,))
+        self.assertEqual(set(pred_cls.keys()), set(FakeClassifierPredictor.HEADS.keys()))
+        self.assertEqual(np.asarray(pred_cls["VERT"]).ndim, 0)
+
+    def test_run_array_without_seg(self):
+        model = _make_classifier_with_fake_predictor()
+        img_arr = np.ones((32, 32, 16), dtype=np.float32)
+        # seg defaults to a clone of the image when omitted.
+        logits_soft, _pred_cls = model._run_array(img_arr)
+        self.assertEqual(logits_soft["VERT"].shape, (VERT_CLASSES,))
+
+    def test_run_all_arrays(self):
+        model = _make_classifier_with_fake_predictor()
+        arrays = {5: np.ones((32, 32, 16), dtype=np.float32), 6: np.ones((32, 32, 16), dtype=np.float32)}
+        predictions = model.run_all_arrays(arrays)
+        self.assertEqual(set(predictions.keys()), {5, 6})
+        for entry in predictions.values():
+            self.assertIn("soft", entry)
+            self.assertIn("pred", entry)
+            self.assertEqual(entry["soft"]["VERT"].shape, (VERT_CLASSES,))
+
+    def test_run_all_seg_instances_full_path(self):
+        mri, _subreg, vert, _label = get_test_mri()
+        model = _make_classifier_with_fake_predictor()
+        # Drives reorient -> per-instance cutout -> _run_array for every label in the mask.
+        predictions = model.run_all_seg_instances(mri, vert)
+        expected = [int(v) for v in vert.unique() if v != 0]
+        self.assertEqual(sorted(predictions.keys()), sorted(expected))
+        for entry in predictions.values():
+            self.assertEqual(entry["soft"]["VERT"].shape, (VERT_CLASSES,))
 
 
 if __name__ == "__main__":
