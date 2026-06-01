@@ -530,7 +530,7 @@ def process_img_nii(  # noqa: C901
         if not out_spine.exists() or not out_vert.exists() or done_something or override_postpair:
             # back to input space
             #
-            seg_nii_modelres[seg_nii_modelres == 50] = 49
+            seg_nii_modelres[seg_nii_modelres == Location.Vertebra_Corpus.value] = Location.Vertebra_Corpus_border.value
             if not save_modelres_mask:
                 seg_nii_back = seg_nii_modelres.resample_from_to(input_nii_)
                 whole_vert_nii = whole_vert_nii.resample_from_to(input_nii_)

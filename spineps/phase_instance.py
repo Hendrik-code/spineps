@@ -23,6 +23,22 @@ from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 
+# --- Instance-segmentation geometry and merged-corpus heuristics ---
+# Voxel margin kept around the segmentation when cropping before instance prediction.
+INSTANCE_CROP_MARGIN = 5
+# Lower bound (in voxels) for the resolution-scaled corpus/vertebra cleaning thresholds.
+MIN_VOXEL_THRESHOLD = 40
+# IVD connected-component labels are offset by this so they stay distinct from corpus CC labels.
+IVD_CC_LABEL_OFFSET = 100
+# Two neighboring structures at nearly the same height (within this many voxels) are merged.
+SAME_HEIGHT_MERGE_THRESHOLD = 10
+# Relative index window of neighbors inspected when fixing a merged corpus (excludes self).
+NEIGHBOR_OFFSETS = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
+# A merged corpus is only split when there are more than this many neighbors to estimate volume from.
+MIN_NEIGHBORS_FOR_VOLUME_CHECK = 2
+# A corpus is considered merged when its volume exceeds the neighbor average by this ratio.
+MERGED_CORPUS_VOLUME_RATIO = 1.5
+
 
 def predict_instance_mask(
     seg_nii: NII,
@@ -81,7 +97,7 @@ def predict_instance_mask(
         debug_data["inst_uncropped_Subreg_nii_b_zms"] = seg_nii_uncropped.copy()
         uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape, dtype=seg_nii_uncropped.dtype)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
-        crop = seg_nii_rdy.compute_crop(dist=5)
+        crop = seg_nii_rdy.compute_crop(dist=INSTANCE_CROP_MARGIN)
         # logger.print("Crop", crop, verbose=verbose)
         seg_nii_rdy.apply_crop_(crop)
         logger.print(f"Crop down from {uncropped_vert_mask.shape} to {seg_nii_rdy.shape}", verbose=verbose)
@@ -91,11 +107,11 @@ def predict_instance_mask(
         #
         # make threshold in actual mm
         corpus_border_threshold = int(corpus_border_threshold / expected_zms[1])
-        corpus_size_cleaning = max(int(corpus_size_cleaning / (expected_zms[0] * expected_zms[1] * expected_zms[2])), 40)
-        vert_size_threshold = max(int(vert_size_threshold / (expected_zms[0] * expected_zms[1] * expected_zms[2])), 40)
+        corpus_size_cleaning = max(int(corpus_size_cleaning / (expected_zms[0] * expected_zms[1] * expected_zms[2])), MIN_VOXEL_THRESHOLD)
+        vert_size_threshold = max(int(vert_size_threshold / (expected_zms[0] * expected_zms[1] * expected_zms[2])), MIN_VOXEL_THRESHOLD)
 
         seg_labels = seg_nii_rdy.unique()
-        if 49 not in seg_labels:
+        if Location.Vertebra_Corpus_border.value not in seg_labels:
             logger.print(f"no corpus ({Location.Vertebra_Corpus_border.value}) labels in this segmentation, cannot proceed", Log_Type.FAIL)
             return None, ErrCode.EMPTY
         # get all the 3vert predictions
@@ -225,7 +241,7 @@ def get_corpus_coms(
     seg_sem = seg_nii.map_labels({Location.Endplate.value: Location.Vertebra_Disc.value}, verbose=False)
     has_ivd: bool = Location.Vertebra_Disc.value in seg_sem.unique()
     subreg_cc: NII = seg_sem.get_connected_components(labels=Location.Vertebra_Disc.value)
-    subreg_cc[subreg_cc > 0] += 100
+    subreg_cc[subreg_cc > 0] += IVD_CC_LABEL_OFFSET
     subreg_cc_n = len(subreg_cc.unique())
     logger.print(f"Found {subreg_cc_n} IVD ccs (naively)", verbose=verbose)
     coms = subreg_cc.center_of_masses()
@@ -262,7 +278,7 @@ def get_corpus_coms(
                 verbose=verbose,
             )
             # check if same heigh, then just merge ivd label
-            if abs(neighborheight - selfheight) < 10:
+            if abs(neighborheight - selfheight) < SAME_HEIGHT_MERGE_THRESHOLD:
                 logger.print("Same height, just merge")
                 stats_by_height.pop(vl)
                 stats_by_height = dict(sorted(stats_by_height.items(), key=lambda x: x[1][0]))
@@ -272,7 +288,7 @@ def get_corpus_coms(
             logger.print("Merged corpi, try to fix it", verbose=verbose)
             neighbor_verts = {
                 stats_by_height_keys[idx + i]: stats_by_height[stats_by_height_keys[idx + i]]
-                for i in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
+                for i in NEIGHBOR_OFFSETS
                 if (idx + i) < len(stats_by_height_keys) and (idx + i) >= 0 and stats_by_height_keys[idx + i] < 99
             }
 
@@ -283,12 +299,12 @@ def get_corpus_coms(
             neighbor_volumes = [k[2] for nv, k in neighbor_verts.items()]
             logger.print("neighbor_volumes", neighbor_volumes, verbose=verbose)
             n_neighbors_without_target = len(neighbor_volumes) - 1
-            if n_neighbors_without_target > 2:
+            if n_neighbors_without_target > MIN_NEIGHBORS_FOR_VOLUME_CHECK:
                 argmax = np.argmax(neighbor_volumes)
                 n_avg_volume = sum([neighbor_volumes[i] for i in range(len(neighbor_volumes)) if i != argmax]) / n_neighbors_without_target
 
                 diff_volume = neighbor_volumes[argmax] / n_avg_volume
-                if diff_volume > 1.5:
+                if diff_volume > MERGED_CORPUS_VOLUME_RATIO:
                     logger.print(
                         f"Volume difference detected in label {vl}, diff = {diff_volume}, volume = {neighbor_volumes[argmax]}, neighbor_avg = {n_avg_volume}",
                         Log_Type.STRANGE,
