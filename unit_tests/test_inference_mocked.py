@@ -316,5 +316,37 @@ class Test_Classifier_Forward_Mocked(unittest.TestCase):
             self.assertEqual(entry["soft"]["VERT"].shape, (VERT_CLASSES,))
 
 
+class Test_Same_Modelzoom(unittest.TestCase):
+    @staticmethod
+    def _model_with_zoom(zoom: tuple[float, float, float]) -> Segmentation_Model_Dummy:
+        # A fixed (length-3) resolution_range makes calc_recommended_resampling_zoom return it verbatim.
+        model = Segmentation_Model_Dummy()
+        model.inference_config.resolution_range = tuple(zoom)
+        return model
+
+    def test_same_resolution_matches(self):
+        a = self._model_with_zoom((1.0, 1.0, 1.0))
+        b = self._model_with_zoom((1.0, 1.0, 1.0))
+        self.assertTrue(a.same_modelzoom_as_model(b, (1.0, 1.0, 1.0)))
+
+    def test_coarser_other_model_does_not_match(self):
+        # Regression: model_zms > self_zms yields a negative per-axis difference that must NOT count
+        # as a match (the bug was comparing the signed difference against the tolerance).
+        a = self._model_with_zoom((1.0, 1.0, 1.0))
+        b = self._model_with_zoom((2.0, 2.0, 2.0))
+        self.assertFalse(a.same_modelzoom_as_model(b, (1.0, 1.0, 1.0)))
+
+    def test_finer_other_model_does_not_match(self):
+        a = self._model_with_zoom((2.0, 2.0, 2.0))
+        b = self._model_with_zoom((1.0, 1.0, 1.0))
+        self.assertFalse(a.same_modelzoom_as_model(b, (1.0, 1.0, 1.0)))
+
+    def test_single_coarser_axis_does_not_match(self):
+        # Only the inferior axis differs and the other model is coarser there (negative diff).
+        a = self._model_with_zoom((1.0, 1.0, 1.0))
+        b = self._model_with_zoom((1.0, 1.0, 2.0))
+        self.assertFalse(a.same_modelzoom_as_model(b, (1.0, 1.0, 1.0)))
+
+
 if __name__ == "__main__":
     unittest.main()

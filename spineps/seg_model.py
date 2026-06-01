@@ -137,7 +137,7 @@ class Segmentation_Model(ABC):
         """
         self_zms = self.calc_recommended_resampling_zoom(input_zoom=input_zoom)
         model_zms = model.calc_recommended_resampling_zoom(input_zoom=self_zms)
-        match: bool = bool(np.all([self_zms[i] - model_zms[i] < ZOOM_MATCH_TOLERANCE for i in range(3)]))
+        match: bool = bool(np.all([abs(self_zms[i] - model_zms[i]) < ZOOM_MATCH_TOLERANCE for i in range(3)]))
         return match
 
     @citation_reminder
