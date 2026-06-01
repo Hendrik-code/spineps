@@ -21,7 +21,7 @@ class MetaEnum(EnumMeta):
         """
         try:
             cls[item]
-        except ValueError:
+        except (KeyError, ValueError):
             return False
         return True
 
