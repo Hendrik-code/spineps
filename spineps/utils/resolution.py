@@ -21,10 +21,8 @@ REFERENCE_ZOOM: ZOOMS = (0.75, 0.75, 1.65)
 # Physical volume (mm^3) of a single voxel at the reference resolution.
 REFERENCE_VOXEL_VOLUME_MM3: float = float(np.prod(REFERENCE_ZOOM))
 
-# In a ``P, I, R`` oriented image, these are the in-plane (axial) axes; the remaining axis (1) is the
-# superior-inferior height axis.
+# In a ``P, I, R`` oriented image, axis 1 is the superior-inferior height axis.
 INFERIOR_AXIS_PIR: int = 1
-INPLANE_AXES_PIR: tuple[int, int] = (0, 2)
 
 
 def mm3_to_voxels(threshold_mm3: float, zoom: ZOOMS, minimum: int = 1) -> int:
@@ -42,21 +40,22 @@ def mm3_to_voxels(threshold_mm3: float, zoom: ZOOMS, minimum: int = 1) -> int:
     return max(round(threshold_mm3 / voxel_volume), minimum)
 
 
-def mm2_to_voxels(threshold_mm2: float, zoom: ZOOMS, plane_axes: tuple[int, int] = INPLANE_AXES_PIR, minimum: int = 1) -> int:
-    """Convert an in-plane area threshold in mm^2 to a voxel count for the given voxel spacing.
+def isotropic_area_to_voxels(threshold_mm2: float, zoom: ZOOMS, minimum: int = 1) -> int:
+    """Convert an area threshold in mm^2 to an (orientation-agnostic) voxel-adjacency count.
+
+    Uses the geometric-mean voxel face area (``prod(zoom) ** (2/3)``) so the result does not depend on
+    which axes span the contact surface; suitable for voxel-contact counts whose orientation is unknown.
 
     Args:
         threshold_mm2 (float): Area threshold in square millimetres.
         zoom (ZOOMS): Voxel spacing (mm) of the image being processed, per axis.
-        plane_axes (tuple[int, int], optional): The two axes spanning the plane of interest.
-            Defaults to the in-plane (axial) axes of a P,I,R image.
         minimum (int, optional): Lower bound on the returned voxel count. Defaults to 1.
 
     Returns:
         int: The threshold expressed as a number of voxels at ``zoom`` (at least ``minimum``).
     """
-    voxel_area = float(zoom[plane_axes[0]] * zoom[plane_axes[1]])
-    return max(round(threshold_mm2 / voxel_area), minimum)
+    mean_voxel_area = float(np.prod(zoom)) ** (2.0 / 3.0)
+    return max(round(threshold_mm2 / mean_voxel_area), minimum)
 
 
 def mm_to_voxels(threshold_mm: float, zoom: ZOOMS, minimum: int = 0) -> int:

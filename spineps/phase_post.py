@@ -26,6 +26,7 @@ from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
 from spineps.seg_pipeline import logger, vertebra_subreg_labels
 from spineps.utils.compat import zip_strict
 from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
+from spineps.utils.resolution import REFERENCE_VOXEL_VOLUME_MM3, REFERENCE_ZOOM, isotropic_area_to_voxels
 
 # --- Label-id conventions for combined post-processing ---
 # Intervertebral discs (IVDs) and vertebral endplates reuse their parent vertebra's
@@ -38,16 +39,16 @@ C2_INSTANCE_LABEL = 2
 INSTANCE_LABEL_LIMIT = 40
 
 # --- Heuristic thresholds for combined post-processing ---
-# Voxel margin kept around the segmentation when cropping before processing.
-POSTPROCESS_CROP_MARGIN = 2
+# Physical margin kept around the segmentation when cropping before processing.
+POSTPROCESS_CROP_MARGIN_MM = 2 * min(REFERENCE_ZOOM)
 # Warn when a vertebra's unmatched semantic volume exceeds this fraction of an average vertebra.
 UNMATCHED_VOLUME_WARN_FRACTION = 0.5
 # Endplate splitting dilates iteratively with radius 1 up to (but excluding) this value.
 MAX_ENDPLATE_DILATION = 15
 # Two stacked vertebrae are merged only if the smaller is below this fraction of the larger...
 MERGED_VERTEBRA_SIZE_RATIO = 0.5
-# ...and the two masks share at least this many contact voxels.
-MERGED_VERTEBRA_MIN_CONTACT_VOXELS = 20
+# ...and the two masks share at least this much contact area (orientation-agnostic).
+MERGED_VERTEBRA_MIN_CONTACT_MM2 = 20 * REFERENCE_VOXEL_VOLUME_MM3 ** (2.0 / 3.0)
 # An articular substructure CC is reassigned when its largest overlap dominates the second by this ratio.
 ARTICULAR_DOMINANCE_RATIO = 0.5
 
@@ -116,7 +117,7 @@ def phase_postprocess_combined(
 
         if proc_clean_inst_by_sem:
             vert_nii.apply_mask(seg_nii, inplace=True)
-        crop_slices = seg_nii.compute_crop(dist=POSTPROCESS_CROP_MARGIN)
+        crop_slices = seg_nii.compute_crop(dist=POSTPROCESS_CROP_MARGIN_MM / min(seg_nii.zoom))
 
         # Save uncropped to uncrop later
         vert_uncropped = vert_nii.copy()
@@ -677,7 +678,7 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII) -> tuple[NII, 
             vert_firsttwo_arr2 = vert_nii.extract_label(second_key).get_seg_array()
             vert_firsttwo_arr += vert_firsttwo_arr2 + 1
             contacts = np_contacts(vert_firsttwo_arr, connectivity=3)
-            if contacts[(1, 2)] > MERGED_VERTEBRA_MIN_CONTACT_VOXELS:
+            if contacts[(1, 2)] > isotropic_area_to_voxels(MERGED_VERTEBRA_MIN_CONTACT_MM2, vert_nii.zoom):
                 logger.print("Found first two instance weird, will merge", Log_Type.STRANGE)
                 vert_nii.map_labels_({first_key: second_key}, verbose=False)
 

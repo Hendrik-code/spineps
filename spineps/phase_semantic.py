@@ -10,17 +10,18 @@ from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import fill_holes_labels, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
+from spineps.utils.resolution import REFERENCE_VOXEL_VOLUME_MM3, REFERENCE_ZOOM, mm3_to_voxels, mm_to_voxels
 
-# Connected-component artifacts smaller than this many voxels are removed from the semantic mask.
-SMALL_CC_SIZE_THRESHOLD = 30
+# Connected-component artifacts smaller than this physical volume are removed from the semantic mask.
+SMALL_CC_SIZE_THRESHOLD_MM3 = 30 * REFERENCE_VOXEL_VOLUME_MM3
 # Vertical (inferior) extent in millimeters kept around the spinal canal.
 CANAL_HEIGHT_MARGIN_MM = 64
 # Semantic label of S1, i.e. the sacrum.
 SACRUM_LABEL = 26
 # More connected components than this in the semantic mask is unexpected and gets logged.
 MAX_EXPECTED_SEMANTIC_CC = 3
-# Voxel margin used when cropping around connected components in the bounding-box clean step.
-CC_BBOX_MARGIN = 4
+# Physical margin used when cropping around connected components in the bounding-box clean step.
+CC_BBOX_MARGIN_MM = 4 * min(REFERENCE_ZOOM)
 
 
 def predict_semantic_mask(
@@ -100,7 +101,7 @@ def predict_semantic_mask(
                     ],
                     only_delete=True,
                     ignore_missing_labels=True,
-                    cc_size_threshold=SMALL_CC_SIZE_THRESHOLD,
+                    cc_size_threshold=mm3_to_voxels(SMALL_CC_SIZE_THRESHOLD_MM3, seg_nii.zoom),
                 ),
                 verbose=verbose,
             )
@@ -171,6 +172,9 @@ def semantic_bounding_box_clean(seg_nii: NII) -> NII:
     """
     ori = seg_nii.orientation
     seg_binary = seg_nii.reorient_().extract_label(list(seg_nii.unique()))  # whole thing binary
+    # Resolution-aware bounding-box margin (mm -> voxels at the current zoom).
+    bbox_margin_dist = CC_BBOX_MARGIN_MM / min(seg_nii.zoom)
+    bbox_margin_vox = mm_to_voxels(CC_BBOX_MARGIN_MM, seg_nii.zoom)
     seg_bin_largest_k_cc_nii: NII = seg_binary.filter_connected_components(
         max_count_component=None, labels=1, connectivity=3, keep_label=False
     )
@@ -180,7 +184,7 @@ def semantic_bounding_box_clean(seg_nii: NII) -> NII:
     # PIR
     largest_nii = seg_bin_largest_k_cc_nii.extract_label(1)
     # width fixed, and heigh include all connected components within bounding box, then repeat
-    p_slice, i_slice, r_slice = largest_nii.compute_crop(dist=CC_BBOX_MARGIN)
+    p_slice, i_slice, r_slice = largest_nii.compute_crop(dist=bbox_margin_dist)
     bboxes = [(p_slice, i_slice, r_slice)]
 
     # PIR -> fixed, extendable, extendable
@@ -190,11 +194,11 @@ def semantic_bounding_box_clean(seg_nii: NII) -> NII:
         changed = False
         for k in [l for l in range(2, max_k + 1) if l not in incorporated]:
             k_nii = seg_bin_largest_k_cc_nii.extract_label(k)
-            p, i, r = k_nii.compute_crop(dist=CC_BBOX_MARGIN)
+            p, i, r = k_nii.compute_crop(dist=bbox_margin_dist)
 
             for bbox in bboxes:
                 i_slice_compare = slice(
-                    max(bbox[1].start - CC_BBOX_MARGIN, 0), bbox[1].stop + CC_BBOX_MARGIN
+                    max(bbox[1].start - bbox_margin_vox, 0), bbox[1].stop + bbox_margin_vox
                 )  # more margin in inferior direction (allows for gaps in spine)
                 if overlap_slice(bbox[0], p) and overlap_slice(i_slice_compare, i) and overlap_slice(bbox[2], r):
                     # extend bbox

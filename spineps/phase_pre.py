@@ -16,12 +16,13 @@ if TYPE_CHECKING:
 from spineps.seg_enums import ErrCode
 from spineps.seg_pipeline import logger
 from spineps.utils.proc_functions import n4_bias
+from spineps.utils.resolution import REFERENCE_ZOOM
 
 # Input intensities are rescaled into this range before segmentation.
 NORMALIZE_MIN_VALUE = 0
 NORMALIZE_MAX_VALUE = 1500
-# Voxel margin kept around the detected spine when cropping a Vibe scan.
-VIBE_CROP_MARGIN = 25
+# Physical margin kept around the detected spine when cropping a Vibe scan.
+VIBE_CROP_MARGIN_MM = 25 * min(REFERENCE_ZOOM)
 
 
 def _has_logger_arg(func) -> bool:
@@ -72,7 +73,7 @@ def compute_crop(
             Full_Body_Instance_Vibe.sacrum,
         ]
     )
-    return seg.compute_crop(0, dist=VIBE_CROP_MARGIN)
+    return seg.compute_crop(0, dist=VIBE_CROP_MARGIN_MM / min(seg.zoom))
 
 
 def preprocess_input(
