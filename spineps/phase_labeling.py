@@ -324,7 +324,7 @@ def prepare_visible(predictions: dict, visible_w: float = 1.0, gaussian_sigma: f
     # has soft and FULLYVISIBLE key
     predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())  # noqa: RUF015
     if "FULLYVISIBLE" in predict_keys:
-        visible_chain = np.asarray([k["soft"]["FULLYVISIBLE"][1] for v, k in predictions.items()])
+        visible_chain = np.asarray([k["soft"]["FULLYVISIBLE"][1] for k in predictions.values()])
     else:
         visible_chain = np.ones(len(predictions))
     if gaussian_sigma > 0.0:
@@ -520,14 +520,14 @@ def find_vert_path_from_predictions(
 
     # VertRel normalize over labels
     if "VERTREL" in predict_keys:
-        vertrel_matrix = np.asarray([k["soft"]["VERTREL"] for v, k in predictions.items()])
+        vertrel_matrix = np.asarray([k["soft"]["VERTREL"] for k in predictions.values()])
     else:
         vertrel_matrix = np.zeros((n_vert, len(VertRel)))
     if vertrel_column_norm:
         vertrel_matrix = prepare_vertrel_columns(vertrel_matrix, gaussian_sigma=vertrel_gaussian_sigma)
 
     if "VERTT13" in predict_keys:
-        vertt13_softmax_output = np.asarray([k["soft"]["VERTT13"] for v, k in predictions.items()])
+        vertt13_softmax_output = np.asarray([k["soft"]["VERTT13"] for k in predictions.values()])
     else:
         vertt13_softmax_output = np.zeros((n_vert, len(VertT13)))
     vertt13_values = np.multiply(

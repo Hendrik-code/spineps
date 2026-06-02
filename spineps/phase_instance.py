@@ -338,7 +338,7 @@ def get_corpus_coms(
             if len(neighbor_verts) == 0:
                 logger.print("Got no neighbor vert labels to fix", Log_Type.FAIL)
                 continue
-            neighbor_volumes = [k[2] for nv, k in neighbor_verts.items()]
+            neighbor_volumes = [k[2] for k in neighbor_verts.values()]
             logger.print("neighbor_volumes", neighbor_volumes, verbose=verbose)
             n_neighbors_without_target = len(neighbor_volumes) - 1
             if n_neighbors_without_target > MIN_NEIGHBORS_FOR_VOLUME_CHECK:
