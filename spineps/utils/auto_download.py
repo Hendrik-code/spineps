@@ -30,7 +30,7 @@ phase_to_version: dict[str, str] = {
 
 instances: dict[str, Union[Path, str]] = {
     "instance": link + current_instance_highest_version + "/instance.zip",
-    "ct_instance": link + current_instance_highest_version + "/CT_instance.zip",
+    "ct_instance": link + current_highest_ct_version + "/CT_instance.zip",
 }
 semantic: dict[str, Union[Path, str]] = {
     "t2w": link + current_highest_version + "/t2w.zip",
