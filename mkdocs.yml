@@ -1,0 +1,77 @@
+site_name: SPINEPS
+site_description: SPINEPS — automatic whole-spine segmentation of T2-weighted MR images via a two-phase semantic and instance segmentation approach.
+site_url: https://spineps.readthedocs.io
+repo_url: https://github.com/Hendrik-code/spineps
+repo_name: Hendrik-code/spineps
+edit_uri: blob/main/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.integrate
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          # Find the package in the source tree so griffe can read it statically without the
+          # package (and its heavy runtime dependencies) being installed.
+          paths: ["."]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            unwrap_annotated: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Modules:
+      - Pipeline: modules/pipeline.md
+      - Processing Phases: modules/phases.md
+      - Models & Labeling: modules/models.md
+  - API Reference:
+      - Pipeline & Run: api/pipeline.md
+      - Models: api/models.md
+      - Processing Phases: api/phases.md
+      - Enums & Config: api/enums.md
+      - Utilities: api/utils.md
+      - Architectures: api/architectures.md

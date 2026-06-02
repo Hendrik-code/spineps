@@ -1,4 +1,6 @@
-from __future__ import annotations  # noqa: INP001
+"""Template script for batch-running the SPINEPS pipeline over a BIDS dataset (edit the TODO markers)."""  # noqa: INP001
+
+from __future__ import annotations
 
 import sys
 from pathlib import Path
@@ -38,6 +40,17 @@ execution_times = []
 
 
 def injection_function(seg_nii: NII):
+    """Post-process the semantic segmentation mask before instance segmentation (placeholder hook).
+
+    Passed as ``lambda_semantic`` to the pipeline; customize it to modify the semantic mask. By default it is
+    a no-op returning the mask unchanged.
+
+    Args:
+        seg_nii (NII): Semantic segmentation mask produced by the pipeline.
+
+    Returns:
+        NII: The (optionally modified) semantic segmentation mask.
+    """
     # TODO do something with semantic mask
     return seg_nii
 

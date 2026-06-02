@@ -1,4 +1,6 @@
-from __future__ import annotations  # noqa: INP001
+"""CLI entry point running the SPINEPS pipeline on a single image, intended to be launched in parallel."""  # noqa: INP001
+
+from __future__ import annotations
 
 import sys
 from pathlib import Path

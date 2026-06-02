@@ -1,3 +1,5 @@
+"""Min-cost path solver that assigns the most probable vertebra label sequence from a per-vertebra cost matrix."""
+
 from __future__ import annotations
 
 import sys
@@ -7,8 +9,27 @@ from warnings import warn
 import numpy as np
 from TPTBox import Log_Type, No_Logger
 
+# Default softmax temperature used when cost smoothing is enabled.
+DEFAULT_SOFTMAX_TEMP = 0.2
+# Class indices of anatomically special vertebrae within the labeling cost matrix.
+T11_CLASS_IDX = 17  # a single skip is permitted at this class
+T12_CLASS_IDX = 18  # transitional vertebra; may appear twice in a path
+L5_CLASS_IDX = 23  # transitional vertebra; may appear twice in a path
+# Region start indices (cervical, thoracic, lumbar) along the class axis.
+DEFAULT_REGION_STARTS = (0, 7, 19)
+# A class flagged as "multiple-allowed" may appear at most this many times in a path.
+MAX_REPEATS_PER_CLASS = 2
 
-def argmin(lst):
+
+def argmin(lst: list) -> tuple[int, ...]:
+    """Return the index and value of the smallest element in a list.
+
+    Args:
+        lst: A non-empty sequence supporting ``min`` and ``index``.
+
+    Returns:
+        tuple: ``(index, value)`` of the minimum element.
+    """
     m = min(lst)
     return lst.index(m), m
 
@@ -18,14 +39,31 @@ def softmax_T(x, temp):
     return np.exp(np.divide(x, temp)) / np.sum(np.exp(np.divide(x, temp)), axis=0)
 
 
-def c_to_region_idx(c: int, regions: list[int]):
+def c_to_region_idx(c: int, regions: list[int]) -> int:
+    """Map a class index to the index of the spinal region it falls into.
+
+    Args:
+        c (int): Class (label) index along the cost matrix's class axis.
+        regions (list[int]): Sorted region start indices (e.g. cervical, thoracic, lumbar).
+
+    Returns:
+        int: Index of the region containing class ``c``.
+    """
     for idx, r in enumerate(regions):
         if c < r:
             return idx - 1
     return len(regions) - 1
 
 
-def internal_to_real_path(p):
+def internal_to_real_path(p: list) -> list:
+    """Convert an internal ``(row, class)`` path into the ordered list of class indices.
+
+    Args:
+        p: Iterable of ``(row, class)`` tuples representing path nodes.
+
+    Returns:
+        list: Class indices ordered by ascending row (vertebra) index.
+    """
     pat = sorted(p, key=lambda x: x[0])
     pat = [x[1] for x in pat]
     return pat
@@ -43,7 +81,7 @@ def find_most_probably_sequence(  # noqa: C901
     invert_cost: bool = True,
     #
     softmax_cost: bool = False,
-    softmax_temp: float = 0.2,
+    softmax_temp: float = DEFAULT_SOFTMAX_TEMP,
     #
     allow_multiple_at_class: list[int] | None = None,  # T12 and L5
     punish_multiple_sequence: float = 0.0,
@@ -56,17 +94,56 @@ def find_most_probably_sequence(  # noqa: C901
     #
     verbose: bool = False,
 ) -> tuple[float, list[int], list]:
+    """Find the most probable vertebra-label sequence as a min-cost monotone path through a cost matrix.
+
+    Each matrix row corresponds to a detected vertebra (top to bottom) and each column to a candidate label
+    class. The path moves one row down per step, normally advancing one class (diagonal). Special constraints
+    model spinal anatomy: certain transitional classes (e.g. T12, L5) may repeat, certain classes/regions allow
+    a single skip, and optional region- and T13-related transition costs adjust the path. Extra moves incur the
+    configured penalties; classes flagged as repeatable may appear at most ``MAX_REPEATS_PER_CLASS`` times.
+
+    Args:
+        cost (np.ndarray | list[int]): 2D cost matrix of shape ``(n_vertebrae, n_classes)``.
+        min_start_class (int, optional): Smallest class index the path may start at. Defaults to 0.
+        region_rel_cost (np.ndarray | list[int] | None, optional): Per-vertebra costs for being the first/last
+            vertebra of each region; enables region-transition costs when given. Defaults to None.
+        vertt13_cost (np.ndarray | list[int] | None, optional): Per-vertebra cost contribution for the T13/T12
+            (class 18) repeat case. Defaults to None.
+        regions (list[int] | None, optional): Region start indices along the class axis. Defaults to
+            ``DEFAULT_REGION_STARTS``.
+        invert_cost (bool, optional): Negate the cost so that high input scores are preferred. Defaults to True.
+        softmax_cost (bool, optional): Apply a softmax over the cost columns (deprecated path). Defaults to False.
+        softmax_temp (float, optional): Temperature for the softmax. Defaults to ``DEFAULT_SOFTMAX_TEMP``.
+        allow_multiple_at_class (list[int] | None, optional): Classes allowed to repeat (e.g. T12 and L5).
+            Defaults to ``[T12_CLASS_IDX, L5_CLASS_IDX]``.
+        punish_multiple_sequence (float, optional): Extra cost added for repeating a class. Defaults to 0.0.
+        allow_skip_at_class (list[int] | None, optional): Classes after which a single class may be skipped (e.g.
+            T11). Defaults to ``[T11_CLASS_IDX]``.
+        punish_skip_sequence (float, optional): Extra cost added for a class-level skip. Defaults to 0.0.
+        allow_skip_at_region (list[int] | None, optional): Regions in which a single skip is permitted. Defaults
+            to ``[0]``.
+        punish_skip_at_region_sequence (float, optional): Extra cost added for a region-level skip. Defaults to 0.2.
+        verbose (bool, optional): Enable verbose logging of the recursion. Defaults to False.
+
+    Returns:
+        tuple[float, list[int], list]: The total path cost, the chosen class index per vertebra (top to bottom),
+        and the internal memoization table of best ``(cost, path)`` per ``(row, class)`` cell.
+
+    Raises:
+        AssertionError: If ``min_start_class`` is not less than the number of classes, or if a provided
+            ``region_rel_cost`` does not have the expected number of columns.
+    """
     logger = No_Logger()
     logger.default_verbose = verbose
     # default mutable arguments
     if allow_skip_at_region is None:
         allow_skip_at_region = [0]
     if allow_skip_at_class is None:
-        allow_skip_at_class = [17]
+        allow_skip_at_class = [T11_CLASS_IDX]
     if allow_multiple_at_class is None:
-        allow_multiple_at_class = [18, 23]
+        allow_multiple_at_class = [T12_CLASS_IDX, L5_CLASS_IDX]
     if regions is None:
-        regions = [0, 7, 19]
+        regions = list(DEFAULT_REGION_STARTS)
     # convert to np arrays
     if isinstance(cost, list):
         cost = np.asarray(cost)
@@ -157,7 +234,7 @@ def find_most_probably_sequence(  # noqa: C901
             # allow two subsequent of same class
             if c in allow_multiple_at_class:
                 cost_add = punish_multiple_sequence
-                if c == 18:
+                if c == T12_CLASS_IDX:
                     cost_add += t13_cost_single(r + 1, c)
                 with logger:
                     add_option_path(options, r + 1, c, cost_add)
@@ -182,7 +259,7 @@ def find_most_probably_sequence(  # noqa: C901
             cost_value += rel_cost(r, c, pnext, region_cur)
             # constraint: cannot have more than 2 T12 and L5
             for amac in allow_multiple_at_class:
-                if amac in cnt and cnt[amac] > 2:
+                if amac in cnt and cnt[amac] > MAX_REPEATS_PER_CLASS:
                     cost_value = sys.maxsize
                     break
             # setting to memory

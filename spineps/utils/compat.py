@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 
-def zip_strict(*iterables):
+
+def zip_strict(*iterables: Iterable) -> zip:
     """
     A strict version of zip that raises a ValueError if the input iterables have different lengths.
 

@@ -1,0 +1,17 @@
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+  jobs:
+    # Install only the docs toolchain. The SPINEPS package itself is intentionally NOT installed:
+    # its heavy runtime dependencies (torch, nnunetv2, antspyx, monai, ...) can exceed Read the Docs
+    # build time/memory limits. mkdocstrings' griffe backend reads the package source statically
+    # (see the `paths` option in mkdocs.yml), so those dependencies are not needed to render the docs.
+    post_install:
+      # ruff is only used by mkdocstrings to format rendered signatures (lightweight, no build deps).
+      - pip install "mkdocs>=1.6" "mkdocs-material>=9.5" "mkdocstrings[python]>=0.25" ruff
+
+mkdocs:
+  configuration: mkdocs.yml

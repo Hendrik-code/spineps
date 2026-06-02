@@ -1,3 +1,5 @@
+"""Segmentation-pipeline helpers: shared logger, subregion label sets, centroid computation, and pipeline version reporting."""
+
 from __future__ import annotations
 
 # from utils.predictor import nnUNetPredictor
@@ -12,6 +14,16 @@ from TPTBox.logger.log_file import format_time_short, get_time
 from spineps.seg_model import Segmentation_Model
 
 logger = No_Logger(prefix="SPINEPS")
+
+# IVD and endplate instances are stored as (vertebra label + offset). These offsets are the canonical
+# home for the convention; other modules import them from here.
+IVD_LABEL_OFFSET = 100
+ENDPLATE_LABEL_OFFSET = 200
+# Number of derived label ids reserved per type; the ranges below cover all IVD/endplate labels and are
+# stripped before centroid computation.
+_MAX_DERIVED_LABELS_PER_TYPE = 34
+IVD_LABEL_RANGE = range(IVD_LABEL_OFFSET, IVD_LABEL_OFFSET + _MAX_DERIVED_LABELS_PER_TYPE)
+ENDPLATE_LABEL_RANGE = range(ENDPLATE_LABEL_OFFSET, ENDPLATE_LABEL_OFFSET + _MAX_DERIVED_LABELS_PER_TYPE)
 
 fill_holes_labels = [
     Location.Vertebra_Corpus_border.value,
@@ -41,28 +53,30 @@ def predict_centroids_from_both(
     seg_nii: NII,
     models: list[Segmentation_Model | None],
     parameter: dict[str, Any],
-):
-    """Calculates the centroids of each vertebra corpus by using both semantic and instance mask
+) -> poi.POI:
+    """Calculate the centroids of each vertebra corpus using both the semantic and instance masks.
+
+    Strips the IVD and endplate derived instance labels from the instance mask, computes the per-vertebra centroids from the
+    instance and semantic masks, adds an S1 corpus centroid when sacrum is present, and records pipeline metadata (model
+    descriptions, version, revision, timestamp, and the given parameters) on the result.
 
     Args:
-        vert_nii_cleaned (NII): _description_
-        seg_nii (NII): _description_
-        models (list[Segmentation_Model]): _description_
-        input_zms_pir (ZOOMS | None, optional): _description_. Defaults to None.
+        vert_nii_cleaned (NII): Cleaned vertebra instance segmentation mask.
+        seg_nii (NII): Subregion semantic segmentation mask.
+        models (list[Segmentation_Model | None]): Models used in the pipeline, recorded in the centroid metadata.
+        parameter (dict[str, Any]): Pipeline parameters to record on the centroid metadata.
 
     Returns:
-        _type_: _description_
+        POI: The computed point-of-interest / centroid object with pipeline metadata attached.
     """
     vert_nii_4_centroids = vert_nii_cleaned.copy()
-    labelmap = dict.fromkeys(range(100, 134), 0)
-    for i in range(200, 234):
-        labelmap[i] = 0
+    labelmap = dict.fromkeys([*IVD_LABEL_RANGE, *ENDPLATE_LABEL_RANGE], 0)
     vert_nii_4_centroids.map_labels_(labelmap, verbose=False)
 
     ctd = poi.calc_poi_from_subreg_vert(vert_nii_4_centroids, seg_nii, verbose=logger)
 
     if v_name2idx["S1"] in vert_nii_cleaned.unique():
-        s1_nii = vert_nii_cleaned.extract_label(26, inplace=False)
+        s1_nii = vert_nii_cleaned.extract_label(v_name2idx["S1"], inplace=False)
         ctd[v_name2idx["S1"], 50] = center_of_mass(s1_nii.get_seg_array())
 
     models_repr = {}
@@ -81,7 +95,12 @@ def predict_centroids_from_both(
     return ctd
 
 
-def pipeline_version():
+def pipeline_version() -> str:
+    """Return the pipeline version string derived from the git commit count on ``main``.
+
+    Returns:
+        str: A version like ``"v1.<commit-count>"``, or ``"Version not found"`` if git is unavailable.
+    """
     try:
         label = subprocess.check_output(["git", "rev-list", "--count", "main"]).strip()
         label = str(label).replace("'", "")
@@ -92,7 +111,12 @@ def pipeline_version():
     return "v1." + str(label)
 
 
-def pipeline_revision():
+def pipeline_revision() -> str:
+    """Return the current git revision string for the pipeline.
+
+    Returns:
+        str: ``"<git-describe>::<full-commit-hash>"``; either part is empty if the corresponding git call fails.
+    """
     label = ""
     rev = ""
     try:

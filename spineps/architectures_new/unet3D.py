@@ -1,3 +1,5 @@
+"""3D U-Net architecture built from 3D residual convolutional blocks."""
+
 from __future__ import annotations
 
 import itertools
@@ -8,28 +10,69 @@ from torch import nn
 
 
 class Block3D(nn.Module):
+    """3D convolution followed by group normalization and a LeakyReLU activation."""
+
     def __init__(self, dim: int, dim_out: int, groups: int = 8):
+        """Initialize the block.
+
+        Args:
+            dim (int): Number of input channels.
+            dim_out (int): Number of output channels.
+            groups (int): Number of groups for group normalization.
+        """
         super().__init__()
         self.proj = nn.Conv3d(dim, dim_out, 3, padding=1)
         self.norm = nn.GroupNorm(groups, dim_out)
         self.act = nn.LeakyReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply convolution, normalization and activation.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape ``(b, dim, d, h, w)``.
+
+        Returns:
+            torch.Tensor: Output tensor of shape ``(b, dim_out, d, h, w)``.
+        """
         return self.act(self.norm(self.proj(x)))
 
 
 class ResnetBlock3D(nn.Module):
+    """Residual block stacking two :class:`Block3D` modules with a skip connection."""
+
     def __init__(self, dim: int, dim_out: int, *, groups: int = 8):
+        """Initialize the residual block.
+
+        Args:
+            dim (int): Number of input channels.
+            dim_out (int): Number of output channels.
+            groups (int): Number of groups for the group normalization in each block.
+        """
         super().__init__()
         self.block1 = Block3D(dim, dim_out, groups=groups)
         self.block2 = Block3D(dim_out, dim_out, groups=groups)
         self.res_conv = nn.Conv3d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the two blocks and add the (optionally projected) input as a residual.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape ``(b, dim, d, h, w)``.
+
+        Returns:
+            torch.Tensor: Output tensor of shape ``(b, dim_out, d, h, w)``.
+        """
         return self.block2(self.block1(x)) + self.res_conv(x)
 
 
 class Unet3D(nn.Module):
+    """3D U-Net with residual blocks for volumetric segmentation.
+
+    The volume is down-sampled through a configurable number of resolution stages, processed by a bottleneck
+    of two residual blocks and up-sampled again. Skip connections from the encoder are averaged with the
+    decoder features at each stage, and the initial features are concatenated before the final convolution.
+    """
+
     def __init__(
         self,
         dim: int,
@@ -40,6 +83,17 @@ class Unet3D(nn.Module):
         conditional_dimensions: int = 0,
         resnet_block_groups: int = 8,
     ):
+        """Build the 3D U-Net layers.
+
+        Args:
+            dim (int): Base feature dimension used to derive the channel widths.
+            init_dim (int | None): Channels produced by the initial convolution. Defaults to ``dim``.
+            out_dim (int | None): Number of output channels. Defaults to ``channels``.
+            dim_mults (tuple): Channel multipliers applied to ``dim`` for the successive resolution stages.
+            channels (int): Number of input image channels.
+            conditional_dimensions (int): Number of additional conditioning channels concatenated to the input.
+            resnet_block_groups (int): Number of groups for the group normalization inside the residual blocks.
+        """
         super().__init__()
         self.channels = channels
 
@@ -87,6 +141,18 @@ class Unet3D(nn.Module):
         self.final_conv = nn.Conv3d(dim, self.out_dim, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the U-Net forward pass over a volume.
+
+        Args:
+            x (torch.Tensor): Input volume of shape ``(b, channels (+ conditional_dimensions), d, h, w)``. Each
+                spatial dimension must be divisible by ``2 ** (num_down_stages - 1)``.
+
+        Returns:
+            torch.Tensor: Output tensor of shape ``(b, out_dim, d, h, w)``.
+
+        Raises:
+            AssertionError: If any spatial dimension is not divisible by the required down-sampling factor.
+        """
         down_factor = 2 ** (len(self.downs) - 1)
         for i in (-1, -2, -3):
             assert x.shape[i] % down_factor == 0, f"Spatial dim {x.shape[i]} not divisible by {down_factor}, input shape={x.shape}"

@@ -5,6 +5,7 @@
 [![codecov](https://codecov.io/gh/Hendrik-code/spineps/graph/badge.svg?token=A7FWUKO9Y4)](https://codecov.io/gh/Hendrik-code/spineps)
 [![tests](https://github.com/Hendrik-code/spineps/actions/workflows/tests.yml/badge.svg)](https://github.com/Hendrik-code/spineps/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Documentation Status](https://readthedocs.org/projects/spineps/badge/?version=latest)](https://spineps.readthedocs.io)
 
 # SPINEPS – Automatic Whole Spine Segmentation of T2w MR images using a Two-Phase Approach to Multi-class Semantic and Instance Segmentation.
 # and
@@ -12,7 +13,25 @@
 
 This is a segmentation pipeline to automatically, and robustly, segment the whole spine in T2w sagittal images.
 
+## NOW SUPPORTS BOTH CT AND T2W!
+There is a new release that finally supports both CT and T2W with completely independent, modality specific models. We are already working on completely modality/sequence robust version that works on everything. Stay tuned for that.
+
+
 ![pipeline_process](spineps/example/figures/pipeline_processflow.png?raw=true)
+
+## Documentation
+
+📖 **Online documentation: [spineps.readthedocs.io](https://spineps.readthedocs.io)**
+
+The documentation source lives in the [`docs/`](docs/) folder and is built with [MkDocs](https://www.mkdocs.org/)
+(Material theme + [mkdocstrings](https://mkdocstrings.github.io/)). To build and preview it locally:
+
+```bash
+pip install mkdocs mkdocs-material "mkdocstrings[python]"
+mkdocs serve   # then open http://127.0.0.1:8000
+```
+
+Start with [`docs/index.md`](docs/index.md) and the [Getting Started](docs/getting-started.md) guide.
 
 ## Citation
 
