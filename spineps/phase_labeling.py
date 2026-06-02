@@ -514,7 +514,7 @@ def find_vert_path_from_predictions(
     # print(visible_chain)
 
     predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())  # noqa: RUF015
-    assert "VERT" in predict_keys or "VERTEXACT" in predict_keys or "VERTGRP" in predict_keys, (
+    assert "VERT" in predict_keys or "VERTEXACT" in predict_keys or "VERTEX" in predict_keys or "VERTGRP" in predict_keys, (
         f"No vital classification head found, got {predict_keys}"
     )
 
