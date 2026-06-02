@@ -33,6 +33,9 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
+          # Find the package in the source tree so griffe can read it statically without the
+          # package (and its heavy runtime dependencies) being installed.
+          paths: ["."]
           options:
             docstring_style: google
             show_source: true
