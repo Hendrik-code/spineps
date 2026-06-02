@@ -26,7 +26,10 @@ phase_to_version: dict[str, str] = {
     SpinepsPhase.SEMANTIC.name + "_ct": current_highest_ct_version,
 }
 
-instances: dict[str, Union[Path, str]] = {"instance": link + current_instance_highest_version + "/instance.zip"}
+instances: dict[str, Union[Path, str]] = {
+    "instance": link + current_instance_highest_version + "/instance.zip",
+    "ct_instance": link + current_instance_highest_version + "/CT_instance.zip",
+}
 semantic: dict[str, Union[Path, str]] = {
     "t2w": link + current_highest_version + "/t2w.zip",
     "t1w": link + current_highest_version + "/t1w.zip",
@@ -40,6 +43,7 @@ labeling: dict[str, Union[Path, str]] = {
 
 download_names = {
     "instance": "instance_sagittal",
+    "ct_instance": "CT_instance",
     "t2w": "T2w_semantic",
     "t1w": "T1w_semantic",
     "vibe": "Vibe_semantic",
