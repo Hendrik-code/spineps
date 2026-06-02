@@ -634,7 +634,9 @@ def collect_vertebra_predictions(
         seg_nii.shape[2],
     )
     hierarchical_existing_predictions = []
-    hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=seg_nii.dtype)
+    # Holds only binary {0, 1} per-label masks, so uint8 is sufficient (the source dtype can be wider,
+    # which would needlessly inflate this n_coms x 3 x volume array and slow the Dice comparisons below).
+    hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=np.uint8)
     # print("hierarchical_predictions", hierarchical_predictions.shape)
     vert_predict_template = np.zeros(shp, dtype=np.uint16)
     # print("vert_predict_template", vert_predict_template.shape)
@@ -647,9 +649,10 @@ def collect_vertebra_predictions(
 
     logger.print("Vertebra collect in", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
 
+    # seg_nii_for_cut is constant across the loop; read its array once instead of copying it per centroid.
+    seg_arr_c = seg_nii_for_cut.get_seg_array()
     # iterate over sorted coms and segment vertebra from subreg
     for com_idx, com in enumerate(tqdm(corpus_coms, desc=logger._get_logger_prefix() + " Vertebra Body predictions")):
-        seg_arr_c = seg_nii_for_cut.get_seg_array()
         # Shift the com until there is a segmentation there (to account for mishaps in the com calculation)
         seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
         orig_com = (com[0], com[1], com[2])
@@ -823,15 +826,15 @@ def create_prediction_couples(
         ordered by descending size-weighted agreement.
     """
     n_predictions = hierarchical_predictions.shape[0]
+    # Set for O(1) membership in the inner candidate search (called 3 * n_predictions times).
+    existing_predictions = set(hierarchical_existing_predictions)
 
     coupled_predictions = {}
     # TODO try to calculate list of candidates here, take the predictions and then parallelize the find_prediction_couple
 
     for idx in range(n_predictions):
         for pred in range(3):
-            couple, agreement = find_prediction_couple(
-                idx, pred, hierarchical_predictions, hierarchical_existing_predictions, n_predictions, verbose
-            )
+            couple, agreement = find_prediction_couple(idx, pred, hierarchical_predictions, existing_predictions, n_predictions, verbose)
             if couple is None:
                 continue
             if couple not in coupled_predictions:
