@@ -9,6 +9,7 @@ description = "Framework for out-of-the box whole spine MRI segmentation."
 authors = ["Hendrik Möller <hendrik.moeller@tum.de>"]
 repository = "https://github.com/Hendrik-code/spineps"
 homepage = "https://github.com/Hendrik-code/spineps"
+documentation = "https://spineps.readthedocs.io"
 license = "Apache License Version 2.0, January 2004"
 readme = "README.md"
 exclude = ["models", "examples"]
@@ -49,6 +50,15 @@ flake8 = ">=4.0.1"
 tqdm = ">=4.62.3"
 
 
+[tool.poetry.group.docs]
+optional = true
+
+[tool.poetry.group.docs.dependencies]
+mkdocs = ">=1.6"
+mkdocs-material = ">=9.5"
+mkdocstrings = { extras = ["python"], version = ">=0.25" }
+
+
 [tool.poetry-dynamic-versioning]
 enable = true
 
@@ -85,6 +95,7 @@ exclude = [
     "spineps/utils/plans_handler.py",
     "spineps/utils/predictor.py",
     "spineps/utils/sliding_window_prediction.py",
+    "spineps/utils/image.py",  # vendored from spinalcordtoolbox
     ".toml",
 ]
 line-length = 140
@@ -136,6 +147,7 @@ select = [
     "PERF",
     "FURB",
     "RUF",
+    "RUF059",  # preview rule: unused unpacked variable (enabled via explicit-preview-rules below)
 ]
 
 
@@ -179,6 +191,11 @@ extend-safe-fixes = ["RUF015", "C419", "C408", "B006"]
 
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+# Enable preview mode for the linter, but only enforce preview rules that are selected by their
+# explicit code (e.g. RUF059 above) instead of pulling in the entire preview rule set.
+preview = true
+explicit-preview-rules = true
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 5.

@@ -1,3 +1,5 @@
+"""Memory-efficient soft Dice loss for multi-class segmentation."""
+
 from __future__ import annotations
 
 import torch
@@ -5,7 +7,24 @@ from torch import nn
 
 
 class MemoryEfficientSoftDiceLoss(nn.Module):
+    """Soft Dice computed without materializing a full one-hot target when the prediction already matches its shape.
+
+    Returns the mean soft Dice coefficient over classes (and optionally the batch). The caller typically uses
+    ``1 - loss`` as the actual loss term.
+    """
+
     def __init__(self, apply_nonlin=None, batch_dice: bool = False, do_bg: bool = True, smooth: float = 1.0, ddp: bool = True):
+        """Configure the soft Dice computation.
+
+        Args:
+            apply_nonlin (Callable | None): Optional non-linearity (e.g. softmax) applied to ``x`` before the Dice
+                computation.
+            batch_dice (bool): If ``True``, accumulate the statistics over the whole batch before dividing; otherwise
+                compute the Dice per sample.
+            do_bg (bool): If ``True``, include the background class (channel 0); otherwise drop it.
+            smooth (float): Smoothing constant added to the denominator for numerical stability.
+            ddp (bool): Flag retained for distributed-data-parallel all-gather (currently unused in this implementation).
+        """
         super().__init__()
 
         self.do_bg = do_bg
@@ -15,6 +34,17 @@ class MemoryEfficientSoftDiceLoss(nn.Module):
         self.ddp = ddp
 
     def forward(self, x, y, loss_mask=None):
+        """Compute the mean soft Dice coefficient between predictions and targets.
+
+        Args:
+            x (torch.Tensor): Prediction tensor of shape ``(b, c, ...)``; the non-linearity is applied first if set.
+            y (torch.Tensor): Target tensor, either class indices of shape ``(b, 1, ...)`` / ``(b, ...)`` or a one-hot
+                encoding matching the shape of ``x``.
+            loss_mask (torch.Tensor | None): Optional mask multiplied into the statistics to ignore certain voxels.
+
+        Returns:
+            torch.Tensor: Scalar mean soft Dice coefficient.
+        """
         shp_x, shp_y = x.shape, y.shape
 
         if self.apply_nonlin is not None:

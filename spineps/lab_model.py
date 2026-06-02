@@ -1,3 +1,5 @@
+"""Vertebra-labeling classifier: crops vertebra patches and predicts their anatomical labels."""
+
 from __future__ import annotations
 
 import math
@@ -17,6 +19,9 @@ from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model
 from spineps.utils.filepaths import search_path
 
 logger = No_Logger(prefix="VertLabelingClassifier")
+
+# Default spatial size (voxels) of the cropped patch fed to the vertebra-labeling classifier.
+DEFAULT_CLASSIFIER_INPUT_SIZE = (152, 168, 32)
 
 
 def unit_vector(vector):
@@ -47,19 +52,17 @@ def angle_between(v1, v2, signed=True):
 
 
 def rotate_patch_sagitally(patch: np.ndarray, angle: float, msk: bool = False, cval: int = 0) -> np.ndarray:
-    """
-    Rotates a patch sagitally given an angle (Assuming the patch is in (I,P,L) orientation)
+    """Rotates a patch sagittally by a given angle (assuming the patch is in (I, P, L) orientation).
 
-    Parameters:
-    ----------
-        patch: np.ndarray
-            a numpy array with (I,P,L) orientation
-        angle: float
-            angle of rotation in degrees
-        msk: bool, optional
-            flag to determine interpolation type. Interpolation order os 0 if input is a mask.
-    Output:
-        np.ndarray: rotated patch
+    Args:
+        patch (np.ndarray): A numpy array in (I, P, L) orientation.
+        angle (float): Angle of rotation in degrees.
+        msk (bool, optional): If true, treats the patch as a mask and uses nearest-neighbour interpolation (order 0);
+            otherwise uses cubic interpolation (order 3). Defaults to False.
+        cval (int, optional): Constant value used to fill regions outside the rotated patch. Defaults to 0.
+
+    Returns:
+        np.ndarray: The rotated patch with the same shape as the input.
     """
     if msk:
         cval = 0
@@ -71,6 +74,21 @@ def rotate_patch_sagitally(patch: np.ndarray, angle: float, msk: bool = False, c
 
 
 class VertLabelingClassifier(Segmentation_Model):
+    """Classifier that assigns anatomical labels to individual vertebrae.
+
+    For each vertebra a patch is cropped around its center of mass, optionally rotated to align with the spine axis,
+    normalized and center-cropped to a fixed size, then passed through a DenseNet (PLClassifier) that outputs per-head
+    softmax predictions. Although it subclasses Segmentation_Model to reuse config loading, it does not perform voxel
+    segmentation (run/segment_scan are not implemented).
+
+    Attributes:
+        device (torch.device): Device the classifier runs on.
+        final_size (tuple[int, int, int]): Spatial size (voxels) the cropped patch is reduced to before inference.
+        cutout_size (tuple[int, int, int]): Patch size used when cutting out a vertebra, set from the loaded model.
+        totensor (ToTensor): Transform converting numpy arrays to tensors.
+        transform (Compose): Intensity normalization and center-crop transform applied to each patch.
+    """
+
     def __init__(
         self,
         model_folder: str | Path,
@@ -79,11 +97,24 @@ class VertLabelingClassifier(Segmentation_Model):
         default_verbose: bool = False,
         default_allow_tqdm: bool = True,
     ):
+        """Initializes the vertebra-labeling classifier and its preprocessing transforms.
+
+        Args:
+            model_folder (str | Path): Path to the classifier's model folder.
+            inference_config (Segmentation_Inference_Config | None, optional): Inference config; if None, loads it from the
+                model folder. Defaults to None.
+            use_cpu (bool, optional): If true, runs inference on CPU instead of GPU. Defaults to False.
+            default_verbose (bool, optional): If true, prints more information when used. Defaults to False.
+            default_allow_tqdm (bool, optional): If true, shows a progress bar while predicting. Defaults to True.
+
+        Raises:
+            AssertionError: If the inference config expects more than one input.
+        """
         super().__init__(model_folder, inference_config, use_cpu, default_verbose, default_allow_tqdm)
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
         # self.model: PLClassifier = model
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.final_size: tuple[int, int, int] = (152, 168, 32)
+        self.final_size: tuple[int, int, int] = DEFAULT_CLASSIFIER_INPUT_SIZE
         self.totensor = ToTensor()
         self.transform = Compose(
             [
@@ -93,6 +124,17 @@ class VertLabelingClassifier(Segmentation_Model):
         )
 
     def load(self, folds: tuple[str, ...] | None = None) -> Self:  # noqa: ARG002
+        """Loads the classifier checkpoint and updates the preprocessing transform to the model's input size.
+
+        Args:
+            folds (tuple[str, ...] | None, optional): Unused; present for interface compatibility. Defaults to None.
+
+        Returns:
+            Self: This classifier with its predictor loaded and moved to the selected device.
+
+        Raises:
+            AssertionError: If no matching checkpoint file is found in the model folder.
+        """
         assert os.path.exists(self.model_folder)  # noqa: PTH110
 
         chktpath = search_path(self.model_folder, "**/*val_f1=*valf1-weights.ckpt")
@@ -120,18 +162,53 @@ class VertLabelingClassifier(Segmentation_Model):
         input_nii: list[NII],
         verbose: bool = False,
     ) -> dict[OutputType, NII | None]:
+        """Not implemented: the classifier does not perform voxel segmentation.
+
+        Args:
+            input_nii (list[NII]): Unused.
+            verbose (bool, optional): Unused. Defaults to False.
+
+        Raises:
+            NotImplementedError: Always, since running it as a segmentation model is not meaningful.
+        """
         raise NotImplementedError("Doesnt make sense")
 
     def segment_scan(*args, **kwargs):
+        """Not implemented: the classifier does not perform voxel segmentation.
+
+        Raises:
+            NotImplementedError: Always, since segmenting with this model is not meaningful.
+        """
         raise NotImplementedError("Doesnt make sense")
 
     @classmethod
     def from_modelfolder(cls, model_folder: str | Path):
+        """Not implemented: construction directly from a model folder.
+
+        Args:
+            model_folder (str | Path): Path to the model folder.
+
+        Raises:
+            NotImplementedError: Always; use from_checkpoint_path instead.
+        """
         raise NotImplementedError()
         # find checkpoint yourself, then load from checkpoitn path
 
     @classmethod
-    def from_checkpoint_path(cls, checkpoint_path: str | Path):
+    def from_checkpoint_path(cls, checkpoint_path: str | Path) -> VertLabelingClassifier:
+        """Constructs a classifier from a checkpoint file path.
+
+        Resolves the model folder as the grandparent of the checkpoint file and instantiates the classifier from it.
+
+        Args:
+            checkpoint_path (str | Path): Path to the checkpoint (.ckpt) file.
+
+        Returns:
+            VertLabelingClassifier: The constructed classifier.
+
+        Raises:
+            AssertionError: If the checkpoint path does not exist.
+        """
         if isinstance(checkpoint_path, str):
             checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f"Checkpoint path does not exist: {checkpoint_path}"
@@ -142,7 +219,17 @@ class VertLabelingClassifier(Segmentation_Model):
         logger.print("Model loaded from", checkpoint_path, verbose=True)
         return d
 
-    def run_all_position_instances(self, img: NII, com_list: list[tuple[int, int, int]]):
+    def run_all_position_instances(self, img: NII, com_list: list[tuple[int, int, int]]) -> dict[int, dict[str, np.ndarray]]:
+        """Runs the classifier on patches cropped around a list of center-of-mass positions.
+
+        Args:
+            img (NII): The intensity image (reoriented in place to the default orientation).
+            com_list (list[tuple[int, int, int]]): Center-of-mass voxel positions, ordered top-to-bottom, one per vertebra.
+
+        Returns:
+            dict[int, dict[str, np.ndarray]]: Mapping from list index to a dict with "soft" (softmax outputs) and
+                "pred" (argmax class) per classifier head.
+        """
         img.reorient_()
         # assert coms are in PIR?
         # assert coms are in order top-to-bottom
@@ -153,6 +240,19 @@ class VertLabelingClassifier(Segmentation_Model):
         return predictions
 
     def run_all_seg_instances(self, img: NII, seg: NII) -> dict[int, dict[str, np.ndarray]]:
+        """Runs the classifier on every vertebra instance present in a segmentation mask.
+
+        For each label in the mask, computes the patch rotation angle from the neighbouring vertebra centers of mass (to
+        align with the spine axis) and runs the classifier on the corresponding patch.
+
+        Args:
+            img (NII): The intensity image.
+            seg (NII): The vertebra instance segmentation mask.
+
+        Returns:
+            dict[int, dict[str, np.ndarray]]: Mapping from vertebra label to a dict with "soft" (softmax outputs) and
+                "pred" (argmax class) per classifier head.
+        """
         img = img.reorient()
         seg = seg.reorient()
         # TODO assert order of seg labels are order from top to bottom
@@ -175,7 +275,23 @@ class VertLabelingClassifier(Segmentation_Model):
             predictions[v] = {"soft": logits_soft, "pred": pred_cls}
         return predictions
 
-    def run_given_seg_pos(self, img: NII, seg: NII, vert_label: int | None = None, angle: float | None = None):
+    def run_given_seg_pos(
+        self, img: NII, seg: NII, vert_label: int | None = None, angle: float | None = None
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+        """Runs the classifier on the patch centered on a single vertebra defined by a segmentation.
+
+        Selects the given vertebra label (or binarizes the mask if multiple labels are present), computes the center of its
+        bounding box and runs the classifier there.
+
+        Args:
+            img (NII): The intensity image.
+            seg (NII): The segmentation mask defining the vertebra location.
+            vert_label (int | None, optional): Label of the vertebra to use; if None, the whole mask is used. Defaults to None.
+            angle (float | None, optional): Rotation angle (degrees) to align the patch with the spine axis. Defaults to None.
+
+        Returns:
+            tuple[dict, dict]: The softmax outputs and argmax class predictions per classifier head.
+        """
         if vert_label is not None:
             seg = seg.extract_label(vert_label)
         elif len(seg.unique()) > 1:
@@ -188,7 +304,24 @@ class VertLabelingClassifier(Segmentation_Model):
             center_of_crop.append(crop[i].start + (size_t // 2))
         return self.run_given_center_pos(img, seg, center_of_crop, angle=angle)  # type: ignore
 
-    def run_given_center_pos(self, img: NII, seg: NII, center_pos: tuple[int, int, int], angle: float | None = None):
+    def run_given_center_pos(
+        self, img: NII, seg: NII, center_pos: tuple[int, int, int], angle: float | None = None
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+        """Crops image and segmentation patches around a center point, optionally rotates them, and runs the classifier.
+
+        Cuts out a patch larger than the final size (with extra padding for rotation), reorients to (I, P, L), optionally
+        rotates sagittally by the given angle, crops back to the cutout size and runs the classifier on the patch.
+
+        Args:
+            img (NII): The intensity image (or a raw array).
+            seg (NII): The segmentation mask used as the second channel.
+            center_pos (tuple[int, int, int]): Voxel position to center the patch on.
+            angle (float | None, optional): Rotation angle (degrees) to align the patch with the spine axis; no rotation if
+                None or 0. Defaults to None.
+
+        Returns:
+            tuple[dict, dict]: The softmax outputs and argmax class predictions per classifier head.
+        """
         extra_rotation_padding = 64
         extra_rotation_padding_halfed = extra_rotation_padding // 2
         #
@@ -230,11 +363,28 @@ class VertLabelingClassifier(Segmentation_Model):
         return self._run_array(img_v.get_array(), seg_v.get_seg_array())  # sem_cut
 
     def _run_nii(self, img_nii: NII):
+        """Runs the classifier on the raw array of an NII patch.
+
+        Args:
+            img_nii (NII): The patch image to classify.
+
+        Returns:
+            tuple[dict, dict]: The softmax outputs and argmax class predictions per classifier head.
+        """
         # TODO check resolution
         # TODO check size
         return self._run_array(img_nii.get_array())
 
     def run_all_arrays(self, img_arrays: dict[int, np.ndarray]) -> dict[int, dict[str, np.ndarray]]:
+        """Runs the classifier on a set of pre-cut image patches.
+
+        Args:
+            img_arrays (dict[int, np.ndarray]): Mapping from vertebra id to its 3D image patch.
+
+        Returns:
+            dict[int, dict[str, np.ndarray]]: Mapping from vertebra id to a dict with "soft" (softmax outputs) and
+                "pred" (argmax class) per classifier head.
+        """
         # TODO assert order of seg labels are order from top to bottom
         predictions = {}
         for v, arr in img_arrays.items():
@@ -243,6 +393,22 @@ class VertLabelingClassifier(Segmentation_Model):
         return predictions
 
     def _run_array(self, img_arr: np.ndarray, seg_arr: np.ndarray | None | torch.Tensor = None):  # , seg_arr: np.ndarray):
+        """Applies preprocessing and runs the classifier forward pass on a single image patch.
+
+        Converts the patch (and optional segmentation) to tensors, applies intensity normalization and center cropping,
+        adds the channel/batch dimensions and runs the network, returning per-head softmax probabilities and argmax classes.
+
+        Args:
+            img_arr (np.ndarray): The 3D image patch.
+            seg_arr (np.ndarray | None | torch.Tensor, optional): Optional segmentation patch; if None, a copy of the image
+                is used. Defaults to None.
+
+        Returns:
+            tuple[dict[str, np.ndarray], dict[str, np.ndarray]]: Per-head softmax probabilities and per-head argmax classes.
+
+        Raises:
+            AssertionError: If img_arr is not 3-dimensional.
+        """
         assert img_arr.ndim == 3, f"Dimension mismatch, {img_arr.shape}, expected 3 dimensions"
         #
         img_arr = self.totensor(img_arr)

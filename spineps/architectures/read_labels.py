@@ -1,6 +1,9 @@
+"""Vertebra label definitions, enums and mappings used for vertebra classification targets."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -11,12 +14,16 @@ FALSE_KEYS = [False, "False", "false", 0, "falsch", "Falsch", "Nein", "nein"]
 
 
 class VertRegion(Enum):
+    """Spinal region of a vertebra: cervical (HWS), thoracic (BWS) or lumbar (LWS)."""
+
     HWS = 0
     BWS = 1
     LWS = 2
 
 
 class VertRel(Enum):
+    """Relative position of a vertebra at a region boundary (e.g. last cervical, first thoracic)."""
+
     NOTHING = 0
     LAST_HWK = 1
     #
@@ -28,6 +35,8 @@ class VertRel(Enum):
 
 
 class VertExact(Enum):
+    """Exact vertebra identity from C1 to L5 (T12 absorbs a potential T13), with 24 classes (0-23)."""
+
     C1 = 0
     C2 = 1
     C3 = 2
@@ -58,6 +67,8 @@ class VertExact(Enum):
 
 
 class VertExactClass(Enum):
+    """Exact vertebra identity including an explicit T13 and L6, with 26 classes (0-25)."""
+
     C1 = 0
     C2 = 1
     C3 = 2
@@ -88,11 +99,15 @@ class VertExactClass(Enum):
 
 
 class VertT13(Enum):
+    """Whether a vertebra is a (rare) supernumerary T13 or a normal vertebra."""
+
     Normal = 0
     T13 = 1
 
 
 class VertGroup(Enum):
+    """Coarse vertebra grouping that buckets neighbouring vertebrae into shared classes (12 groups)."""
+
     C12 = 0
     C345 = 1
     C67 = 2
@@ -109,12 +124,27 @@ class VertGroup(Enum):
 
 def vert_label_to_vertrel(
     vertlabel: int,
-    last_bwk,
-    last_lwk,
+    last_bwk: int | None,
+    last_lwk: int | None,
     last_hwk=7,
     first_bwk=8,
     first_lwk=20,
 ) -> VertRel:
+    """Map a numeric vertebra label to its region-boundary relation.
+
+    Note that ``last_hwk``, ``first_bwk`` and ``first_lwk`` are reset to their fixed defaults (7, 8, 20) inside the function.
+
+    Args:
+        vertlabel (int): Numeric vertebra label to classify.
+        last_bwk: Label of the last thoracic vertebra, or None if unknown.
+        last_lwk: Label of the last lumbar vertebra, or None if unknown.
+        last_hwk (int): Label of the last cervical vertebra (overwritten to 7).
+        first_bwk (int): Label of the first thoracic vertebra (overwritten to 8).
+        first_lwk (int): Label of the first lumbar vertebra (overwritten to 20).
+
+    Returns:
+        VertRel: The boundary relation of the given label (NOTHING if it is not a boundary vertebra).
+    """
     last_hwk = 7
     first_bwk = 8
     first_lwk = 20
@@ -134,14 +164,43 @@ def vert_label_to_vertrel(
 
 
 def vert_class_to_region(vert_exact: VertExact) -> VertRegion:
+    """Map an exact vertebra class to its spinal region.
+
+    Args:
+        vert_exact (VertExact): Exact vertebra identity.
+
+    Returns:
+        VertRegion: HWS for C1-C7, BWS for T1-T12 and LWS for the lumbar vertebrae.
+    """
     return VertRegion.HWS if vert_exact.value < 7 else VertRegion.BWS if 7 <= vert_exact.value < 19 else VertRegion.LWS
 
 
 def vert_label_to_class(vertlabel: int) -> VertExact:
+    """Map a numeric vertebra label to a :class:`VertExact` class.
+
+    Label 28 (T13) is folded into T12; all other labels map to ``vertlabel - 1`` capped at 23 (L5).
+
+    Args:
+        vertlabel (int): Numeric vertebra label.
+
+    Returns:
+        VertExact: The corresponding exact vertebra class.
+    """
     return VertExact.T12 if vertlabel == 28 else VertExact(min(23, vertlabel - 1))
 
 
 def vert_label_to_exactclass(vertlabel: int) -> VertExactClass:
+    """Map a numeric vertebra label to a :class:`VertExactClass` class.
+
+    Label 28 maps to the explicit T13 class; labels up to 19 map to ``vertlabel - 1`` (capped at 24) and higher labels to
+    ``vertlabel`` (capped at 25), accounting for the extra T13/L6 slots.
+
+    Args:
+        vertlabel (int): Numeric vertebra label.
+
+    Returns:
+        VertExactClass: The corresponding exact vertebra class.
+    """
     return (
         VertExactClass.T13
         if vertlabel == 28
@@ -188,10 +247,32 @@ vert_group_idx_to_exact_idx_dict: dict[int, list[int]] = {i.value: [gg.value for
 
 
 def vert_class_to_group(vert_exact: VertExact) -> VertGroup:
+    """Map an exact vertebra class to its coarse :class:`VertGroup`.
+
+    Args:
+        vert_exact (VertExact): Exact vertebra identity.
+
+    Returns:
+        VertGroup: The group that contains the given vertebra.
+    """
     return vert_exact_to_group_dict[vert_exact]
 
 
 def vertgrp_sequence_to_class(vertgrp: list[VertGroup]) -> list[VertExact]:
+    """Resolve a top-to-bottom sequence of vertebra groups into exact vertebra classes.
+
+    For each group, if every member of the group is present the assignment is trivial; otherwise the neighbouring group before or
+    after the partial run determines whether the members align from the top or from the bottom of the group.
+
+    Args:
+        vertgrp (list[VertGroup]): Vertebra groups ordered from top (cranial) to bottom (caudal).
+
+    Returns:
+        list[VertExact]: Exact vertebra classes for each position in the input sequence.
+
+    Raises:
+        AssertionError: If a partial group has neighbours on both sides, which cannot be resolved unambiguously.
+    """
     # input must be sorted from top to bottom already!
     vert_exact_list: list[VertExact] = [None] * len(vertgrp)  # type: ignore
 
@@ -221,16 +302,40 @@ def vertgrp_sequence_to_class(vertgrp: list[VertGroup]) -> list[VertExact]:
 
 
 class LabelType(ABC):
+    """Abstract base for converting one or more columns of a data entry into a model target label."""
+
     def __init__(self, column_name: str | list[str], *args, **kwargs) -> None:  # noqa: ARG002
+        """Initialize the label type with the source column name(s).
+
+        Args:
+            column_name (str | list[str]): Single column name or list of column names to read from each entry; a single
+                string is wrapped into a one-element list.
+        """
         if not isinstance(column_name, list):
             column_name = [column_name]
         self.column_name = column_name
 
-    def __call__(self, entry_dict: dict):
+    def __call__(self, entry_dict: dict) -> object:
+        """Read the configured columns from ``entry_dict`` and convert them into a label.
+
+        Args:
+            entry_dict (dict): Mapping of column names to values for a single sample.
+
+        Returns:
+            The label produced by :meth:`convert_to_label`.
+        """
         entry = self.get_entry(entry_dict)
         return self.convert_to_label(entry)
 
     def get_entry(self, entry: dict) -> str | int | list[str | int]:
+        """Extract the configured column value(s) from a data entry.
+
+        Args:
+            entry (dict): Mapping of column names to values.
+
+        Returns:
+            str | int | list[str | int]: The single value if only one column is configured, otherwise a list of values.
+        """
         entries = [entry[c] for c in self.column_name]
         if len(entries) == 1:
             return entries[0]
@@ -239,24 +344,45 @@ class LabelType(ABC):
     @property
     @abstractmethod
     def number_of_channel(self) -> str | int | list[str | int]:
-        pass
+        """Number of output channels (label vector length) produced by this label type."""
 
     @abstractmethod
     def convert_to_label(self, entry: str):
-        pass
+        """Convert an extracted entry value into the label representation for this label type.
+
+        Args:
+            entry (str): The value extracted from the data entry.
+        """
 
 
 class EnumLabelType(LabelType):
+    """Label type that one-hot encodes an :class:`~enum.Enum` value into a multi-class target vector."""
+
     def __init__(self, enum: Enum, column_name: str, *args, **kwargs) -> None:  # noqa: ARG002
+        """Initialize the enum label type.
+
+        Args:
+            enum (Enum): Enum class whose members define the classes; its length sets the number of channels.
+            column_name (str): Column name holding the enum value for each entry.
+        """
         super().__init__(column_name)
         self.enum = enum
         self.n_channel = len(enum)
 
     @property
     def number_of_channel(self) -> int:
+        """Number of channels, equal to the number of members in the configured enum."""
         return self.n_channel
 
-    def convert_to_label(self, entry: Enum):
+    def convert_to_label(self, entry: Enum) -> list[int]:
+        """One-hot encode an enum member into a label vector.
+
+        Args:
+            entry (Enum): Enum member whose ``value`` indexes the hot position.
+
+        Returns:
+            list[int]: A list of zeros with a single 1 at the index given by ``entry.value``.
+        """
         label = list(np.zeros(self.number_of_channel, dtype=int))
         idx = entry.value
         label[idx] = 1
@@ -264,14 +390,33 @@ class EnumLabelType(LabelType):
 
 
 class BinaryLabelTypeDummy(LabelType):
+    """Label type for a binary attribute, one-hot encoded into two channels (true/false)."""
+
     def __init__(self, column_name: str | list[str], *args, **kwargs) -> None:
+        """Initialize the binary label type.
+
+        Args:
+            column_name (str | list[str]): Column name(s) holding the binary value.
+        """
         super().__init__(column_name, *args, **kwargs)
 
     @property
     def number_of_channel(self) -> int:
+        """Number of channels, always 2 (true and false)."""
         return 2
 
     def convert_to_label(self, entry: str | int) -> int:
+        """Convert a truthy/falsy entry into a two-channel one-hot label.
+
+        Args:
+            entry (str | int): A value contained in ``TRUE_KEYS`` or ``FALSE_KEYS``.
+
+        Returns:
+            list[int]: ``[1, 0]`` for true values and ``[0, 1]`` for false values.
+
+        Raises:
+            AssertionError: If ``entry`` is a list, or is not recognised as a true or false value.
+        """
         assert not isinstance(entry, list), entry
         if entry in TRUE_KEYS:
             return [1, 0]
@@ -281,6 +426,8 @@ class BinaryLabelTypeDummy(LabelType):
 
 
 class Target(Enum):
+    """Available classification targets, each mapping to a (label-type, enum/column, column-name) configuration tuple."""
+
     REGION = EnumLabelType, VertRegion, "vert_region"  # HWS, BWS, LWS
     VERT = EnumLabelType, VertExact, "vert_exact"  # exakt WK
     VERTEX = EnumLabelType, VertExactClass, "vert_exact2"  # exakt WK
@@ -296,11 +443,19 @@ TARGET_COLUMN_OPTIONS = [s.value[1] for s in Target]
 
 
 class Objectives:
+    """Bundle of classification targets that builds and combines their label vectors for a single data entry."""
+
     def __init__(
         self,
         objectives: list[Target],
         as_group: bool = True,
     ) -> None:
+        """Initialize the objectives and instantiate the label type for each target.
+
+        Args:
+            objectives (list[Target]): Targets to compute labels for, in order.
+            as_group (bool): If True, ``__call__`` returns labels grouped per target name; if False, a flat concatenated list.
+        """
         self.__as_group = as_group
         self.targets: list[Target] = objectives
         self.__objective_labels: list[LabelType] = []
@@ -316,24 +471,40 @@ class Objectives:
 
     @property
     def n_channel_p_group(self):
+        """List of channel counts, one per target objective."""
         return self.__n_channel_p_group
 
     @property
     def n_channel(self):
+        """Total number of channels across all target objectives."""
         return self.__n_channel
 
     @property
     def group_2_n_channel(self) -> dict[str, int]:
+        """Mapping from each target name to its number of channels."""
         return {self.targets[idx].name: self.n_channel_p_group[idx] for idx in range(len(self.targets))}
 
     @property
     def required_dict_keys(self):
+        """Unique set of data-entry column names required to compute all objectives."""
         return self.__required_dict_keys
 
     def __call__(
         self,
         entry: dict,
     ) -> list[int]:
+        """Compute the label(s) for all objectives from a single data entry.
+
+        Args:
+            entry (dict): Data entry containing at least every key in :attr:`required_dict_keys`.
+
+        Returns:
+            list[int] | dict | None: A flat concatenated label list when ``as_group`` is False, a per-target-name dict of label
+            lists when ``as_group`` is True, or None if a label could not be produced (e.g. a NaN binary/pathology value).
+
+        Raises:
+            AssertionError: If a required key is missing from ``entry``.
+        """
         entry_keys = entry.keys()
         for r in self.required_dict_keys:
             assert r in entry_keys, f"required {r} not in entry_keys, got {entry_keys}"
@@ -357,7 +528,15 @@ class Objectives:
         return labels if not self.__as_group else {self.targets[idx].name: labels_grouped[idx] for idx in range(len(self.targets))}
 
 
-def flatten(a: list[str | int | list[str] | list[int]]):
+def flatten(a: list[str | int | list[str] | list[int]]) -> Iterator[str | int]:
+    """Recursively flatten an arbitrarily nested list of strings and integers.
+
+    Args:
+        a (list[str | int | list[str] | list[int]]): A value or (nested) list of strings and integers.
+
+    Yields:
+        str | int: Each leaf string or integer in depth-first order.
+    """
     # a = itertools.chain(*a)
     if isinstance(a, (str, int)):
         yield a
@@ -369,6 +548,8 @@ def flatten(a: list[str | int | list[str] | list[int]]):
 ###
 @dataclass
 class SubjectInfo:
+    """Per-subject vertebra labelling metadata, including anomalies, the resolved label map and region boundaries."""
+
     subject_name: int
     has_anomaly_entry: bool
     anomaly_entry: dict
@@ -385,12 +566,22 @@ class SubjectInfo:
 
     @property
     def has_tea(self) -> bool:
+        """Whether the subject has a transitional anomaly (a T11 or T13 anomaly entry).
+
+        Returns:
+            bool | None: True/False based on the T11/T13 anomaly flags, or None if the subject has no anomaly entry.
+        """
         if not self.has_anomaly_entry:
             return None
         return self.anomaly_entry["T11"] or self.anomaly_entry["T13"]
 
     @property
     def block(self) -> int:
+        """Dataset block identifier, taken from the first three digits of the subject name.
+
+        Returns:
+            int: The integer formed by the first three characters of ``subject_name``.
+        """
         return int(str(self.subject_name)[:3])
 
 
@@ -400,7 +591,24 @@ def get_subject_info(
     anomaly_dict: dict,
     vert_subfolders_int: list[int],
     subject_name_int: bool = True,
-):
+) -> SubjectInfo:
+    """Build a :class:`SubjectInfo` from a subject's raw vertebra labels and any anomaly overrides.
+
+    Applies anomaly handling (label deletion, removal flags, T11/T13 remapping and explicit label overrides), derives the actual
+    labels, the expected double-entry labels and the last thoracic/lumbar vertebra labels.
+
+    Args:
+        subject_name (str | int): Subject identifier.
+        anomaly_dict (dict): Mapping of subject names to anomaly entries; empty if no anomalies are known.
+        vert_subfolders_int (list[int]): Raw numeric vertebra labels present for the subject.
+        subject_name_int (bool): If True, cast ``subject_name`` to int before lookup.
+
+    Returns:
+        SubjectInfo: The assembled per-subject labelling metadata.
+
+    Raises:
+        AssertionError: If a ``LabelOverride`` length does not match the number of vertebra labels.
+    """
     if subject_name_int:
         subject_name = int(subject_name)
     double_entries = []
@@ -469,6 +677,18 @@ def get_subject_info(
 
 
 def get_vert_entry(v: int, subject_info: SubjectInfo) -> tuple[int, dict]:
+    """Build the per-vertebra target entry dict for a single vertebra label.
+
+    Applies the subject's label map to ``v`` and fills in all derived targets (relative position, exact class, exact2 class,
+    group, region and T13 flag).
+
+    Args:
+        v (int): Raw numeric vertebra label.
+        subject_info (SubjectInfo): Subject metadata providing the label map and region boundaries.
+
+    Returns:
+        tuple[int, dict]: The remapped actual label and a dict of target values keyed by their column names.
+    """
     entry: dict = {}
 
     v_actual = subject_info.labelmap.get(v, v)

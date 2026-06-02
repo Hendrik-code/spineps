@@ -1,3 +1,5 @@
+"""PyTorch Lightning wrapper training a 2D or 3D U-Net for spine segmentation."""
+
 from __future__ import annotations
 
 from argparse import Namespace
@@ -16,15 +18,46 @@ from .unet3D import Unet3D
 
 
 def softmax_helper_dim1(x: torch.Tensor) -> torch.Tensor:
+    """Apply softmax over dimension 1 (the channel/class dimension).
+
+    Args:
+        x (torch.Tensor): Logits tensor with the classes on dimension 1.
+
+    Returns:
+        torch.Tensor: Softmax probabilities of the same shape as ``x``.
+    """
     return torch.softmax(x, 1)
 
 
 def _tb_logger(module: pl.LightningModule) -> TensorBoardLogger:
+    """Return the module's logger cast to :class:`TensorBoardLogger`.
+
+    Args:
+        module (pl.LightningModule): Lightning module whose ``logger`` is a TensorBoard logger.
+
+    Returns:
+        TensorBoardLogger: The module's logger typed as a TensorBoard logger.
+    """
     return cast(TensorBoardLogger, module.logger)
 
 
 class PLNet(pl.LightningModule):
+    """LightningModule training a 2D or 3D U-Net with a combined cross-entropy, Dice and L2 loss.
+
+    Wraps :class:`Unet2D` or :class:`Unet3D` and handles the training/validation loops, loss computation,
+    Dice metric logging and optimizer configuration.
+    """
+
     def __init__(self, opt: Namespace, do2D: bool = False, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
+        """Build the network and configure losses, metrics and training hyperparameters.
+
+        Args:
+            opt (Namespace): Configuration namespace providing ``channelwise``, ``n_epoch``, ``lr``,
+                ``lr_end_factor``, ``l2_reg_w`` and ``dsc_loss_w``.
+            do2D (bool): If ``True``, use the 2D U-Net; otherwise the 3D U-Net.
+            *args (Any): Unused positional arguments.
+            **kwargs (Any): Unused keyword arguments.
+        """
         super().__init__()
         self.save_hyperparameters()
 
@@ -58,6 +91,7 @@ class PLNet(pl.LightningModule):
         self.val_step_outputs: dict[str, list] = {}
 
     def on_fit_start(self):
+        """Register custom TensorBoard scalar layouts grouping the train/val losses and Dice metrics."""
         tb = _tb_logger(self).experiment
         layout = {
             "loss_split": {
@@ -84,9 +118,25 @@ class PLNet(pl.LightningModule):
         tb.add_custom_scalars(layout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the wrapped U-Net on the input.
+
+        Args:
+            x (torch.Tensor): Input image/volume tensor.
+
+        Returns:
+            torch.Tensor: Per-class logits produced by the network.
+        """
         return self.network(x)
 
     def training_step(self, batch):
+        """Run a single training step: compute losses, log them and accumulate metrics.
+
+        Args:
+            batch (dict): Batch with the input image under ``"target"`` and the ground-truth labels under ``"class"``.
+
+        Returns:
+            torch.Tensor: The combined scalar training loss to back-propagate.
+        """
         target, gt = batch["target"], batch["class"]
         losses, gt, pred_cls = self._shared_step(target, gt)
         loss = self._merge_losses(losses)
@@ -104,6 +154,7 @@ class PLNet(pl.LightningModule):
         return loss
 
     def on_train_epoch_end(self) -> None:
+        """Aggregate the accumulated training metrics, log mean/foreground Dice and clear the buffers."""
         if self.train_step_outputs:
             metrics = self._aggregate_metrics(self.train_step_outputs)
             self.log("dice/train_dice", metrics["dice"], on_epoch=True)
@@ -116,6 +167,12 @@ class PLNet(pl.LightningModule):
         self.train_step_outputs.clear()
 
     def validation_step(self, batch, _):
+        """Run a single validation step, computing losses and metrics and accumulating them for the epoch end.
+
+        Args:
+            batch (dict): Batch with the input image under ``"target"`` and the ground-truth labels under ``"class"``.
+            _ : Batch index (unused).
+        """
         target, gt = batch["target"], batch["class"]
         losses, gt, pred_cls = self._shared_step(target, gt)
         loss = self._merge_losses(losses).detach().cpu()
@@ -126,6 +183,7 @@ class PLNet(pl.LightningModule):
         self._append_metrics(metrics, self.val_step_outputs)
 
     def on_validation_epoch_end(self):
+        """Aggregate the accumulated validation metrics, log losses and Dice scores and clear the buffers."""
         if self.val_step_outputs:
             metrics = self._aggregate_metrics(self.val_step_outputs)
             for k, v in metrics.items():
@@ -145,6 +203,11 @@ class PLNet(pl.LightningModule):
         self.val_step_outputs.clear()
 
     def configure_optimizers(self):
+        """Configure the Adam optimizer and a linear learning-rate decay schedule.
+
+        Returns:
+            dict: Mapping with the ``"optimizer"`` and its ``"lr_scheduler"``.
+        """
         optimizer = Adam(self.parameters(), lr=self.start_lr)
         scheduler = lr_scheduler.LinearLR(
             optimizer=optimizer,
@@ -155,16 +218,43 @@ class PLNet(pl.LightningModule):
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
     def _compute_losses(self, logits: torch.Tensor, gt: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Compute the cross-entropy, (weighted) Dice and L2 regularization losses.
+
+        Args:
+            logits (torch.Tensor): Per-class logits of shape ``(b, n_classes, ...)``.
+            gt (torch.Tensor): Ground-truth labels of shape ``(b, 1, ...)``.
+
+        Returns:
+            dict[str, torch.Tensor]: Dictionary with keys ``"ce_loss"``, ``"dc_loss"`` and ``"l2_reg_loss"``.
+        """
         ce_loss = self.CEL(logits, gt.squeeze(1))
         dc_loss = (1 - self.DC(logits, gt)) * self.dsc_loss_w
         l2_reg = torch.stack([p.norm() for p in self.parameters()]).sum() * self.l2_reg_w
         return {"ce_loss": ce_loss, "dc_loss": dc_loss, "l2_reg_loss": l2_reg}
 
     def _merge_losses(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Sum the three loss components into a single scalar loss.
+
+        Args:
+            losses (dict[str, torch.Tensor]): Dictionary with exactly three loss tensors.
+
+        Returns:
+            torch.Tensor: The sum of the three loss values.
+        """
         vals = list(losses.values())
         return vals[0] + vals[1] + vals[2]
 
     def _shared_step(self, target: torch.Tensor, gt: torch.Tensor):
+        """Forward the input, compute losses and produce CPU predictions and ground truth.
+
+        Args:
+            target (torch.Tensor): Input image/volume tensor.
+            gt (torch.Tensor): Ground-truth labels.
+
+        Returns:
+            tuple: ``(losses, gt, pred_cls)`` where ``losses`` is the loss dict, ``gt`` is the ground truth moved
+            to CPU and ``pred_cls`` is the per-voxel arg-max class prediction on CPU.
+        """
         logits = self.forward(target)
         losses = self._compute_losses(logits, gt)
 
@@ -175,6 +265,17 @@ class PLNet(pl.LightningModule):
         return losses, gt, pred_cls
 
     def _compute_metrics(self, loss: torch.Tensor, pred_cls: torch.Tensor, gt: torch.Tensor) -> dict:
+        """Compute per-class, mean and foreground Dice scores alongside the given loss.
+
+        Args:
+            loss (torch.Tensor): Scalar loss value to carry through into the metrics dict.
+            pred_cls (torch.Tensor): Predicted class indices.
+            gt (torch.Tensor): Ground-truth class indices.
+
+        Returns:
+            dict: Dictionary with keys ``"loss"``, ``"dice"`` (mean over all classes), ``"diceFG"`` (mean over
+            foreground classes) and ``"dice_p_cls"`` (per-class Dice).
+        """
         dice_p_cls = mF.dice(pred_cls, gt, average=None, num_classes=self.n_classes)
         return {
             "loss": loss,
@@ -184,11 +285,31 @@ class PLNet(pl.LightningModule):
         }
 
     def _append_metrics(self, metrics: dict, outputs: dict):
+        """Append each metric value to the matching list in the per-epoch output buffer.
+
+        Args:
+            metrics (dict): Metrics computed for a single step.
+            outputs (dict): Accumulator mapping each metric name to a list of per-step values; mutated in place.
+        """
         for k, v in metrics.items():
             outputs.setdefault(k, []).append(v)
 
     def _aggregate_metrics(self, outputs: dict) -> dict:
+        """Average the accumulated per-step metrics over an epoch.
+
+        Args:
+            outputs (dict): Accumulator mapping each metric name to a list of per-step tensors.
+
+        Returns:
+            dict: Mapping from metric name to its mean; ``"dice_p_cls"`` is averaged per class (``dim=0``) while
+            all other metrics are reduced to a scalar.
+        """
         return {k: torch.mean(torch.stack(v)) if k != "dice_p_cls" else torch.mean(torch.stack(v), dim=0) for k, v in outputs.items()}
 
     def __str__(self):
+        """Return a short name indicating whether the wrapped network is 2D or 3D.
+
+        Returns:
+            str: ``"Unet_2D"`` or ``"Unet_3D"``.
+        """
         return f"Unet_{'2D' if self.do2D else '3D'}"

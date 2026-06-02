@@ -1,3 +1,5 @@
+"""Automatic download and extraction of pretrained SPINEPS model weights from the GitHub releases."""
+
 from __future__ import annotations
 
 import shutil
@@ -53,8 +55,20 @@ download_names = {
 }
 
 
-def download_if_missing(key, url, phase: SpinepsPhase):
+def download_if_missing(key: str, url: Union[Path, str], phase: SpinepsPhase) -> Path:
+    """Return the local model folder for a model, downloading and extracting its weights if absent.
 
+    The target folder name combines the model's download name with the version resolved for its phase (and the
+    phase/key-specific override when one exists, e.g. CT models).
+
+    Args:
+        key: Model key identifying the model within its phase (e.g. ``"t2w"``, ``"instance"``).
+        url: Release URL of the model's weights zip archive.
+        phase (SpinepsPhase): Pipeline phase the model belongs to.
+
+    Returns:
+        Path: Path to the local model folder containing the (possibly just downloaded) weights.
+    """
     version = phase_to_version.get(f"{phase}_{key}", phase_to_version[phase.name])
     out_path = Path(get_mri_segmentor_models_dir(), download_names[key] + "_" + version)
     if not out_path.exists():
@@ -63,7 +77,20 @@ def download_if_missing(key, url, phase: SpinepsPhase):
     return out_path
 
 
-def download_weights(weights_url, out_path) -> None:
+def download_weights(weights_url: Union[Path, str], out_path: Union[Path, str]) -> None:
+    """Download a weights zip archive, extract it into ``out_path`` and remove the archive.
+
+    Shows a progress bar during download. If the extracted archive nests its contents in an extra subfolder
+    (no ``inference_config.json`` at the top level), the inner contents are moved up one level. Returns early
+    without raising if the initial size request fails.
+
+    Args:
+        weights_url: URL of the weights zip archive to download.
+        out_path: Destination folder for the extracted weights (the archive is downloaded next to it as ``.zip``).
+
+    Raises:
+        AssertionError: If the nested archive layout is detected but the extra entry is not a directory.
+    """
     out_path = Path(out_path)
     logger = Print_Logger()
     try:

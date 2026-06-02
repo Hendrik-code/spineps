@@ -1,3 +1,5 @@
+"""Command-line interface for SPINEPS, wiring CLI arguments to single-image and whole-dataset processing."""
+
 from __future__ import annotations
 
 import argparse
@@ -26,6 +28,17 @@ logger = No_Logger(prefix="Init")
 
 # TODO replace with Class_to_ArgParse and then load only from config files!
 def parser_arguments(parser: argparse.ArgumentParser):
+    """Add the shared SPINEPS processing options to an argument parser.
+
+    Registers flags common to both the ``sample`` and ``dataset`` subcommands, such as derivatives naming,
+    override toggles, debug/saving options, cropping, n4 bias correction and device selection.
+
+    Args:
+        parser (argparse.ArgumentParser): The parser (or subparser) to add the arguments to.
+
+    Returns:
+        argparse.ArgumentParser: The same parser with the shared arguments registered.
+    """
     parser.add_argument("-der_name", "-dn", type=str, default="derivatives_seg", metavar="", help="Name of the derivatives folder")
     parser.add_argument("-save_debug", "-sd", action="store_true", help="Saves a lot of debug data and intermediate results")
     # parser.add_argument("-save_unc_img", "-sui", action="store_true", help="Saves a uncertainty image from the subreg prediction")
@@ -83,6 +96,14 @@ def parser_arguments(parser: argparse.ArgumentParser):
 
 @citation_reminder
 def entry_point():
+    """Parse command-line arguments and dispatch to the ``sample`` or ``dataset`` workflow.
+
+    Builds the top-level parser with the ``sample`` and ``dataset`` subcommands, parses ``sys.argv`` and
+    calls :func:`run_sample` or :func:`run_dataset` accordingly.
+
+    Raises:
+        NotImplementedError: If an unrecognized subcommand is supplied.
+    """
     ###########################
     ###########################
     main_parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -201,6 +222,22 @@ def entry_point():
 
 @citation_reminder
 def run_sample(opt: Namespace):
+    """Run the full segmentation pipeline on a single input NIfTI file.
+
+    Loads the requested semantic, instance and (optional) labeling models, wraps the input as a
+    ``BIDS_FILE`` and calls :func:`process_img_nii`, optionally under a cProfiler.
+
+    Args:
+        opt (Namespace): Parsed CLI arguments from the ``sample`` subcommand (input path, model ids/paths,
+            override and saving flags, device and verbosity options).
+
+    Returns:
+        int: ``1`` on completion.
+
+    Raises:
+        AssertionError: If the input path's parent directory is missing, only a filename was given, or the
+            input file does not exist.
+    """
     input_path = Path(opt.input).absolute()
     dataset = str(input_path.parent)
     assert os.path.exists(dataset), f"-input parent does not exist, got {dataset}"  # noqa: PTH110
@@ -275,6 +312,21 @@ def run_sample(opt: Namespace):
 
 @citation_reminder
 def run_dataset(opt: Namespace):
+    """Run the segmentation pipeline over a whole (preferably BIDS) dataset directory.
+
+    Resolves the semantic, instance and (optional) labeling models (``"auto"`` defers model selection to the
+    pipeline), then calls :func:`process_dataset`, optionally under a cProfiler.
+
+    Args:
+        opt (Namespace): Parsed CLI arguments from the ``dataset`` subcommand (dataset directory, rawdata and
+            derivatives names, model ids/paths, override/compatibility/saving flags, device and verbosity options).
+
+    Returns:
+        int: ``1`` on completion.
+
+    Raises:
+        AssertionError: If the directory does not exist, is not a directory, or no instance model is resolved.
+    """
     input_dir = Path(opt.directory)
     assert input_dir.exists(), f"-input does not exist, {input_dir}"
     assert input_dir.is_dir(), f"-input is not a directory, got {input_dir}"
