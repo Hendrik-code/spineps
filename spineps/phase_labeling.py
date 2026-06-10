@@ -597,7 +597,7 @@ def find_vert_path_from_predictions(
             vert_w,
         )
 
-        vertex_softmax_output = k["soft"]["VERTEX"] if "VERTEX" in predict_keys else np.zeros(len(VertExact))
+        vertex_softmax_output = k["soft"]["VERTEX"] if "VERTEX" in predict_keys else np.zeros(len(VertExactClass))
         vertex_values = np.multiply(
             prepare_vertexact(
                 vertex_softmax_output,
