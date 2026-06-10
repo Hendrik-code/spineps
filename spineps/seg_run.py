@@ -302,6 +302,7 @@ def process_img_nii(  # noqa: C901
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
+    proc_inst_batch_size: int = 4,
     vertebra_instance_labeling_offset=2,
     # Labeling
     proc_lab_force_no_tl_anomaly: bool = False,
@@ -366,6 +367,8 @@ def process_img_nii(  # noqa: C901
         proc_inst_largest_k_cc (int, optional): If greater than 0, keeps only the largest k connected components of the instance
             mask. Defaults to 0.
         proc_inst_detect_and_solve_merged_corpi (bool, optional): If true, detects and splits merged vertebra corpi. Defaults to True.
+        proc_inst_batch_size (int, optional): Number of vertebra cutouts run through the instance model per batched forward
+            pass. Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
         vertebra_instance_labeling_offset (int, optional): Offset applied when mapping instance ids to vertebra labels (set to 1
             for CT models that include C1). Defaults to 2.
         proc_lab_force_no_tl_anomaly (bool, optional): If true, forces the labeling to assume no thoracolumbar transition anomaly.
@@ -554,6 +557,7 @@ def process_img_nii(  # noqa: C901
                 proc_corpus_clean=proc_inst_corpus_clean,
                 proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
                 proc_inst_largest_k_cc=proc_inst_largest_k_cc,
+                proc_inst_batch_size=proc_inst_batch_size,
             )
             if errcode != ErrCode.OK:
                 logger.print(f"Vert Mask creation failed with errcode {errcode}", Log_Type.FAIL)

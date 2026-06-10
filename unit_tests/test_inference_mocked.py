@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import ClassVar
 from unittest.mock import MagicMock
 
+import nibabel as nib
 import numpy as np
 import torch
 from TPTBox import NII, No_Logger
@@ -26,7 +27,7 @@ from spineps.lab_model import VertLabelingClassifier
 from spineps.phase_instance import predict_instance_mask
 from spineps.phase_labeling import VERT_CLASSES, perform_labeling_step, run_model_for_vert_labeling
 from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model
+from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model, Segmentation_Model_Unet3D
 
 logger = No_Logger()
 
@@ -346,6 +347,100 @@ class Test_Same_Modelzoom(unittest.TestCase):
         a = self._model_with_zoom((1.0, 1.0, 1.0))
         b = self._model_with_zoom((1.0, 1.0, 2.0))
         self.assertFalse(a.same_modelzoom_as_model(b, (1.0, 1.0, 1.0)))
+
+
+class _FakeUnetNetwork:
+    def __init__(self, channels: int) -> None:
+        self.channels = channels
+
+
+class _FakeUnetPredictor:
+    """Identity 'network': returns its input as logits, so softmax+argmax recovers the one-hot input label."""
+
+    def __init__(self, channels: int) -> None:
+        self.network = _FakeUnetNetwork(channels)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x
+
+
+def _make_unet3d_test_model(n_classes: int = 4, cutout: tuple[int, int, int] = (6, 6, 6)) -> Segmentation_Model_Unet3D:
+    """A real Segmentation_Model_Unet3D wired to an identity predictor (no weights, runs on CPU)."""
+    config = Segmentation_Inference_Config(
+        logger=No_Logger(),
+        modality=["SEG"],
+        acquisition="sag",
+        log_name="TestUnet3D",
+        modeltype="unet",
+        model_expected_orientation=("P", "I", "R"),
+        available_folds=1,
+        inference_augmentation=False,
+        resolution_range=[1.5, 1.5, 1.5],
+        default_step_size=0.5,
+        labels={1: 1, 2: 2, 3: 3},
+        expected_inputs=["seg"],
+        cutout_size=cutout,
+    )
+    model = Segmentation_Model_Unet3D(__file__, config, default_verbose=False, default_allow_tqdm=False)
+    model.predictor = _FakeUnetPredictor(n_classes)
+    model.device = torch.device("cpu")
+    return model
+
+
+def _seg_nii(arr: np.ndarray) -> NII:
+    return NII(nib.Nifti1Image(arr.astype(np.uint8), affine=np.eye(4)), seg=True)
+
+
+class Test_Unet3D_Batching(unittest.TestCase):
+    """The batched instance path must produce exactly the same masks as predicting each cutout on its own."""
+
+    def _cutouts(self, n: int = 5) -> list[NII]:
+        rng = np.random.default_rng(0)
+        return [_seg_nii(rng.integers(0, 4, size=(6, 6, 6))) for _ in range(n)]
+
+    def test_run_batch_matches_run(self):
+        # run_batch over a list must equal calling run() on each cutout individually (golden oracle).
+        model = _make_unet3d_test_model()
+        cutouts = self._cutouts()
+        batched = model.run_batch(cutouts, batch_size=2)
+        self.assertEqual(len(batched), len(cutouts))
+        for cut, res in zip(cutouts, batched):
+            single = model.run([cut])
+            np.testing.assert_array_equal(res[OutputType.seg].get_seg_array(), single[OutputType.seg].get_seg_array())
+        # distinct inputs must yield distinct outputs (guards against the batch collapsing to one result)
+        outs = [r[OutputType.seg].get_seg_array() for r in batched]
+        self.assertTrue(any(not np.array_equal(outs[0], o) for o in outs[1:]))
+
+    def test_run_batch_size_invariant(self):
+        # The result must not depend on how cutouts are chunked into forward passes.
+        model = _make_unet3d_test_model()
+        cutouts = self._cutouts()
+        for r1, r9 in zip(model.run_batch(cutouts, batch_size=1), model.run_batch(cutouts, batch_size=9)):
+            np.testing.assert_array_equal(r1[OutputType.seg].get_seg_array(), r9[OutputType.seg].get_seg_array())
+
+    def test_run_batch_actually_batches_forward_calls(self):
+        # 5 cutouts at batch_size 2 must take ceil(5/2)=3 forward passes, not 5 (the whole point of batching).
+        model = _make_unet3d_test_model()
+        real_forward = model.predictor.forward
+        calls = {"n": 0}
+
+        def counting_forward(x: torch.Tensor) -> torch.Tensor:
+            calls["n"] += 1
+            return real_forward(x)
+
+        model.predictor.forward = counting_forward
+        model.run_batch(self._cutouts(5), batch_size=2)
+        self.assertEqual(calls["n"], 3)
+
+    def test_segment_scan_batch_matches_segment_scan(self):
+        # The way the instance phase calls it: no resampling, batched == sequential segment_scan.
+        model = _make_unet3d_test_model()
+        cutouts = self._cutouts()
+        kwargs = {"resample_to_recommended": False, "pad_size": 0, "resample_output_to_input_space": False}
+        batched = model.segment_scan_batch(cutouts, batch_size=3, **kwargs)
+        for cut, res in zip(cutouts, batched):
+            single = model.segment_scan(cut, **kwargs)
+            np.testing.assert_array_equal(res[OutputType.seg].get_seg_array(), single[OutputType.seg].get_seg_array())
 
 
 if __name__ == "__main__":
