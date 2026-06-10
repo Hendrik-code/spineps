@@ -39,58 +39,69 @@ def parser_arguments(parser: argparse.ArgumentParser):
     Returns:
         argparse.ArgumentParser: The same parser with the shared arguments registered.
     """
-    parser.add_argument("-der_name", "-dn", type=str, default="derivatives_seg", metavar="", help="Name of the derivatives folder")
-    parser.add_argument("-save_debug", "-sd", action="store_true", help="Saves a lot of debug data and intermediate results")
-    # parser.add_argument("-save_unc_img", "-sui", action="store_true", help="Saves a uncertainty image from the subreg prediction")
+    parser.add_argument("--derivative-name", "-dn", type=str, default="derivatives_seg", help="Name of the derivatives folder")
+    parser.add_argument("--save-debug", "-sd", action="store_true", help="Saves a lot of debug data and intermediate results")
     parser.add_argument(
-        "-save_softmax_logits", "-ssl", action="store_true", help="Saves an .npz containing the softmax logit outputs of the semantic mask"
+        "--save-softmax-logits", "-ssl", action="store_true", help="Saves an .npz containing the softmax logit outputs of the semantic mask"
     )
     parser.add_argument(
-        "-save_modelres_mask",
+        "--save-modelres-mask",
         "-smrm",
         action="store_true",
         help="If true, will additionally save the semantic mask in the resolution used by the model",
     )
-    parser.add_argument("-override_semantic", "-os", action="store_true", help="Will override existing seg-spine files")
+    parser.add_argument("--override-semantic", "-os", action="store_true", help="Will override existing seg-spine files")
     parser.add_argument(
-        "-override_instance", "-oi", action="store_true", help="Will override existing seg-vert files (True if semantic mask changed)"
+        "--override-instance", "-oi", action="store_true", help="Will override existing seg-vert files (True if semantic mask changed)"
     )
     parser.add_argument(
-        "-override_postpair",
+        "--override-postpair",
         "-opp",
         action="store_true",
         help="Will override existing cleaned files (True if either semantic or instance mask changed)",
     )
     parser.add_argument(
-        "-override_ctd", "-oc", action="store_true", help="Will override existing centroid files (True if the instance mask changed)"
+        "--override-ctd", "-oc", action="store_true", help="Will override existing centroid files (True if the instance mask changed)"
     )
     parser.add_argument(
-        "-ignore_inference_compatibility",
+        "--ignore-inference-compatibility",
         "-iic",
         action="store_true",
         help="Does not skip input masks that do not match the models modalities",
     )
     parser.add_argument(
-        "-nocrop",
-        "-nc",
-        action="store_true",
-        help="Does not crop input before semantically segmenting. Can improve the segmentation a little but depending on size costs more computation time",
+        "--crop",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        dest="crop_input",
+        help="Crop the input to the spine before semantic segmentation. Use --no-crop to disable (can slightly improve the "
+        "segmentation but costs more computation time).",
     )
     parser.add_argument(
-        "-no_tltv_labeling",
-        "-ntl",
-        action="store_true",
-        help="Enforces the labeling model to predict exactly 12 thoracic vertebrae",
+        "--n4",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        dest="n4",
+        help="Apply N4 bias field correction before semantic segmentation (MRI only). Use --no-n4 to disable (faster).",
     )
-    # proc_lab_force_no_tl_anomaly
     parser.add_argument(
-        "-non4",
-        action="store_true",
-        help="Does not apply n4 bias field correction",
+        "--enforce-12-thoracic",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        dest="enforce_12_thoracic",
+        help="Force the labeling model to predict exactly 12 thoracic vertebrae (assume no thoracolumbar transition anomaly).",
     )
-    parser.add_argument("-cpu", action="store_true", help="Use CPU instead of GPU (will take way longer)")
-    parser.add_argument("-run_cprofiler", "-rcp", action="store_true", help="Runs a cprofiler over the entire action")
-    parser.add_argument("-verbose", "-v", action="store_true", help="Prints much more stuff, may fully clutter your terminal")
+    parser.add_argument(
+        "--batch-size",
+        "-bs",
+        type=int,
+        default=4,
+        help="Number of vertebra cutouts run through the instance model per batched forward pass. Higher is faster but uses "
+        "more GPU memory; falls back to one-by-one on out-of-memory.",
+    )
+    parser.add_argument("--cpu", action="store_true", help="Use CPU instead of GPU (will take way longer)")
+    parser.add_argument("--run-cprofiler", "-rcp", action="store_true", help="Runs a cprofiler over the entire action")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Prints much more stuff, may fully clutter your terminal")
     return parser
 
 
@@ -116,35 +127,25 @@ def entry_point():
     )
     ###########################
     ###########################
-    parser_sample.add_argument("-input", "-i", required=True, type=str, help="path to the input nifty file")
+    parser_sample.add_argument("--input", "-i", required=True, type=str, help="path to the input NIfTI file")
     parser_sample.add_argument(
-        "-model_semantic",
+        "--model-semantic",
         "-ms",
-        # type=str.lower,
         default=None,
         required=True,
-        # choices=modelids_semantic,
-        metavar="",
         help="The model used for the semantic segmentation. You can also pass an absolute path to the model folder",
     )
     parser_sample.add_argument(
-        "-model_instance",
+        "--model-instance",
         "-mv",
-        # type=str.lower,
+        "-mi",
         default="instance",
-        # required=True,
-        # choices=modelids_instance,
-        metavar="",
         help="The model used for the vertebra instance segmentation. You can also pass an absolute path to the model folder",
     )
     parser_sample.add_argument(
-        "-model_labeling",
+        "--model-labeling",
         "-ml",
-        # type=str.lower,
         default="t2w_labeling",
-        # required=True,
-        # choices=modelids_instance,
-        metavar="",
         help="The model used for the vertebra labeling classification. You can also pass an absolute path to the model folder",
     )
     parser_sample = parser_arguments(parser_sample)
@@ -153,54 +154,45 @@ def entry_point():
     #
     #
     parser_dataset.add_argument(
-        "-directory", "-i", "-d", required=True, type=str, help="path to the input directory, preferably a BIDS dataset"
+        "--directory", "-i", "-d", required=True, type=str, help="path to the input directory, preferably a BIDS dataset"
     )
-    parser_dataset.add_argument("-raw_name", "-rn", type=str, default="rawdata", metavar="", help="Name of the rawdata folder")
+    parser_dataset.add_argument("--rawdata-name", "-rn", type=str, default="rawdata", help="Name of the rawdata folder")
     parser_dataset.add_argument(
-        "-model_semantic",
+        "--model-semantic",
         "-ms",
-        # type=str.lower,
         default="t2w",
-        # choices=model_subreg_choices,
-        metavar="",
         help="The model used for the subregion segmentation. Pass 'auto' to auto-select a model by modality, or an absolute path to the model folder",
     )
     parser_dataset.add_argument(
-        "-model_instance",
+        "--model-instance",
         "-mv",
-        # type=str.lower,
+        "-mi",
         default="instance",
-        # choices=model_vert_choices,
-        metavar="",
         help="The model used for the vertebra segmentation. You can also pass an absolute path to the model folder",
     )
     parser_dataset.add_argument(
-        "-model_labeling",
+        "--model-labeling",
         "-ml",
-        # type=str.lower,
         default="t2w_labeling",
-        # required=True,
-        # choices=modelids_instance,
-        metavar="",
         help="The model used for the vertebra labeling classification. You can also pass an absolute path to the model folder",
     )
     parser_dataset.add_argument(
-        "-ignore_bids_filter",
+        "--ignore-bids-filter",
         "-ibf",
         action="store_true",
         help="If true, will search the BIDS dataset without the strict filters. Use with care!",
     )
     parser_dataset.add_argument(
-        "-ignore_model_compatibility",
+        "--ignore-model-compatibility",
         "-imc",
         action="store_true",
         help="If true, will not stop the pipeline to use the given models on unfitting input modalities",
     )
     parser_dataset.add_argument(
-        "-save_log", "-sl", action="store_true", help="If true, saves the log into a separate folder in the dataset directory"
+        "--save-log", "-sl", action="store_true", help="If true, saves the log into a separate folder in the dataset directory"
     )
     parser_dataset.add_argument(
-        "-save_snaps_folder",
+        "--save-snaps-folder",
         "-ssf",
         action="store_true",
         help="If true, saves the snapshots also in a separate folder in the dataset directory",
@@ -273,7 +265,7 @@ def run_sample(opt: Namespace):
         "model_semantic": model_semantic,
         "model_instance": model_instance,
         "model_labeling": model_labeling,
-        "derivative_name": opt.der_name,
+        "derivative_name": opt.derivative_name,
         #
         # "save_uncertainty_image": opt.save_unc_img,
         "save_softmax_logits": opt.save_softmax_logits,
@@ -283,9 +275,10 @@ def run_sample(opt: Namespace):
         "override_instance": opt.override_instance,
         "override_postpair": opt.override_postpair,
         "override_ctd": opt.override_ctd,
-        "proc_sem_crop_input": not opt.nocrop,
-        "proc_sem_n4_bias_correction": not opt.non4,
-        "proc_lab_force_no_tl_anomaly": opt.no_tltv_labeling,
+        "proc_sem_crop_input": opt.crop_input,
+        "proc_sem_n4_bias_correction": opt.n4,
+        "proc_lab_force_no_tl_anomaly": opt.enforce_12_thoracic,
+        "proc_inst_batch_size": opt.batch_size,
         "ignore_compatibility_issues": opt.ignore_inference_compatibility,
         "verbose": opt.verbose,
     }
@@ -297,7 +290,7 @@ def run_sample(opt: Namespace):
         timestamp = format_time_short(get_time())
         cprofile_out = bids_sample.get_changed_path(
             bids_format="log",
-            parent=opt.der_name,
+            parent=opt.derivative_name,
             file_type="log",
             info={"desc": "cprofile", "mod": bids_sample.format, "ses": timestamp},
         )
@@ -367,8 +360,8 @@ def run_dataset(opt: Namespace):
         "model_semantic": model_semantic,
         "model_instance": model_instance,
         "model_labeling": model_labeling,
-        "rawdata_name": opt.raw_name,
-        "derivative_name": opt.der_name,
+        "rawdata_name": opt.rawdata_name,
+        "derivative_name": opt.derivative_name,
         #
         # "save_uncertainty_image": opt.save_unc_img,
         "save_modelres_mask": opt.save_modelres_mask,
@@ -382,9 +375,10 @@ def run_dataset(opt: Namespace):
         "ignore_model_compatibility": opt.ignore_model_compatibility,
         "ignore_inference_compatibility": opt.ignore_inference_compatibility,
         "ignore_bids_filter": opt.ignore_bids_filter,
-        "proc_sem_crop_input": not opt.nocrop,
-        "proc_sem_n4_bias_correction": not opt.non4,
-        "proc_lab_force_no_tl_anomaly": opt.no_tltv_labeling,
+        "proc_sem_crop_input": opt.crop_input,
+        "proc_sem_n4_bias_correction": opt.n4,
+        "proc_lab_force_no_tl_anomaly": opt.enforce_12_thoracic,
+        "proc_inst_batch_size": opt.batch_size,
         "snapshot_copy_folder": opt.save_snaps_folder,
         "verbose": opt.verbose,
     }

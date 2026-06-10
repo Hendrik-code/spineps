@@ -5,7 +5,11 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
+import sys
 import unittest
+from unittest import mock
 
 from TPTBox import No_Logger
 
@@ -17,6 +21,32 @@ logger = No_Logger()
 class Test_EntryPoint(unittest.TestCase):
     def test_normal(self):
         entrypoint.parser_arguments(argparse.ArgumentParser())
+
+    def test_shared_flag_defaults_and_negation(self):
+        # positive-polarity boolean flags + the new batch-size knob
+        p = argparse.ArgumentParser()
+        entrypoint.parser_arguments(p)
+        defaults = p.parse_args([])
+        self.assertTrue(defaults.crop_input)
+        self.assertTrue(defaults.n4)
+        self.assertFalse(defaults.enforce_12_thoracic)
+        self.assertEqual(defaults.batch_size, 4)
+        negated = p.parse_args(["--no-crop", "--no-n4", "--enforce-12-thoracic", "--batch-size", "8"])
+        self.assertFalse(negated.crop_input)
+        self.assertFalse(negated.n4)
+        self.assertTrue(negated.enforce_12_thoracic)
+        self.assertEqual(negated.batch_size, 8)
+
+    def test_subparser_help_builds(self):
+        # Regression: empty metavar="" used to crash `spineps <sub> -h` in argparse usage formatting.
+        for sub in ("sample", "dataset"):
+            with (
+                self.assertRaises(SystemExit) as cm,
+                mock.patch.object(sys, "argv", ["spineps", sub, "-h"]),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                entrypoint.entry_point()
+            self.assertEqual(cm.exception.code, 0)
 
     def test_run_sample_missing_parent_raises(self):
         # parent directory of the input does not exist -> FileNotFoundError (not a bare AssertionError)
