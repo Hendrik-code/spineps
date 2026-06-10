@@ -414,7 +414,7 @@ class Segmentation_Model_NNunet(Segmentation_Model):
                 OutputType.softmax_logits.
         """
         self.print("Segmenting...")
-        seg_nii, softmax_logits = run_inference(input_nii, self.predictor)
+        seg_nii, _, softmax_logits = run_inference(input_nii, self.predictor)
         self.print("Segmentation done!")
         self.print("out_inf", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
         return {OutputType.seg: seg_nii, OutputType.softmax_logits: softmax_logits}

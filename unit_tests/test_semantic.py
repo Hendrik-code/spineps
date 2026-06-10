@@ -139,7 +139,7 @@ class Test_Semantic_Phase(unittest.TestCase):
         s_arr = subreg.get_seg_array()
         model.predictor.predict_single_npy_array = MagicMock(return_value=(s_arr, s_arr[np.newaxis, :]))
 
-        seg_arr, _ = run_inference(mri, model.predictor)
+        seg_arr, *_ = run_inference(mri, model.predictor)
         seg_nii = subreg.set_array(seg_arr)
         # debug_data = {}
         predicted_volumes = seg_nii.volumes()
