@@ -80,11 +80,11 @@ def perform_labeling_step(
     else:
         vert_nii_c = vert_nii
     vert_nii_u = vert_nii.unique()
+    force_c2 = None
+    force_c1 = None
     if not disable_c1:
         dense = vert_nii_c * subreg_nii.extract_label(Location.Dens_axis.value)
         volumes = dense.volumes(in_mm3=True)  # dict[label, volume_mm3]
-        force_c2 = None
-        force_c1 = None
         if volumes:
             max_label, max_volume = max(volumes.items(), key=lambda x: x[1])
             if max_volume > 250:
