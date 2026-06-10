@@ -271,6 +271,41 @@ def prepare_vert(
     return softmax_values
 
 
+def prepare_vertexact(
+    vert_softmax_values: np.ndarray,
+    gaussian_sigma: float = 0.85,
+    gaussian_radius: int = 2,
+    gaussian_regionwise: bool = True,
+) -> np.ndarray:
+    """Smooth and normalize a per-vertebra-class softmax vector.
+
+    Optionally applies a 1-D Gaussian filter (either per spinal region or across all classes) and then normalizes to sum to 1.
+
+    Args:
+        vert_softmax_values (np.ndarray): Length-``VERT_CLASSES`` per-class softmax values.
+        gaussian_sigma (float): Gaussian smoothing sigma; 0 disables smoothing.
+        gaussian_radius (int): Half-width of the Gaussian kernel.
+        gaussian_regionwise (bool): If True, smooth each spinal region independently instead of across the whole vector.
+
+    Returns:
+        np.ndarray: The smoothed, sum-normalized per-class vector.
+    """
+    # gaussian region-wise
+    softmax_values = vert_softmax_values.copy()
+    softmax_values[18] += softmax_values[19]  # add t13 to t12
+    softmax_values[24] += softmax_values[25]  # add l6 to l5
+    # remove 19 and 25 from the entire array, because they are not real classes and would mess up the smoothing
+    softmax_values = np.delete(softmax_values, [19, 25], axis=0)
+    if gaussian_sigma > 0.0:
+        if gaussian_regionwise:
+            for s in [CERV, THOR, LUMB]:
+                softmax_values[s] = gaussian_filter1d(softmax_values[s], sigma=gaussian_sigma, mode="nearest", radius=gaussian_radius)
+        else:
+            softmax_values = gaussian_filter1d(softmax_values, sigma=gaussian_sigma, mode="nearest", radius=gaussian_radius)
+    softmax_values /= np.sum(softmax_values) + DIVIDE_BY_ZERO_OFFSET
+    return softmax_values
+
+
 def prepare_vertgrp(
     vertgrp_softmax_values: np.ndarray,
     gaussian_sigma: float = 0.85,
@@ -562,6 +597,16 @@ def find_vert_path_from_predictions(
             vert_w,
         )
 
+        vertex_softmax_output = k["soft"]["VERTEX"] if "VERTEX" in predict_keys else np.zeros(len(VertExact))
+        vertex_values = np.multiply(
+            prepare_vertexact(
+                vertex_softmax_output,
+                gaussian_sigma=vert_gaussian_sigma,
+                gaussian_regionwise=vert_gaussian_regionwise,
+            ),
+            vert_w,
+        )
+
         vertgrp_softmax_output = k["soft"]["VERTGRP"] if "VERTGRP" in predict_keys else np.zeros(len(VertGroup))
         vertgrp_values = np.multiply(
             prepare_vertgrp(
@@ -585,6 +630,7 @@ def find_vert_path_from_predictions(
         #
         # add region and vert
         final_vert_pred = np.add(region_values, vert_values)
+        final_vert_pred = np.add(final_vert_pred, vertex_values)
         final_vert_pred = np.add(final_vert_pred, vertgrp_values)
         # normalize
         final_vert_pred /= np.sum(final_vert_pred) + DIVIDE_BY_ZERO_OFFSET
