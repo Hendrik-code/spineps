@@ -42,14 +42,17 @@ def _get_model_by_name(
     possible_keys = list(modelid2folder.keys())
     if len(possible_keys) == 0:
         logger.print(_NO_MODELS_AVAILABLE_MSG.format(kind=kind), Log_Type.FAIL)
-        raise KeyError(model_name)
+        raise FileNotFoundError(_NO_MODELS_AVAILABLE_MSG.format(kind=kind))
     if model_name not in possible_keys:
         logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
-        raise KeyError(model_name)
+        raise KeyError(f"Model '{model_name}' does not exist. Available {kind} models: {possible_keys}")
     config_path = modelid2folder[model_name]
     if str(config_path).startswith("http"):
-        # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path, phase=phase)
+        # Resolve HTTP (download the model weights on first use)
+        try:
+            config_path = download_if_missing(model_name, config_path, phase=phase)
+        except Exception as e:
+            raise RuntimeError(f"Failed to download model '{model_name}' from {config_path}: {e}") from e
     return get_actual_model(config_path, **kwargs)
 
 
@@ -64,7 +67,8 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
         Segmentation_Model: The instantiated semantic model.
 
     Raises:
-        KeyError: If no model with the given name is available.
+        KeyError: If the given model name is not among the available models.
+        FileNotFoundError: If no models of this kind are installed at all.
     """
     return _get_model_by_name(model_name, modelid2folder_semantic(), SpinepsPhase.SEMANTIC, "semantic", **kwargs)
 
@@ -80,7 +84,8 @@ def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
         Segmentation_Model: The instantiated instance model.
 
     Raises:
-        KeyError: If no model with the given name is available.
+        KeyError: If the given model name is not among the available models.
+        FileNotFoundError: If no models of this kind are installed at all.
     """
     return _get_model_by_name(model_name, modelid2folder_instance(), SpinepsPhase.INSTANCE, "instance", **kwargs)
 
@@ -96,7 +101,8 @@ def get_labeling_model(model_name: str, **kwargs) -> VertLabelingClassifier:
         VertLabelingClassifier: The instantiated labeling classifier.
 
     Raises:
-        KeyError: If no model with the given name is available.
+        KeyError: If the given model name is not among the available models.
+        FileNotFoundError: If no models of this kind are installed at all.
     """
     return _get_model_by_name(model_name, modelid2folder_labeling(), SpinepsPhase.LABELING, "labeling", **kwargs)
 
@@ -167,12 +173,13 @@ def check_available_models(
             id-to-folder maps.
 
     Raises:
-        AssertionError: If models_folder does not exist.
+        FileNotFoundError: If models_folder does not exist.
     """
     logger.print("Check available models...")
     if isinstance(models_folder, str):
         models_folder = Path(models_folder)
-    assert models_folder.exists(), f"models_folder {models_folder} does not exist"
+    if not models_folder.exists():
+        raise FileNotFoundError(f"models_folder {models_folder} does not exist")
 
     config_paths = search_path(models_folder, query="**/inference_config.json", suppress=True)
     global _modelid2folder_semantic, _modelid2folder_instance, _modelid2folder_labeling  # noqa: PLW0603

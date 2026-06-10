@@ -58,7 +58,8 @@ def load_inf_model(
     else:
         device = torch.device("mps")
 
-    assert model_folder.exists(), f"model-folder not found: got path {model_folder}"
+    if not model_folder.exists():
+        raise FileNotFoundError(f"model-folder not found: got path {model_folder}")
 
     predictor = nnUNetPredictor(
         tile_step_size=step_size,

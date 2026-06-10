@@ -109,7 +109,7 @@ def entry_point():
     main_parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     cmdparsers = main_parser.add_subparsers(title="cmd", help="Possible subcommands", dest="cmd", required=True)
     parser_sample = cmdparsers.add_parser(
-        "sample", help="Process a single image nifty", formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        "sample", help="Process a single NIfTI image", formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser_dataset = cmdparsers.add_parser(
         "dataset", help="Process a whole dataset", formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -125,7 +125,7 @@ def entry_point():
         required=True,
         # choices=modelids_semantic,
         metavar="",
-        help="The model used for the semantic segmentation. You can also pass an absolute path the model folder",
+        help="The model used for the semantic segmentation. You can also pass an absolute path to the model folder",
     )
     parser_sample.add_argument(
         "-model_instance",
@@ -135,7 +135,7 @@ def entry_point():
         # required=True,
         # choices=modelids_instance,
         metavar="",
-        help="The model used for the vertebra instance segmentation. You can also pass an absolute path the model folder",
+        help="The model used for the vertebra instance segmentation. You can also pass an absolute path to the model folder",
     )
     parser_sample.add_argument(
         "-model_labeling",
@@ -145,7 +145,7 @@ def entry_point():
         # required=True,
         # choices=modelids_instance,
         metavar="",
-        help="The model used for the vertebra labeling classification. You can also pass an absolute path the model folder",
+        help="The model used for the vertebra labeling classification. You can also pass an absolute path to the model folder",
     )
     parser_sample = parser_arguments(parser_sample)
 
@@ -163,7 +163,7 @@ def entry_point():
         default="t2w",
         # choices=model_subreg_choices,
         metavar="",
-        help="The model used for the subregion segmentation. You can also pass an absolute path the model folder",
+        help="The model used for the subregion segmentation. Pass 'auto' to auto-select a model by modality, or an absolute path to the model folder",
     )
     parser_dataset.add_argument(
         "-model_instance",
@@ -172,7 +172,7 @@ def entry_point():
         default="instance",
         # choices=model_vert_choices,
         metavar="",
-        help="The model used for the vertebra segmentation. You can also pass an absolute path the model folder",
+        help="The model used for the vertebra segmentation. You can also pass an absolute path to the model folder",
     )
     parser_dataset.add_argument(
         "-model_labeling",
@@ -182,7 +182,7 @@ def entry_point():
         # required=True,
         # choices=modelids_instance,
         metavar="",
-        help="The model used for the vertebra labeling classification. You can also pass an absolute path the model folder",
+        help="The model used for the vertebra labeling classification. You can also pass an absolute path to the model folder",
     )
     parser_dataset.add_argument(
         "-ignore_bids_filter",
@@ -209,9 +209,8 @@ def entry_point():
     #
     ###########################
     opt = main_parser.parse_args()
-    print(opt)
-    print()
-    # print(opt)
+    if opt.verbose:
+        logger.print("Parsed arguments:", opt)
     if opt.cmd == "sample":
         run_sample(opt)
     elif opt.cmd == "dataset":
@@ -235,17 +234,20 @@ def run_sample(opt: Namespace):
         int: ``1`` on completion.
 
     Raises:
-        AssertionError: If the input path's parent directory is missing, only a filename was given, or the
-            input file does not exist.
+        ValueError: If only a filename was given instead of a path to the file.
+        FileNotFoundError: If the input path's parent directory is missing, or the input file does not exist.
     """
     input_path = Path(opt.input).absolute()
     dataset = str(input_path.parent)
-    assert os.path.exists(dataset), f"-input parent does not exist, got {dataset}"  # noqa: PTH110
-    assert dataset != "", f"-input you only gave a filename, not a direction to the file, got {input_path}"
+    if dataset == "":
+        raise ValueError(f"-input you only gave a filename, not a path to the file, got {input_path}")
+    if not os.path.exists(dataset):  # noqa: PTH110
+        raise FileNotFoundError(f"-input parent directory does not exist, got {dataset}")
     input_path = str(input_path)
     if not input_path.endswith(".nii.gz"):
         input_path += ".nii.gz"
-    assert os.path.isfile(input_path), f"-input does not exist or is not a file, got {input_path}"  # noqa: PTH113
+    if not os.path.isfile(input_path):  # noqa: PTH113
+        raise FileNotFoundError(f"-input does not exist or is not a file, got {input_path}")
     # model semantic
     if "/" in str(opt.model_semantic):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
@@ -325,11 +327,15 @@ def run_dataset(opt: Namespace):
         int: ``1`` on completion.
 
     Raises:
-        AssertionError: If the directory does not exist, is not a directory, or no instance model is resolved.
+        FileNotFoundError: If the directory does not exist.
+        NotADirectoryError: If the given path is not a directory.
+        ValueError: If no instance model could be resolved.
     """
     input_dir = Path(opt.directory)
-    assert input_dir.exists(), f"-input does not exist, {input_dir}"
-    assert input_dir.is_dir(), f"-input is not a directory, got {input_dir}"
+    if not input_dir.exists():
+        raise FileNotFoundError(f"-directory does not exist, got {input_dir}")
+    if not input_dir.is_dir():
+        raise NotADirectoryError(f"-directory is not a directory, got {input_dir}")
 
     # Model semantic
     if opt.model_semantic == "auto":
@@ -340,9 +346,7 @@ def run_dataset(opt: Namespace):
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
 
     # Model Instance
-    if opt.model_instance == "auto":
-        model_instance = None
-    elif "/" in str(opt.model_instance):
+    if "/" in str(opt.model_instance):
         model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
         model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
@@ -355,7 +359,8 @@ def run_dataset(opt: Namespace):
     else:
         model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
 
-    assert model_instance is not None, "-model_vert was None"
+    if model_instance is None:
+        raise ValueError("-model_instance/-mv resolved to None; pass a valid instance model id or path")
 
     kwargs = {
         "dataset_path": input_dir,

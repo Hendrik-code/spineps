@@ -66,10 +66,11 @@ class Segmentation_Model(ABC):
             default_allow_tqdm (bool, optional): If true, shows a progress bar while segmenting. Defaults to True.
 
         Raises:
-            AssertionError: If model_folder does not exist.
+            FileNotFoundError: If model_folder does not exist.
         """
         self.name: str = ""
-        assert Path(model_folder).exists(), f"model_folder does not exist, got {model_folder}"
+        if not Path(model_folder).exists():
+            raise FileNotFoundError(f"model_folder does not exist, got {model_folder}")
 
         self.logger = No_Logger()
         self.use_cpu = use_cpu
@@ -461,12 +462,16 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
             Self: This model with its 3D U-Net predictor loaded and moved to the selected device.
 
         Raises:
-            AssertionError: If exactly one checkpoint file is not found in the model folder.
+            FileNotFoundError: If the model folder is missing or does not contain exactly one checkpoint file.
         """
-        assert os.path.exists(self.model_folder)  # noqa: PTH110
+        if not os.path.exists(self.model_folder):  # noqa: PTH110
+            raise FileNotFoundError(f"model_folder does not exist, got {self.model_folder}")
 
         chktpath = search_path(self.model_folder, "**/*weights*.ckpt")
-        assert len(chktpath) == 1, chktpath
+        if len(chktpath) != 1:
+            raise FileNotFoundError(
+                f"expected exactly one '*weights*.ckpt' checkpoint in {self.model_folder}, found {len(chktpath)}: {chktpath}"
+            )
         try:
             model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False)
         except RuntimeError:

@@ -133,7 +133,8 @@ def process_dataset(
     # INITIALIZATION
     if not isinstance(modalities, list):
         modalities = [modalities]
-    assert len(modalities) > 0, "you must specifiy the modalities to be segmented!"
+    if len(modalities) == 0:
+        raise ValueError("you must specify the modalities to be segmented!")
 
     if snapshot_copy_folder is True:
         snapshot_copy_folder = dataset_path.joinpath("snaps_seg")
