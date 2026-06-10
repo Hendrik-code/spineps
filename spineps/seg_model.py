@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import from_numpy
 from TPTBox import NII, ZOOMS, Image_Reference, Log_Type, No_Logger, to_nii
+from TPTBox.segmentation.nnUnet_utils.inference_api import load_inf_model, run_inference
 from typing_extensions import Self
 
 from spineps.architectures.pl_unet import PLNet
@@ -18,7 +19,6 @@ from spineps.architectures_new.pl_unet import PLNet as PLNet_new
 from spineps.seg_enums import Acquisition, InputType, Modality, OutputType
 from spineps.utils.citation_reminder import citation_reminder
 from spineps.utils.filepaths import search_path
-from spineps.utils.inference_api import load_inf_model, run_inference
 from spineps.utils.seg_modelconfig import Segmentation_Inference_Config, load_inference_config
 
 threads_started = False
