@@ -477,10 +477,13 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True) -> tu
         out = seg_t * 0
         pref = 1
         old_vol = -1
+        # seg_t and vert_t are not modified in this loop, so compute these invariants once.
+        endplate_nii = seg_t.extract_label(Location.Endplate.value)
+        total = endplate_nii.sum()
+        vert_labels_to_split = vert_t.unique()
         for dil in range(1, MAX_ENDPLATE_DILATION):
             curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
             new_vol = curr.sum()
-            total = seg_t.extract_label(Location.Endplate.value).sum()
             logger.print(rf"{new_vol / total * 100:.2f}% endplates detected", end="\r") if verbose else None
             if old_vol == new_vol and old_vol != 0:
                 break
@@ -488,12 +491,12 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True) -> tu
             if total == new_vol:
                 logger.print("Found all Endplates                                      ")
                 break
-            for i in vert_t.unique():
+            for i in vert_labels_to_split:
                 if i >= INSTANCE_LABEL_LIMIT:
                     break
                 curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
                 v = vert_t.extract_label(i).dilate_msk(dil, verbose=False)
-                end = seg_t.extract_label(Location.Endplate.value) * v
+                end = endplate_nii * v
                 end *= -curr + 1  # type: ignore
                 plates = vert_t * end
                 plates.map_labels_(

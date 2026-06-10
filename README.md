@@ -13,6 +13,10 @@
 
 This is a segmentation pipeline to automatically, and robustly, segment the whole spine in T2w sagittal images.
 
+## NOW SUPPORTS BOTH CT AND T2W!
+There is a new release that finally supports both CT and T2W with completely independent, modality specific models. We are already working on completely modality/sequence robust version that works on everything. Stay tuned for that.
+
+
 ![pipeline_process](spineps/example/figures/pipeline_processflow.png?raw=true)
 
 ## Documentation
