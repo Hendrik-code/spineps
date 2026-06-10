@@ -19,7 +19,7 @@ from spineps.phase_post import phase_postprocess_combined
 from spineps.phase_pre import compute_crop, preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import logger, predict_centroids_from_both
 from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition, find_best_matching_model
 from spineps.utils.citation_reminder import citation_reminder
@@ -28,8 +28,8 @@ from spineps.utils.citation_reminder import citation_reminder
 @citation_reminder
 def process_dataset(
     dataset_path: Path,
-    model_instance: Segmentation_Model,
-    model_semantic: list[Segmentation_Model] | Segmentation_Model | None = None,
+    model_instance: SegmentationModel,
+    model_semantic: list[SegmentationModel] | SegmentationModel | None = None,
     model_labeling: VertLabelingClassifier | None = None,
     #
     rawdata_name: str = "rawdata",
@@ -75,12 +75,12 @@ def process_dataset(
     """Runs the SPINEPS framework over a whole BIDS-conform dataset.
 
     Iterates over every subject in the BIDS dataset, queries the matching scans for each requested modality pair and runs
-    process_img_nii on each, producing semantic (subregion), vertebra (instance) and centroid outputs plus a snapshot.
+    segment_image on each, producing semantic (subregion), vertebra (instance) and centroid outputs plus a snapshot.
 
     Args:
         dataset_path (Path): Path to the BIDS dataset.
-        model_instance (Segmentation_Model): Model for the vertebra (instance) segmentation.
-        model_semantic (list[Segmentation_Model] | Segmentation_Model | None, optional): Models for the subregion (semantic)
+        model_instance (SegmentationModel): Model for the vertebra (instance) segmentation.
+        model_semantic (list[SegmentationModel] | SegmentationModel | None, optional): Models for the subregion (semantic)
             segmentation, one per modality pair. If None, attempts to find a matching model for each modality. Defaults to None.
         model_labeling (VertLabelingClassifier | None, optional): Classifier used to label the vertebra instances. Defaults to None.
         rawdata_name (str, optional): Name of the rawdata folder. Defaults to "rawdata".
@@ -199,7 +199,7 @@ def process_dataset(
                 q.filter("acq", lambda x: x in allowed_acq, required=False)  # noqa: B023
             scans = q.loop_list(sort=True)  # TODO make it family to allow for multi-inputs
             for s in scans:
-                output_paths, errcode = process_img_nii(
+                output_paths, errcode = segment_image(
                     img_ref=s,
                     model_semantic=model,
                     model_instance=model_instance,
@@ -267,10 +267,10 @@ def process_dataset(
 
 
 @citation_reminder
-def process_img_nii(  # noqa: C901
+def segment_image(  # noqa: C901
     img_ref: BIDS_FILE,
-    model_semantic: Segmentation_Model,
-    model_instance: Segmentation_Model,
+    model_semantic: SegmentationModel,
+    model_instance: SegmentationModel,
     model_labeling: VertLabelingClassifier | None = None,
     derivative_name: str = "derivatives_seg",
     #
@@ -329,8 +329,8 @@ def process_img_nii(  # noqa: C901
 
     Args:
         img_ref (BIDS_FILE): Input BIDS_FILE referencing the image to segment.
-        model_semantic (Segmentation_Model): Model for the subregion (semantic) segmentation.
-        model_instance (Segmentation_Model): Model for the vertebra (instance) segmentation.
+        model_semantic (SegmentationModel): Model for the subregion (semantic) segmentation.
+        model_instance (SegmentationModel): Model for the vertebra (instance) segmentation.
         model_labeling (VertLabelingClassifier | None, optional): Classifier used to label the vertebra instances. Defaults to None.
         derivative_name (str, optional): Name of the derivatives output folder. Defaults to "derivatives_seg".
         save_modelres_mask (bool, optional): If true, additionally saves the semantic mask in the resolution of the model.

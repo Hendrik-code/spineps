@@ -1,4 +1,4 @@
-"""Segmentation model abstractions: the abstract Segmentation_Model and its nnU-Net and Unet3D subclasses."""
+"""Segmentation model abstractions: the abstract SegmentationModel and its nnU-Net and Unet3D subclasses."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ ZOOM_MATCH_TOLERANCE = 1e-4
 LEGACY_LABEL_NORMALIZATION = 9
 
 
-class Segmentation_Model(ABC):
+class SegmentationModel(ABC):
     """Abstract base class wrapping a segmentation network together with its inference configuration.
 
     Subclasses implement load() and run() for a concrete backend (e.g. nnU-Net or Unet3D). The class handles input
@@ -384,8 +384,8 @@ class Segmentation_Model(ABC):
         return str(self)
 
 
-class Segmentation_Model_NNunet(Segmentation_Model):
-    """Segmentation_Model backed by an nnU-Net predictor."""
+class SegmentationModelNNunet(SegmentationModel):
+    """SegmentationModel backed by an nnU-Net predictor."""
 
     def __init__(
         self,
@@ -465,8 +465,8 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         return {OutputType.seg: seg_nii, OutputType.softmax_logits: softmax_logits}
 
 
-class Segmentation_Model_Unet3D(Segmentation_Model):
-    """Segmentation_Model backed by a single-input 3D U-Net (PyTorch Lightning PLNet).
+class SegmentationModelUnet3D(SegmentationModel):
+    """SegmentationModel backed by a single-input 3D U-Net (PyTorch Lightning PLNet).
 
     Used as the instance (vertebra) model: it takes a segmentation mask as input and refines it into the vertebra instance
     output. Supports both the current multi-channel network and a legacy single-channel network.

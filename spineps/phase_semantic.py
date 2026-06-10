@@ -7,7 +7,7 @@ import numpy as np
 from TPTBox import NII, Location, Log_Type
 
 from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import fill_holes_labels, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 from spineps.utils.resolution import REFERENCE_VOXEL_VOLUME_MM3, REFERENCE_ZOOM, mm3_to_voxels, mm_to_voxels
@@ -26,7 +26,7 @@ CC_BBOX_MARGIN_MM = 4 * min(REFERENCE_ZOOM)
 
 def predict_semantic_mask(
     mri_nii: NII,
-    model: Segmentation_Model,
+    model: SegmentationModel,
     debug_data: dict,
     proc_fill_3d_holes: bool = True,
     proc_clean_beyond_largest_bounding_box: bool = True,
@@ -42,7 +42,7 @@ def predict_semantic_mask(
 
     Args:
         mri_nii (NII): Input grayscale MRI image (intensities must start at 0).
-        model (Segmentation_Model): Model used to produce the semantic segmentation.
+        model (SegmentationModel): Model used to produce the semantic segmentation.
         debug_data (dict): Dictionary for collecting intermediate results (e.g. the raw segmentation).
         proc_fill_3d_holes (bool, optional): Whether to fill 3D holes in the output mask. Defaults to True.
         proc_clean_beyond_largest_bounding_box (bool, optional): Whether to keep only connected components within

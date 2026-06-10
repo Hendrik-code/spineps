@@ -16,7 +16,7 @@ from typing_extensions import Self
 from spineps.phase_pre import preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model, run_inference
+from spineps.seg_model import Segmentation_Inference_Config, SegmentationModel, run_inference
 from spineps.seg_utils import check_input_model_compatibility, check_model_modality_acquisition
 
 logger = No_Logger()
@@ -30,7 +30,7 @@ class DummyPredictor:
         return arr
 
 
-class Segmentation_Model_Dummy(Segmentation_Model):
+class SegmentationModelDummy(SegmentationModel):
     def __init__(
         self,
         model_folder: str | Path = __file__,
@@ -77,7 +77,7 @@ class Test_Semantic_Phase(unittest.TestCase):
 
         mri, _subreg, _vert, _label = get_test_mri()
         input_path = get_tests_dir().joinpath("sample_mri", "sub-mri_label-6_T2w.nii.gz")
-        model = Segmentation_Model_Dummy()
+        model = SegmentationModelDummy()
 
         print(input_path)
         bf = BIDS_FILE(input_path, dataset=input_path.parent)
@@ -114,7 +114,7 @@ class Test_Semantic_Phase(unittest.TestCase):
 
     def test_segment_scan(self):
         mri, subreg, _vert, _label = get_test_mri()
-        model = Segmentation_Model_Dummy()
+        model = SegmentationModelDummy()
         model.run = MagicMock(return_value={OutputType.seg: subreg, OutputType.softmax_logits: None})
         debug_data = {}
         seg_nii, _softmax_logits, errcode = predict_semantic_mask(
@@ -135,7 +135,7 @@ class Test_Semantic_Phase(unittest.TestCase):
 
     def test_run_inference(self):
         mri, subreg, _vert, _label = get_test_mri()
-        model = Segmentation_Model_Dummy().load()
+        model = SegmentationModelDummy().load()
         s_arr = subreg.get_seg_array()
         model.predictor.predict_single_npy_array = MagicMock(return_value=(s_arr, s_arr[np.newaxis, :]))
 

@@ -27,7 +27,7 @@ from spineps.lab_model import VertLabelingClassifier
 from spineps.phase_instance import predict_instance_mask
 from spineps.phase_labeling import VERT_CLASSES, perform_labeling_step, run_model_for_vert_labeling
 from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model, Segmentation_Model_Unet3D
+from spineps.seg_model import Segmentation_Inference_Config, SegmentationModel, SegmentationModelUnet3D
 
 logger = No_Logger()
 
@@ -57,8 +57,8 @@ def _dummy_seg_config(cutout_size: tuple[int, int, int] = (48, 48, 32)) -> Segme
     )
 
 
-class Segmentation_Model_Dummy(Segmentation_Model):
-    """A Segmentation_Model whose load() installs a dummy predictor instead of real weights."""
+class SegmentationModelDummy(SegmentationModel):
+    """A SegmentationModel whose load() installs a dummy predictor instead of real weights."""
 
     def __init__(self, cutout_size: tuple[int, int, int] = (48, 48, 32)) -> None:
         self.logger = No_Logger()
@@ -147,7 +147,7 @@ class Test_Labeling_Inference_Mocked(unittest.TestCase):
 class Test_Segment_Scan_Mocked(unittest.TestCase):
     def test_segment_scan_padding_round_trip(self):
         mri, _subreg, _vert, _label = get_test_mri()
-        model = Segmentation_Model_Dummy()
+        model = SegmentationModelDummy()
         # run() echoes its (padded, reoriented) input back as the segmentation.
         model.run = MagicMock(side_effect=lambda input_nii, verbose=False: {OutputType.seg: input_nii[0], OutputType.softmax_logits: None})  # noqa: ARG005
 
@@ -166,7 +166,7 @@ class Test_Segment_Scan_Mocked(unittest.TestCase):
 
     def test_segment_scan_without_resample_back(self):
         mri, subreg, _vert, _label = get_test_mri()
-        model = Segmentation_Model_Dummy()
+        model = SegmentationModelDummy()
         model.run = MagicMock(return_value={OutputType.seg: subreg.copy(), OutputType.softmax_logits: None})
 
         result = model.segment_scan(
@@ -201,7 +201,7 @@ class Test_Instance_Inference_Mocked(unittest.TestCase):
 
     def test_predict_instance_mask_runs(self):
         _mri, subreg, _vert, _label = get_test_mri()
-        model = Segmentation_Model_Dummy(cutout_size=(48, 48, 32))
+        model = SegmentationModelDummy(cutout_size=(48, 48, 32))
         model.segment_scan = MagicMock(side_effect=self._fake_segment_scan)
 
         whole_vert_nii, errcode = predict_instance_mask(
@@ -224,7 +224,7 @@ class Test_Instance_Inference_Mocked(unittest.TestCase):
         # Remove the corpus-border label (49) so the instance phase has nothing to work with.
         no_corpus = subreg.copy()
         no_corpus[no_corpus == 49] = 0
-        model = Segmentation_Model_Dummy()
+        model = SegmentationModelDummy()
         model.segment_scan = MagicMock(side_effect=self._fake_segment_scan)
 
         result, errcode = predict_instance_mask(no_corpus, model, debug_data={}, proc_corpus_clean=False)
@@ -319,9 +319,9 @@ class Test_Classifier_Forward_Mocked(unittest.TestCase):
 
 class Test_Same_Modelzoom(unittest.TestCase):
     @staticmethod
-    def _model_with_zoom(zoom: tuple[float, float, float]) -> Segmentation_Model_Dummy:
+    def _model_with_zoom(zoom: tuple[float, float, float]) -> SegmentationModelDummy:
         # A fixed (length-3) resolution_range makes calc_recommended_resampling_zoom return it verbatim.
-        model = Segmentation_Model_Dummy()
+        model = SegmentationModelDummy()
         model.inference_config.resolution_range = tuple(zoom)
         return model
 
@@ -364,8 +364,8 @@ class _FakeUnetPredictor:
         return x
 
 
-def _make_unet3d_test_model(n_classes: int = 4, cutout: tuple[int, int, int] = (6, 6, 6)) -> Segmentation_Model_Unet3D:
-    """A real Segmentation_Model_Unet3D wired to an identity predictor (no weights, runs on CPU)."""
+def _make_unet3d_test_model(n_classes: int = 4, cutout: tuple[int, int, int] = (6, 6, 6)) -> SegmentationModelUnet3D:
+    """A real SegmentationModelUnet3D wired to an identity predictor (no weights, runs on CPU)."""
     config = Segmentation_Inference_Config(
         logger=No_Logger(),
         modality=["SEG"],
@@ -381,7 +381,7 @@ def _make_unet3d_test_model(n_classes: int = 4, cutout: tuple[int, int, int] = (
         expected_inputs=["seg"],
         cutout_size=cutout,
     )
-    model = Segmentation_Model_Unet3D(__file__, config, default_verbose=False, default_allow_tqdm=False)
+    model = SegmentationModelUnet3D(__file__, config, default_verbose=False, default_allow_tqdm=False)
     model.predictor = _FakeUnetPredictor(n_classes)
     model.device = torch.device("cpu")
     return model

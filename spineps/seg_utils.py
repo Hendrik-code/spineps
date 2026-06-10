@@ -9,7 +9,7 @@ import nibabel as nib
 from TPTBox import BIDS_FILE, NII, ZOOMS, Log_Type
 
 from spineps.seg_enums import Acquisition, Modality
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import logger
 
 Modality_Pair = tuple[Union[list[Modality], Modality], Acquisition]
@@ -18,7 +18,7 @@ Modality_Pair = tuple[Union[list[Modality], Modality], Acquisition]
 def find_best_matching_model(
     modality_pair: Modality_Pair,
     expected_resolution: ZOOMS | None,  # actual resolution here?
-) -> Segmentation_Model:
+) -> SegmentationModel:
     """Select the segmentation model best matching a modality/acquisition pair and resolution.
 
     Not yet implemented: intended to iterate over model configs and pick the one best matching the requested resolution.
@@ -28,7 +28,7 @@ def find_best_matching_model(
         expected_resolution (ZOOMS | None): The desired voxel resolution, or None.
 
     Returns:
-        Segmentation_Model: The best-matching model (once implemented).
+        SegmentationModel: The best-matching model (once implemented).
 
     Raises:
         NotImplementedError: Always, as this function is not yet implemented; also for an unmapped modality pair.
@@ -52,7 +52,7 @@ def find_best_matching_model(
 
 
 def check_model_modality_acquisition(
-    model: Segmentation_Model,
+    model: SegmentationModel,
     mod_pair: Modality_Pair,
     verbose: bool = True,
 ) -> bool:
@@ -62,7 +62,7 @@ def check_model_modality_acquisition(
     mismatch when ``verbose`` is True.
 
     Args:
-        model (Segmentation_Model): The model to check.
+        model (SegmentationModel): The model to check.
         mod_pair (Modality_Pair): The required ``(modality(ies), acquisition)`` pair.
         verbose (bool): If True, log a warning when incompatible.
 
@@ -116,7 +116,7 @@ def add_ignore_text(logger_texts: list[str]) -> None:
 
 def check_input_model_compatibility(
     img_ref: BIDS_FILE,
-    model: Segmentation_Model,
+    model: SegmentationModel,
     ignore_modality: bool = False,
     ignore_acquisition: bool = False,
     ignore_labelkey: bool = False,
@@ -130,7 +130,7 @@ def check_input_model_compatibility(
 
     Args:
         img_ref (BIDS_FILE): Reference to the input image file.
-        model (Segmentation_Model): The model to check against.
+        model (SegmentationModel): The model to check against.
         ignore_modality (bool): If True, tolerate a modality/format mismatch.
         ignore_acquisition (bool): If True, tolerate an acquisition mismatch.
         ignore_labelkey (bool): If True, tolerate an unexpected ``label`` key in the filename.

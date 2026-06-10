@@ -21,7 +21,7 @@ from TPTBox.core.np_utils import (
 from tqdm import tqdm
 
 from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import IVD_LABEL_OFFSET, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 from spineps.utils.resolution import (
@@ -49,7 +49,7 @@ MERGED_CORPUS_VOLUME_RATIO = 1.5
 
 def predict_instance_mask(
     seg_nii: NII,
-    model: Segmentation_Model,
+    model: SegmentationModel,
     debug_data: dict,
     pad_size: int = 0,
     proc_inst_fill_3d_holes: bool = True,
@@ -68,7 +68,7 @@ def predict_instance_mask(
 
     Args:
         seg_nii (NII): Subregion (semantic) segmentation mask used as input.
-        model (Segmentation_Model): Instance model producing the per-vertebra-body cutout predictions.
+        model (SegmentationModel): Instance model producing the per-vertebra-body cutout predictions.
         debug_data (dict): Dictionary for collecting intermediate results across the pipeline.
         pad_size (int, optional): Edge padding added before processing and removed afterwards. Defaults to 0.
         proc_inst_fill_3d_holes (bool, optional): Whether to fill 3D holes in the final vertebra mask. Defaults to True.
@@ -584,7 +584,7 @@ def split_by_plane(
 
 def collect_vertebra_predictions(
     seg_nii: NII,
-    model: Segmentation_Model,
+    model: SegmentationModel,
     corpus_size_cleaning: int,
     cutout_size: tuple[int, int, int],
     debug_data: dict,
@@ -603,7 +603,7 @@ def collect_vertebra_predictions(
 
     Args:
         seg_nii (NII): Subregion semantic mask used for the cutouts.
-        model (Segmentation_Model): Instance model producing the three-vertebra-body cutout predictions.
+        model (SegmentationModel): Instance model producing the three-vertebra-body cutout predictions.
         corpus_size_cleaning (int): Voxel threshold for cleaning small corpus artifacts when finding coms; 0 disables.
         cutout_size: Cutout window size (per axis) extracted around each center of mass.
         debug_data (dict): Dictionary for collecting per-cutout intermediate results.

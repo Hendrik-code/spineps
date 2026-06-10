@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 import spineps
-from spineps.get_models import Segmentation_Model, check_available_models, get_actual_model
+from spineps.get_models import SegmentationModel, check_available_models, get_actual_model
 from spineps.utils.filepaths import (
     filepath_model,
     get_mri_segmentor_models_dir,
@@ -26,9 +26,9 @@ class Test_filepaths(unittest.TestCase):
     #    mv_p = "/DATA/NAS/ongoing_projects/hendrik/nako-segmentation/nnUNet/unet3d_result/nakospider_highres_shiftposi"
     #    model_dir = "/DATA/NAS/ongoing_projects/hendrik/nako-segmentation/nnUNet/"
     #    ms = get_segmentation_model(in_config=filepath_model(ms_p, model_dir=model_dir))
-    #    self.assertTrue(isinstance(ms, Segmentation_Model))
+    #    self.assertTrue(isinstance(ms, SegmentationModel))
     #    mv = get_segmentation_model(in_config=filepath_model(mv_p, model_dir=model_dir))
-    #    self.assertTrue(isinstance(mv, Segmentation_Model))
+    #    self.assertTrue(isinstance(mv, SegmentationModel))
     #    self.assertTrue(True)
 
     def test_search_path_simple(self):

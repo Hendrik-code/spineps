@@ -20,7 +20,7 @@ from spineps.get_models import (
     modelid2folder_labeling,
     modelid2folder_semantic,
 )
-from spineps.seg_run import process_dataset, process_img_nii
+from spineps.seg_run import process_dataset, segment_image
 from spineps.utils.citation_reminder import citation_reminder
 
 logger = No_Logger(prefix="Init")
@@ -224,7 +224,7 @@ def run_sample(opt: Namespace):
     """Run the full segmentation pipeline on a single input NIfTI file.
 
     Loads the requested semantic, instance and (optional) labeling models, wraps the input as a
-    ``BIDS_FILE`` and calls :func:`process_img_nii`, optionally under a cProfiler.
+    ``BIDS_FILE`` and calls :func:`segment_image`, optionally under a cProfiler.
 
     Args:
         opt (Namespace): Parsed CLI arguments from the ``sample`` subcommand (input path, model ids/paths,
@@ -302,11 +302,11 @@ def run_sample(opt: Namespace):
             info={"desc": "cprofile", "mod": bids_sample.format, "ses": timestamp},
         )
         with cProfile.Profile() as pr:
-            process_img_nii(**kwargs)
+            segment_image(**kwargs)
         pr.dump_stats(cprofile_out)
         logger.print(f"Saved cprofile log into {cprofile_out}", Log_Type.SAVE)
     else:
-        process_img_nii(**kwargs)
+        segment_image(**kwargs)
 
     logger.print(f"Sample took: {perf_counter() - start_time} seconds")
     return 1

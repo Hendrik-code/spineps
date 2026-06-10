@@ -15,7 +15,7 @@ from typing_extensions import Self
 
 from spineps.architectures.pl_densenet import PLClassifier
 from spineps.seg_enums import OutputType
-from spineps.seg_model import Segmentation_Inference_Config, Segmentation_Model
+from spineps.seg_model import Segmentation_Inference_Config, SegmentationModel
 from spineps.utils.filepaths import search_path
 
 logger = No_Logger(prefix="VertLabelingClassifier")
@@ -73,12 +73,12 @@ def rotate_patch_sagitally(patch: np.ndarray, angle: float, msk: bool = False, c
     return rotated_patch
 
 
-class VertLabelingClassifier(Segmentation_Model):
+class VertLabelingClassifier(SegmentationModel):
     """Classifier that assigns anatomical labels to individual vertebrae.
 
     For each vertebra a patch is cropped around its center of mass, optionally rotated to align with the spine axis,
     normalized and center-cropped to a fixed size, then passed through a DenseNet (PLClassifier) that outputs per-head
-    softmax predictions. Although it subclasses Segmentation_Model to reuse config loading, it does not perform voxel
+    softmax predictions. Although it subclasses SegmentationModel to reuse config loading, it does not perform voxel
     segmentation (run/segment_scan are not implemented).
 
     Attributes:
