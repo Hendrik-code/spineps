@@ -75,10 +75,23 @@ def perform_labeling_step(
 
     if subreg_nii is not None:
         # crop for corpus instead of whole vertebra
-        corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border))
+        corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border, Location.Dens_axis))
         vert_nii_c = vert_nii * corpus_nii
     else:
         vert_nii_c = vert_nii
+    vert_nii_u = vert_nii.unique()
+    force_c2 = None
+    force_c1 = None
+    if not disable_c1:
+        dense = vert_nii_c * subreg_nii.extract_label(Location.Dens_axis.value)
+        volumes = dense.volumes(in_mm3=True)  # dict[label, volume_mm3]
+        if volumes:
+            max_label, max_volume = max(volumes.items(), key=lambda x: x[1])
+            if max_volume > 250:
+                force_c2 = max_label
+                # Force C1 if the preceding vertebra exists
+                if force_c2 != 1:
+                    force_c1 = force_c2 - 1
     # run model
     labelmap = run_model_for_vert_labeling(
         model,
@@ -86,9 +99,10 @@ def perform_labeling_step(
         vert_nii_c,
         proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
         disable_c1=disable_c1,
+        force_c1=force_c1,
+        force_c2=force_c2,
     )[0]
 
-    vert_nii_u = vert_nii.unique()
     # add C1 if it not set in labelmap, C2 exists, the minimal label (from sorting C1) is not mached anywhere.
     if not disable_c1 and min(vert_nii_u) not in labelmap and 1 not in labelmap.values() and 2 in labelmap.values():
         logger.on_debug("Add C1 after labeling")
@@ -111,6 +125,8 @@ def run_model_for_vert_labeling(
     verbose: bool = False,
     proc_lab_force_no_tl_anomaly: bool = False,
     disable_c1: bool = True,
+    force_c1: int | None = None,
+    force_c2: int | None = None,
 ) -> tuple[dict[int, int], float, list[int], list[int], list, list, dict]:
     """Run the labeling classifier over a whole image/instance pair and resolve a vertebra label sequence.
 
@@ -153,6 +169,17 @@ def run_model_for_vert_labeling(
     vert.extract_label_([i for i in range(1, 29) if i not in [26, 27]], keep_label=True)
     # counted label
     orig_label = vert.unique()
+
+    # Translate instance labels → positional indices in orig_label for the path solver
+    force_c1_instance: int | None = None
+    force_c2_instance: int | None = None
+    if force_c2 is not None and force_c2 in orig_label:
+        force_c2_instance = list(orig_label).index(force_c2)
+        logger.on_debug(f"force_c2: instance label {force_c2} → position index {force_c2_instance}")
+    if force_c1 is not None and force_c1 in orig_label:
+        force_c1_instance = list(orig_label).index(force_c1)
+        logger.on_debug(f"force_c1: instance label {force_c1} → position index {force_c1_instance}")
+
     # run model
     predictions = model.run_all_seg_instances(img, vert)
 
@@ -161,6 +188,8 @@ def run_model_for_vert_labeling(
         proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
         verbose=verbose,
         disable_c1=disable_c1,
+        force_c1_instance=force_c1_instance,
+        force_c2_instance=force_c2_instance,
     )
     assert len(orig_label) == len(fpath_post), f"{len(orig_label)} != {len(fpath_post)}"
     labelmap = {orig_label[idx]: fpath_post[idx] for idx in range(len(orig_label))}
@@ -447,6 +476,8 @@ def find_vert_path_from_predictions(
     focus_tl_gap: bool = True,  # focus on T11/T13 gap (if T11/t13 case is detected, predict again using crops and then check again)
     argmax_combined_cost_matrix_instead_of_path_algorithm: bool = False,
     proc_lab_force_no_tl_anomaly: bool = False,
+    force_c1_instance: int | None = None,
+    force_c2_instance: int | None = None,
     #
     verbose: bool = False,
 ) -> tuple[float, list[int], list[int], list, list, dict]:
@@ -601,6 +632,15 @@ def find_vert_path_from_predictions(
             vertrel_matrix[idx],
             gaussian_sigma=0.0,
         )
+    # Force C2, C1
+    FORCED_LABEL_SCORE = 1e6  # large enough to always win; invert_cost=True means higher → preferred
+    if force_c2_instance is not None:
+        cost_matrix[force_c2_instance, :] = 0.0
+        cost_matrix[force_c2_instance, C2_CLASS_IDX] = FORCED_LABEL_SCORE
+    if force_c1_instance is not None:
+        cost_matrix[force_c1_instance, :] = 0.0
+        cost_matrix[force_c1_instance, C1_CLASS_IDX] = FORCED_LABEL_SCORE
+
     cost_matrix = np.asarray(cost_matrix)
     # invert rel cost
     relative_cost_matrix = np.multiply(-relative_cost_matrix, vertrel_w)

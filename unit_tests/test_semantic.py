@@ -1,4 +1,4 @@
-# Call 'python -m unittest' on this folder  # noqa: INP001
+# Call 'python -m unittest' on this folder
 # coverage run -m unittest
 # coverage report
 # coverage html
@@ -137,15 +137,15 @@ class Test_Semantic_Phase(unittest.TestCase):
         mri, subreg, _vert, _label = get_test_mri()
         model = Segmentation_Model_Dummy().load()
         s_arr = subreg.get_seg_array()
-        model.predictor.predict_single_npy_array = MagicMock(return_value=(s_arr, s_arr[np.newaxis, :]))
 
-        seg_arr, _ = run_inference(mri, model.predictor)
-        seg_nii = subreg.set_array(seg_arr)
+        model.predictor.predict_single_npy_array = MagicMock(
+            return_value=(np.transpose(s_arr, axes=s_arr.ndim - 1 - np.arange(s_arr.ndim)))
+        )
+        seg_nii, *_ = run_inference(mri, model.predictor)
+
         # debug_data = {}
         predicted_volumes = seg_nii.volumes()
         ref_volumes = subreg.volumes()
-        print(predicted_volumes)
-        print(ref_volumes)
         for i, v in ref_volumes.items():
             self.assertEqual(v, predicted_volumes[i])
 
