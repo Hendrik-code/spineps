@@ -99,6 +99,25 @@ def parser_arguments(parser: argparse.ArgumentParser):
         help="Number of vertebra cutouts run through the instance model per batched forward pass. Higher is faster but uses "
         "more GPU memory; falls back to one-by-one on out-of-memory.",
     )
+    parser.add_argument(
+        "--amp",
+        action="store_true",
+        help="Run the instance model's forward pass under CUDA autocast (faster, may slightly change the output).",
+    )
+    parser.add_argument(
+        "--step-size",
+        type=float,
+        default=None,
+        help="Sliding-window tile step size for the semantic model (e.g. 0.7). Larger is faster but less accurate; "
+        "by default uses the model's configured value.",
+    )
+    parser.add_argument(
+        "--tta",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Force test-time augmentation (mirroring) on/off for the semantic model. Pass --no-tta to disable it for "
+        "a speed-up; by default uses the model's configured setting.",
+    )
     parser.add_argument("--cpu", action="store_true", help="Use CPU instead of GPU (will take way longer)")
     parser.add_argument("--run-cprofiler", "-rcp", action="store_true", help="Runs a cprofiler over the entire action")
     parser.add_argument("--verbose", "-v", action="store_true", help="Prints much more stuff, may fully clutter your terminal")
@@ -258,6 +277,9 @@ def run_sample(opt: Namespace):
     else:
         model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
 
+    if opt.tta is not None:
+        model_semantic.set_test_time_augmentation(opt.tta)
+
     bids_sample = BIDS_FILE(input_path, dataset=dataset, verbose=True)
 
     kwargs = {
@@ -279,6 +301,8 @@ def run_sample(opt: Namespace):
         "proc_sem_n4_bias_correction": opt.n4,
         "proc_lab_force_no_tl_anomaly": opt.enforce_12_thoracic,
         "proc_inst_batch_size": opt.batch_size,
+        "proc_inst_amp": opt.amp,
+        "proc_sem_step_size": opt.step_size,
         "ignore_compatibility_issues": opt.ignore_inference_compatibility,
         "verbose": opt.verbose,
     }
@@ -355,6 +379,9 @@ def run_dataset(opt: Namespace):
     if model_instance is None:
         raise ValueError("-model_instance/-mv resolved to None; pass a valid instance model id or path")
 
+    if opt.tta is not None and model_semantic is not None:
+        model_semantic.set_test_time_augmentation(opt.tta)
+
     kwargs = {
         "dataset_path": input_dir,
         "model_semantic": model_semantic,
@@ -379,6 +406,8 @@ def run_dataset(opt: Namespace):
         "proc_sem_n4_bias_correction": opt.n4,
         "proc_lab_force_no_tl_anomaly": opt.enforce_12_thoracic,
         "proc_inst_batch_size": opt.batch_size,
+        "proc_inst_amp": opt.amp,
+        "proc_sem_step_size": opt.step_size,
         "snapshot_copy_folder": opt.save_snaps_folder,
         "verbose": opt.verbose,
     }

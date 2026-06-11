@@ -442,6 +442,20 @@ class Test_Unet3D_Batching(unittest.TestCase):
             single = model.segment_scan(cut, **kwargs)
             np.testing.assert_array_equal(res[OutputType.seg].get_seg_array(), single[OutputType.seg].get_seg_array())
 
+    def test_set_test_time_augmentation(self):
+        model = _make_unet3d_test_model()
+        # the instance predictor has no use_mirroring attribute -> no-op, must not raise
+        model.set_test_time_augmentation(False)
+
+        class _MirroringPredictor:
+            use_mirroring = True
+
+        model.predictor = _MirroringPredictor()
+        model.set_test_time_augmentation(False)
+        self.assertFalse(model.predictor.use_mirroring)
+        model.set_test_time_augmentation(True)
+        self.assertTrue(model.predictor.use_mirroring)
+
 
 if __name__ == "__main__":
     unittest.main()

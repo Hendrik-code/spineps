@@ -53,11 +53,14 @@ def process_dataset(
     proc_sem_remove_inferior_beyond_canal: bool = False,
     proc_sem_clean_beyond_largest_bounding_box: bool = True,
     proc_sem_clean_small_cc_artifacts: bool = True,
+    proc_sem_step_size: float | None = None,
     # Instance
     proc_inst_corpus_clean: bool = True,
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
+    proc_inst_batch_size: int = 4,
+    proc_inst_amp: bool = False,
     # Labeling
     proc_lab_force_no_tl_anomaly: bool = False,
     # Both
@@ -109,12 +112,18 @@ def process_dataset(
             bounding box. Defaults to True.
         proc_sem_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
             semantic mask. Defaults to True.
+        proc_sem_step_size (float | None, optional): Sliding-window tile step size for the semantic model; larger is
+            faster but less accurate. If None, uses the model's configured default. Defaults to None.
         proc_inst_corpus_clean (bool, optional): If true, cleans the vertebra corpus during instance processing. Defaults to True.
         proc_inst_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
             instance mask. Defaults to True.
         proc_inst_largest_k_cc (int, optional): If greater than 0, keeps only the largest k connected components of the instance
             mask. Defaults to 0.
         proc_inst_detect_and_solve_merged_corpi (bool, optional): If true, detects and splits merged vertebra corpi. Defaults to True.
+        proc_inst_batch_size (int, optional): Number of vertebra cutouts run through the instance model per batched forward
+            pass. Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
+        proc_inst_amp (bool, optional): Run the instance forward pass under CUDA autocast (faster, may slightly change
+            values). Defaults to False.
         proc_lab_force_no_tl_anomaly (bool, optional): If true, forces the labeling to assume no thoracolumbar transition anomaly.
             Defaults to False.
         proc_fill_3d_holes (bool, optional): If true, fills 3D holes during post-processing. Defaults to True.
@@ -222,11 +231,14 @@ def process_dataset(
                     proc_sem_remove_inferior_beyond_canal=proc_sem_remove_inferior_beyond_canal,
                     proc_sem_clean_beyond_largest_bounding_box=proc_sem_clean_beyond_largest_bounding_box,
                     proc_sem_clean_small_cc_artifacts=proc_sem_clean_small_cc_artifacts,
+                    proc_sem_step_size=proc_sem_step_size,
                     proc_inst_detect_and_solve_merged_corpi=proc_inst_detect_and_solve_merged_corpi,
                     proc_inst_corpus_clean=proc_inst_corpus_clean,
                     proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
                     proc_assign_missing_cc=proc_assign_missing_cc,
                     proc_inst_largest_k_cc=proc_inst_largest_k_cc,
+                    proc_inst_batch_size=proc_inst_batch_size,
+                    proc_inst_amp=proc_inst_amp,
                     proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                     proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
                     proc_vertebra_inconsistency=proc_vertebra_inconsistency,
@@ -297,12 +309,14 @@ def segment_image(  # noqa: C901
     proc_sem_remove_inferior_beyond_canal: bool = False,
     proc_sem_clean_beyond_largest_bounding_box: bool = True,
     proc_sem_clean_small_cc_artifacts: bool = True,
+    proc_sem_step_size: float | None = None,
     # Instance
     proc_inst_corpus_clean: bool = True,
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
     proc_inst_batch_size: int = 4,
+    proc_inst_amp: bool = False,
     vertebra_instance_labeling_offset=2,
     # Labeling
     proc_lab_force_no_tl_anomaly: bool = False,
@@ -361,6 +375,8 @@ def segment_image(  # noqa: C901
             bounding box. Defaults to True.
         proc_sem_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
             semantic mask. Defaults to True.
+        proc_sem_step_size (float | None, optional): Sliding-window tile step size for the semantic model; larger is
+            faster but less accurate. If None, uses the model's configured default. Defaults to None.
         proc_inst_corpus_clean (bool, optional): If true, cleans the vertebra corpus during instance processing. Defaults to True.
         proc_inst_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
             instance mask. Defaults to True.
@@ -369,6 +385,8 @@ def segment_image(  # noqa: C901
         proc_inst_detect_and_solve_merged_corpi (bool, optional): If true, detects and splits merged vertebra corpi. Defaults to True.
         proc_inst_batch_size (int, optional): Number of vertebra cutouts run through the instance model per batched forward
             pass. Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
+        proc_inst_amp (bool, optional): Run the instance forward pass under CUDA autocast (faster, may slightly change
+            values). Defaults to False.
         vertebra_instance_labeling_offset (int, optional): Offset applied when mapping instance ids to vertebra labels (set to 1
             for CT models that include C1). Defaults to 2.
         proc_lab_force_no_tl_anomaly (bool, optional): If true, forces the labeling to assume no thoracolumbar transition anomaly.
@@ -518,6 +536,7 @@ def segment_image(  # noqa: C901
                 proc_clean_small_cc_artifacts=proc_sem_clean_small_cc_artifacts,
                 proc_clean_beyond_largest_bounding_box=proc_sem_clean_beyond_largest_bounding_box,
                 proc_remove_inferior_beyond_canal=proc_sem_remove_inferior_beyond_canal,
+                step_size=proc_sem_step_size,
             )
             if errcode != ErrCode.OK:
                 return output_paths, errcode
@@ -558,6 +577,7 @@ def segment_image(  # noqa: C901
                 proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
                 proc_inst_largest_k_cc=proc_inst_largest_k_cc,
                 proc_inst_batch_size=proc_inst_batch_size,
+                proc_inst_amp=proc_inst_amp,
             )
             if errcode != ErrCode.OK:
                 logger.print(f"Vert Mask creation failed with errcode {errcode}", Log_Type.FAIL)

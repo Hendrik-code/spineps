@@ -305,6 +305,18 @@ class SegmentationModel(ABC):
         """
         return self.inference_config.acquisition
 
+    def set_test_time_augmentation(self, enabled: bool) -> None:
+        """Enables or disables test-time augmentation (mirroring) for this model, if the backend supports it.
+
+        Only the nnU-Net (semantic) backend uses mirroring; for other backends this is a no-op. Mirroring roughly
+        multiplies inference cost, so disabling it is a simple speed-up at a small accuracy cost.
+
+        Args:
+            enabled (bool): Whether to use test-time mirroring augmentation.
+        """
+        if self.predictor is not None and hasattr(self.predictor, "use_mirroring"):
+            self.predictor.use_mirroring = enabled
+
     @abstractmethod
     def run(self, input_nii: list[NII], verbose: bool = False) -> dict[OutputType, NII | None]:
         """Runs the backend predictor on the prepared inputs.

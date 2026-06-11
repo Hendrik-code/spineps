@@ -58,6 +58,7 @@ def predict_instance_mask(
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_batch_size: int = 4,
+    proc_inst_amp: bool = False,
     verbose: bool = False,
 ) -> tuple[NII | None, ErrCode]:
     """Build a per-vertebra instance mask from a subregion semantic segmentation.
@@ -78,6 +79,8 @@ def predict_instance_mask(
         proc_inst_largest_k_cc (int, optional): Keep only the largest k connected components per cutout label; 0 disables. Defaults to 0.
         proc_inst_batch_size (int, optional): Number of cutouts run through the instance model per batched forward pass.
             Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
+        proc_inst_amp (bool, optional): Run the instance forward pass under CUDA autocast (faster, may slightly change
+            values). Defaults to False.
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
@@ -150,6 +153,7 @@ def predict_instance_mask(
             proc_inst_largest_k_cc=proc_inst_largest_k_cc,
             proc_inst_fill_holes=False,
             instance_batch_size=proc_inst_batch_size,
+            amp=proc_inst_amp,
             verbose=verbose,
         )
         if vert_predictions is None:
@@ -592,6 +596,7 @@ def collect_vertebra_predictions(
     process_detect_and_solve_merged_corpi: bool = True,
     proc_inst_fill_holes: bool = False,
     instance_batch_size: int = 4,
+    amp: bool = False,
     verbose: bool = False,
 ) -> tuple[np.ndarray | None, list[str], int]:
     """Run the instance model on a cutout around each corpus center of mass and collect per-label predictions.
@@ -612,6 +617,8 @@ def collect_vertebra_predictions(
         proc_inst_fill_holes (bool, optional): Whether to fill holes in each cutout prediction. Defaults to False.
         instance_batch_size (int, optional): Number of cutouts run through the instance model per batched forward
             pass. Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
+        amp (bool, optional): Run the instance forward pass under CUDA autocast (faster, may slightly change values).
+            Defaults to False.
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
@@ -689,6 +696,7 @@ def collect_vertebra_predictions(
         pad_size=0,
         resample_output_to_input_space=False,
         batch_size=instance_batch_size,
+        amp=amp,
         verbose=False,
     )
 

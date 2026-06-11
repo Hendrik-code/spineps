@@ -19,6 +19,7 @@ class SemanticConfig:
     remove_inferior_beyond_canal: bool = False
     clean_beyond_largest_bounding_box: bool = True
     clean_small_cc_artifacts: bool = True
+    step_size: float | None = None
 
     def to_kwargs(self) -> dict:
         """Returns the corresponding flat ``segment_image`` keyword arguments."""
@@ -28,6 +29,7 @@ class SemanticConfig:
             "proc_sem_remove_inferior_beyond_canal": self.remove_inferior_beyond_canal,
             "proc_sem_clean_beyond_largest_bounding_box": self.clean_beyond_largest_bounding_box,
             "proc_sem_clean_small_cc_artifacts": self.clean_small_cc_artifacts,
+            "proc_sem_step_size": self.step_size,
         }
 
 
@@ -40,6 +42,7 @@ class InstanceConfig:
     largest_k_cc: int = 0
     detect_and_solve_merged_corpi: bool = True
     batch_size: int = 4
+    amp: bool = False
     labeling_offset: int = 2
 
     def to_kwargs(self) -> dict:
@@ -50,6 +53,7 @@ class InstanceConfig:
             "proc_inst_largest_k_cc": self.largest_k_cc,
             "proc_inst_detect_and_solve_merged_corpi": self.detect_and_solve_merged_corpi,
             "proc_inst_batch_size": self.batch_size,
+            "proc_inst_amp": self.amp,
             "vertebra_instance_labeling_offset": self.labeling_offset,
         }
 

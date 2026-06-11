@@ -37,6 +37,20 @@ class Test_EntryPoint(unittest.TestCase):
         self.assertTrue(negated.enforce_12_thoracic)
         self.assertEqual(negated.batch_size, 8)
 
+    def test_speed_knob_flags(self):
+        # --amp / --step-size / --tta tri-state
+        p = argparse.ArgumentParser()
+        entrypoint.parser_arguments(p)
+        defaults = p.parse_args([])
+        self.assertFalse(defaults.amp)
+        self.assertIsNone(defaults.step_size)
+        self.assertIsNone(defaults.tta)  # None = use the model's configured setting
+        opts = p.parse_args(["--amp", "--step-size", "0.7", "--no-tta"])
+        self.assertTrue(opts.amp)
+        self.assertEqual(opts.step_size, 0.7)
+        self.assertFalse(opts.tta)
+        self.assertTrue(p.parse_args(["--tta"]).tta)
+
     def test_subparser_help_builds(self):
         # Regression: empty metavar="" used to crash `spineps <sub> -h` in argparse usage formatting.
         for sub in ("sample", "dataset"):

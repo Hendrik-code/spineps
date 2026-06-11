@@ -32,6 +32,7 @@ def predict_semantic_mask(
     proc_clean_beyond_largest_bounding_box: bool = True,
     proc_remove_inferior_beyond_canal: bool = False,
     proc_clean_small_cc_artifacts: bool = True,
+    step_size: float | None = None,
     verbose: bool = False,
 ) -> tuple[NII | None, NII | None, ErrCode]:
     """Predict the semantic (subregion) segmentation mask and run post-processing on it.
@@ -50,6 +51,8 @@ def predict_semantic_mask(
         proc_remove_inferior_beyond_canal (bool, optional): Whether to remove non-sacrum structures below the
             spinal-canal height. Defaults to False.
         proc_clean_small_cc_artifacts (bool, optional): Whether to delete small connected-component artifacts. Defaults to True.
+        step_size (float | None, optional): Sliding-window tile step size for the model; larger is faster but less
+            accurate. If None, uses the model's configured default. Defaults to None.
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
@@ -61,6 +64,7 @@ def predict_semantic_mask(
         results = model.segment_scan(
             mri_nii,
             pad_size=0,
+            step_size=step_size,
             resample_to_recommended=True,
             resample_output_to_input_space=False,
             verbose=verbose,

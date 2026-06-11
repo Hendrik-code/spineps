@@ -18,14 +18,16 @@ from spineps.seg_enums import ErrCode
 
 class Test_Config_To_Kwargs(unittest.TestCase):
     def test_semantic(self):
-        kw = SemanticConfig(crop_input=False, n4_bias_correction=False).to_kwargs()
+        kw = SemanticConfig(crop_input=False, n4_bias_correction=False, step_size=0.7).to_kwargs()
         self.assertFalse(kw["proc_sem_crop_input"])
         self.assertFalse(kw["proc_sem_n4_bias_correction"])
+        self.assertEqual(kw["proc_sem_step_size"], 0.7)
 
     def test_instance(self):
-        kw = InstanceConfig(batch_size=8, largest_k_cc=3).to_kwargs()
+        kw = InstanceConfig(batch_size=8, largest_k_cc=3, amp=True).to_kwargs()
         self.assertEqual(kw["proc_inst_batch_size"], 8)
         self.assertEqual(kw["proc_inst_largest_k_cc"], 3)
+        self.assertTrue(kw["proc_inst_amp"])
         self.assertEqual(kw["vertebra_instance_labeling_offset"], 2)
 
     def test_labeling_and_post(self):

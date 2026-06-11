@@ -58,6 +58,9 @@ All long flags are now `--kebab-case` (short aliases are unchanged). Negative fl
 | `-cpu` | `--cpu` |
 | `-verbose` / `-v` | `--verbose` / `-v` |
 | *(new)* | `--batch-size` / `-bs` — vertebra cutouts per batched forward pass (faster; default 4) |
+| *(new)* | `--amp` — run the instance forward pass under CUDA autocast (faster, may slightly change the output) |
+| *(new)* | `--step-size` — semantic model sliding-window tile step size (larger = faster, less accurate) |
+| *(new)* | `--tta` / `--no-tta` — force test-time augmentation (mirroring) on/off for the semantic model |
 
 Example:
 
@@ -88,5 +91,7 @@ spineps sample -i scan.nii.gz --model-semantic t2w --model-instance instance --n
   flags. Pass them to `segment(...)`, e.g. `spineps.segment(path, instance=InstanceConfig(batch_size=8))`.
 - **`--batch-size`** / `InstanceConfig.batch_size` — the instance model now runs cutouts in batched forward passes
   (much faster on GPU); falls back to one-by-one on out-of-memory.
+- **More speed knobs**: `--amp` / `InstanceConfig.amp` (instance autocast), `--step-size` / `SemanticConfig.step_size`
+  (semantic sliding-window step), and `--tta` / `--no-tta` (toggle test-time mirroring; `SegmentationModel.set_test_time_augmentation(...)` in Python).
 - Clearer errors: invalid paths / missing models now raise `FileNotFoundError` / `ValueError` instead of bare
   `AssertionError`, and `spineps sample -h` / `dataset -h` no longer crash.
