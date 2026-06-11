@@ -379,9 +379,6 @@ def run_dataset(opt: Namespace):
     if model_instance is None:
         raise ValueError("-model_instance/-mv resolved to None; pass a valid instance model id or path")
 
-    if opt.tta is not None and model_semantic is not None:
-        model_semantic.set_test_time_augmentation(opt.tta)
-
     kwargs = {
         "dataset_path": input_dir,
         "model_semantic": model_semantic,
@@ -409,6 +406,7 @@ def run_dataset(opt: Namespace):
         "proc_inst_amp": opt.amp,
         "proc_sem_step_size": opt.step_size,
         "snapshot_copy_folder": opt.save_snaps_folder,
+        "tta": opt.tta,
         "verbose": opt.verbose,
     }
 

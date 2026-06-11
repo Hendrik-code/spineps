@@ -457,5 +457,33 @@ class Test_Unet3D_Batching(unittest.TestCase):
         self.assertTrue(model.predictor.use_mirroring)
 
 
+class Test_Process_Dataset_TTA(unittest.TestCase):
+    """process_dataset must apply the tta override to its semantic models (explicit or auto-resolved)."""
+
+    def test_tta_override_applied_to_semantic_model(self):
+        import tempfile
+
+        from spineps.seg_enums import Acquisition, Modality
+        from spineps.seg_run import process_dataset
+
+        model_sem = _make_unet3d_test_model()
+        model_inst = _make_unet3d_test_model()
+        calls: list[bool] = []
+        model_sem.set_test_time_augmentation = lambda enabled: calls.append(enabled)  # type: ignore[method-assign]
+
+        with tempfile.TemporaryDirectory() as td:
+            # empty dataset -> the subject loop is a no-op, but the tta block runs before it
+            process_dataset(
+                dataset_path=Path(td),
+                model_instance=model_inst,
+                model_semantic=model_sem,
+                modalities=[(Modality.SEG, Acquisition.sag)],
+                tta=False,
+                save_log_data=False,
+                ignore_model_compatibility=True,
+            )
+        self.assertEqual(calls, [False])
+
+
 if __name__ == "__main__":
     unittest.main()

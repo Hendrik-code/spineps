@@ -26,7 +26,7 @@ from spineps.utils.citation_reminder import citation_reminder
 
 
 @citation_reminder
-def process_dataset(
+def process_dataset(  # noqa: C901
     dataset_path: Path,
     model_instance: SegmentationModel,
     model_semantic: list[SegmentationModel] | SegmentationModel | None = None,
@@ -72,6 +72,7 @@ def process_dataset(
     ignore_model_compatibility: bool = False,
     ignore_inference_compatibility: bool = False,
     ignore_bids_filter: bool = False,
+    tta: bool | None = None,
     log_inference_time: bool = True,
     verbose: bool = False,
 ):
@@ -134,6 +135,9 @@ def process_dataset(
         ignore_inference_compatibility (bool, optional): If true, ignores compatibility issues between models and individual inputs.
             Defaults to False.
         ignore_bids_filter (bool, optional): If true, disables the BIDS query filters and processes all niftys found. Defaults to False.
+        tta (bool | None, optional): If not None, forces test-time augmentation (mirroring) on/off for the semantic
+            model(s), covering both explicitly-passed and auto-resolved models. If None, uses each model's configured
+            setting. Defaults to None.
         log_inference_time (bool, optional): If true, logs the inference time of each step. Defaults to True.
         verbose (bool, optional): If true, prints verbose information. Defaults to False.
     """
@@ -158,6 +162,15 @@ def process_dataset(
         del idx, m
     if not isinstance(model_semantic, list):
         model_semantic = [model_semantic]
+
+    # Optionally force test-time augmentation (mirroring) on/off for the semantic model(s); covers both
+    # explicitly-passed and auto-resolved models. Load eagerly so the toggle reaches the predictor.
+    if tta is not None:
+        for m in model_semantic:
+            if m is not None:
+                if m.predictor is None:
+                    m.load()
+                m.set_test_time_augmentation(tta)
 
     # check models and mod, acq tuples
     compatible = True
