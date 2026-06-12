@@ -12,7 +12,7 @@ from TPTBox import Log_Type, No_Logger
 from TPTBox.tests.test_utils import get_test_mri
 
 import spineps
-from spineps.get_models import Segmentation_Model, get_actual_model
+from spineps.get_models import SegmentationModel, get_actual_model
 from spineps.utils.compat import zip_strict
 from spineps.utils.proc_functions import clean_cc_artifacts, connected_components_3d, n4_bias
 

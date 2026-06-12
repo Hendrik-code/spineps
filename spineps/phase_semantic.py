@@ -7,7 +7,7 @@ import numpy as np
 from TPTBox import NII, Location, Log_Type
 
 from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import fill_holes_labels, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 from spineps.utils.resolution import REFERENCE_VOXEL_VOLUME_MM3, REFERENCE_ZOOM, mm3_to_voxels, mm_to_voxels
@@ -26,12 +26,13 @@ CC_BBOX_MARGIN_MM = 4 * min(REFERENCE_ZOOM)
 
 def predict_semantic_mask(
     mri_nii: NII,
-    model: Segmentation_Model,
+    model: SegmentationModel,
     debug_data: dict,
     proc_fill_3d_holes: bool = True,
     proc_clean_beyond_largest_bounding_box: bool = True,
     proc_remove_inferior_beyond_canal: bool = False,
     proc_clean_small_cc_artifacts: bool = True,
+    step_size: float | None = None,
     verbose: bool = False,
 ) -> tuple[NII | None, NII | None, ErrCode]:
     """Predict the semantic (subregion) segmentation mask and run post-processing on it.
@@ -42,7 +43,7 @@ def predict_semantic_mask(
 
     Args:
         mri_nii (NII): Input grayscale MRI image (intensities must start at 0).
-        model (Segmentation_Model): Model used to produce the semantic segmentation.
+        model (SegmentationModel): Model used to produce the semantic segmentation.
         debug_data (dict): Dictionary for collecting intermediate results (e.g. the raw segmentation).
         proc_fill_3d_holes (bool, optional): Whether to fill 3D holes in the output mask. Defaults to True.
         proc_clean_beyond_largest_bounding_box (bool, optional): Whether to keep only connected components within
@@ -50,6 +51,8 @@ def predict_semantic_mask(
         proc_remove_inferior_beyond_canal (bool, optional): Whether to remove non-sacrum structures below the
             spinal-canal height. Defaults to False.
         proc_clean_small_cc_artifacts (bool, optional): Whether to delete small connected-component artifacts. Defaults to True.
+        step_size (float | None, optional): Sliding-window tile step size for the model; larger is faster but less
+            accurate. If None, uses the model's configured default. Defaults to None.
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
@@ -61,6 +64,7 @@ def predict_semantic_mask(
         results = model.segment_scan(
             mri_nii,
             pad_size=0,
+            step_size=step_size,
             resample_to_recommended=True,
             resample_output_to_input_space=False,
             verbose=verbose,

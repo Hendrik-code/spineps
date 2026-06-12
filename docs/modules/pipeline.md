@@ -3,7 +3,7 @@
 SPINEPS processes a scan in a sequence of phases orchestrated by the functions in
 [`spineps.seg_run`](../api/pipeline.md). There are two top-level entry points:
 
-- **`process_img_nii`** — process a single image.
+- **`segment_image`** — process a single image.
 - **`process_dataset`** — discover and process every suitable scan in a [BIDS](https://bids-specification.readthedocs.io/en/stable/) dataset.
 
 ## Two-phase approach
@@ -47,21 +47,43 @@ For each processed scan SPINEPS writes a derivatives folder next to the input co
 
 ## Calling from Python
 
+The high-level `spineps.segment` API loads the models and runs the pipeline in one call:
+
+```python
+import spineps
+
+result = spineps.segment("sub-test_T2w.nii.gz")          # saves a derivatives folder next to the input
+result = spineps.segment(nii, output_in_memory=True)     # or get the masks back in memory
+```
+
+Use `SpinepsPipeline` to load the models once and segment many images, and the `SemanticConfig` / `InstanceConfig`
+/ `LabelingConfig` / `PostConfig` objects to group processing options:
+
+```python
+from spineps import SpinepsPipeline, InstanceConfig
+
+pipe = SpinepsPipeline(model_semantic="t2w", model_instance="instance")
+for path in paths:
+    pipe.segment(path, instance=InstanceConfig(batch_size=8))
+```
+
+For full control, call the underlying `segment_image` directly with already-loaded models:
+
 ```python
 from TPTBox import BIDS_FILE
-from spineps import get_semantic_model, get_instance_model, process_img_nii
+from spineps import get_semantic_model, get_instance_model, segment_image
 
 semantic = get_semantic_model("t2w")
 instance = get_instance_model("instance")
 
-process_img_nii(
+segment_image(
     BIDS_FILE("sub-test_T2w.nii.gz", dataset="/path/to/dataset"),
     model_semantic=semantic,
     model_instance=instance,
 )
 ```
 
-`process_img_nii` exposes many `proc_*` flags to toggle individual processing steps (pre-processing,
+`segment_image` exposes many `proc_*` flags to toggle individual processing steps (pre-processing,
 semantic/instance cleaning, hole filling, labeling, …). See the
 [Pipeline & Run API reference](../api/pipeline.md) for the full signature.
 

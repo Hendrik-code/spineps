@@ -599,7 +599,7 @@ def assign_vertebra_inconsistency(
         try:
             subreg_cc, _ = np_connected_components(subreg_l, label_ref=1)
         except AssertionError as e:
-            print(f"Got error {e}, skip")
+            logger.print(f"Connected-components failed, skipping remaining inconsistency assignment: {e}", Log_Type.WARNING)
             break
         cc_labels = np_unique(subreg_cc)
 

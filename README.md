@@ -165,7 +165,7 @@ If you **don't** set the environment variable, the pipeline will look into `spin
 
 1. Activate your venv
 2. Run `python entrypoint.py -h` to see the arguments.
-3. For example, for a sample, run `python entrypoint.py sample -i <path-to-nifty> -model_semantic <model_name> -model_instance <model_name>`
+3. For example, for a sample, run `python entrypoint.py sample -i <path-to-nifty> --model-semantic <model_name> --model-instance <model_name>`
 (replacing <model_name> with the name of the model you want to use)
 
 ### Issues
@@ -189,10 +189,10 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 | argument | explanation |
 | :--- | --------- |
 | -i   | Absolute path to the single nifty file (.nii.gz) to be processed |
-| -model_semantic , -ms  | The model used for the semantic segmentation |
-| -model_instance , -mv  | The model used for the vertebra instance segmentation |
-| -der_name , -dn  | Name of the derivatives folder (default: derivatives_seg) |
-| -save_debug, -sd  | Saves a lot of debug data and intermediate results in a separate debug-labeled folder (default: False) |
+| --model-semantic , -ms  | The model used for the semantic segmentation |
+| --model-instance , -mv  | The model used for the vertebra instance segmentation |
+| --derivative-name , -dn  | Name of the derivatives folder (default: derivatives_seg) |
+| --save-debug, -sd  | Saves a lot of debug data and intermediate results in a separate debug-labeled folder (default: False) |
 | -save_unc_img, -sui  | Saves a uncertainty image from the subreg prediction (default: False) |
 | -override_semantic, -os  | Will override existing seg-spine files (default: False) |
 | -override_instance, -ov  | Will override existing seg-vert files (default: False) |
@@ -204,9 +204,9 @@ There are a lot more arguments, run `spineps sample -h` to see them.
 #### Example
 ```bash
 #T2w sagittal
-spineps sample -ignore_bids_filter -ignore_inference_compatibility -i /path/sub-testsample_T2w.nii.gz -model_semantic t2w -model_instance instance
+spineps sample --ignore-bids-filter --ignore-inference-compatibility -i /path/sub-testsample_T2w.nii.gz --model-semantic t2w --model-instance instance
 #T1w sagittal
-spineps sample -ignore_bids_filter -ignore_inference_compatibility -i ~/path/sub-testsample_T1w.nii.gz -model_semantic t1w -model_instance instance
+spineps sample --ignore-bids-filter --ignore-inference-compatibility -i ~/path/sub-testsample_T1w.nii.gz --model-semantic t1w --model-instance instance
 ```
 
 
@@ -245,11 +245,11 @@ To that end, we are using TPTBox (see https://github.com/Hendrik-code/TPTBox)
 It supports the same arguments as in sample mode (see table above), and additionally:
 | argument | explanation |
 | :--- | --------- |
-| -raw_name, -rn | Sets the name of the rawdata folder of the dataset (default: "rawdata")
-| -ignore_bids_filter, -ibf   | If true, will search the BIDS dataset without the strict filters. Use with care! (default: False) |
-| -ignore_model_compatibility, -imc  | If true, will not stop the pipeline to use the given models on unfitting input modalities (default: False) |
-| -save_log, -sl  | If true, saves the log into a separate folder in the dataset directory (default: False) |
-| -save_snaps_folder, -ssf  | If true, additionally saves the snapshots in a separate folder in the dataset directory (default: False) |
+| --rawdata-name, -rn | Sets the name of the rawdata folder of the dataset (default: "rawdata")
+| --ignore-bids-filter, -ibf   | If true, will search the BIDS dataset without the strict filters. Use with care! (default: False) |
+| --ignore-model-compatibility, -imc  | If true, will not stop the pipeline to use the given models on unfitting input modalities (default: False) |
+| --save-log, -sl  | If true, saves the log into a separate folder in the dataset directory (default: False) |
+| --save-snaps-folder, -ssf  | If true, additionally saves the snapshots in a separate folder in the dataset directory (default: False) |
 
 For a full list of arguments, call `spineps dataset -h`
 
@@ -291,7 +291,7 @@ In the vertebra instance segmentation mask, each label X in [1, 25] are the uniq
 
 ## VERIDAH:
 
-To run the vertebra labeling after segmentation, specify a -model_labeling model (similar to -model_semantic and -model_instance).
+To run the vertebra labeling after segmentation, specify a --model-labeling model (similar to --model-semantic and --model-instance).
 
 If you use VERIDAH (labeling model) in addition to the segmentation models from SPINEPS, then a labeling model will run and give each vertebrae detected by SPINEPS a vertebra label. These are
 
@@ -309,11 +309,22 @@ The labels 100+X still correspond to the vertebra's IVD and 200+X the respective
 
 ## Using the Code
 
-If you want to call the code snippets yourself, start by initializing your models using `seg_model.get_segmentation_model()` giving it the absolute path to your model folder.
+The easiest way to run SPINEPS from Python is the one-call `spineps.segment` API, which loads the models and runs the whole pipeline:
 
-Depending on whether you want to process a single sample or a whole dataset, go into `seg_run.py` and run either `process_img_nii()` or `process_dataset()`.
+```python
+import spineps
 
-If you want to perform even more detailed changes or code injections, see `process_img_nii()` as inspiration on how the underlaying functions work and behave. Treat with care!
+result = spineps.segment("/path/to/sub-test_T2w.nii.gz")   # saves a derivatives folder next to the input
+result = spineps.segment(nii, output_in_memory=True)       # or get the masks back in memory
+```
+
+To segment many images without reloading the models, use `SpinepsPipeline`; to group processing options, pass the
+`SemanticConfig` / `InstanceConfig` / `LabelingConfig` / `PostConfig` objects.
+
+For full control, load the models yourself with `get_semantic_model()` / `get_instance_model()` and call
+`segment_image()` (single image) or `process_dataset()` (whole dataset) from `spineps.seg_run`.
+
+> **Upgrading from 1.x?** See [MIGRATION.md](MIGRATION.md) for the renamed CLI flags, functions and classes.
 
 
 ## Authorship

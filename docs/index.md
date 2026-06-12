@@ -37,7 +37,7 @@ Given a sagittal MR scan, the pipeline:
 pip install spineps
 
 # Segment a single T2w sagittal scan
-spineps sample -i /path/sub-test_T2w.nii.gz -model_semantic t2w -model_instance instance
+spineps sample -i /path/sub-test_T2w.nii.gz --model-semantic t2w --model-instance instance
 ```
 
 See [Getting Started](getting-started.md) for the full installation guide (including PyTorch setup and

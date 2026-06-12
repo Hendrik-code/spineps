@@ -1,9 +1,10 @@
-"""Segmentation model abstractions: the abstract Segmentation_Model and its nnU-Net and Unet3D subclasses."""
+"""Segmentation model abstractions: the abstract SegmentationModel and its nnU-Net and Unet3D subclasses."""
 
 from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +30,7 @@ ZOOM_MATCH_TOLERANCE = 1e-4
 LEGACY_LABEL_NORMALIZATION = 9
 
 
-class Segmentation_Model(ABC):
+class SegmentationModel(ABC):
     """Abstract base class wrapping a segmentation network together with its inference configuration.
 
     Subclasses implement load() and run() for a concrete backend (e.g. nnU-Net or Unet3D). The class handles input
@@ -66,10 +67,11 @@ class Segmentation_Model(ABC):
             default_allow_tqdm (bool, optional): If true, shows a progress bar while segmenting. Defaults to True.
 
         Raises:
-            AssertionError: If model_folder does not exist.
+            FileNotFoundError: If model_folder does not exist.
         """
         self.name: str = ""
-        assert Path(model_folder).exists(), f"model_folder does not exist, got {model_folder}"
+        if not Path(model_folder).exists():
+            raise FileNotFoundError(f"model_folder does not exist, got {model_folder}")
 
         self.logger = No_Logger()
         self.use_cpu = use_cpu
@@ -244,6 +246,49 @@ class Segmentation_Model(ABC):
         self.print("Segmenting done!")
         return result
 
+    def segment_scan_batch(
+        self,
+        input_images: list[Image_Reference | dict[InputType, Image_Reference]],
+        pad_size: int = 0,
+        step_size: float | None = None,
+        resample_to_recommended: bool = True,
+        resample_output_to_input_space: bool = True,
+        batch_size: int = 1,  # noqa: ARG002 - only honored by batched overrides
+        amp: bool = False,  # noqa: ARG002 - only honored by batched overrides
+        verbose: bool = False,
+    ) -> list[dict[OutputType, NII | None]]:
+        """Segments a list of inputs and returns one result per input, in order.
+
+        The default implementation simply calls :meth:`segment_scan` on each input. Subclasses that can run a single
+        batched forward pass over equally shaped inputs (e.g. the 3D U-Net instance model) override this for speed.
+        ``batch_size`` and ``amp`` are only honored by such batched overrides.
+
+        Args:
+            input_images: The inputs to segment, each in the form accepted by :meth:`segment_scan`.
+            pad_size (int, optional): Padding added in each dimension, removed again from the output. Defaults to 0.
+            step_size (float | None, optional): Sliding-window tile step size; if None, uses the config default. Defaults to None.
+            resample_to_recommended (bool, optional): If true, rescales each input to the model's recommended zoom. Defaults to True.
+            resample_output_to_input_space (bool, optional): If true, resamples and pads the outputs back to the input space.
+                Defaults to True.
+            batch_size (int, optional): Maximum number of inputs per forward pass (batched overrides only). Defaults to 1.
+            amp (bool, optional): Run the forward pass under autocast (batched overrides only). Defaults to False.
+            verbose (bool, optional): If true, prints verbose information. Defaults to False.
+
+        Returns:
+            list[dict[OutputType, NII | None]]: One result mapping per input, in the same order as ``input_images``.
+        """
+        return [
+            self.segment_scan(
+                img,
+                pad_size=pad_size,
+                step_size=step_size,
+                resample_to_recommended=resample_to_recommended,
+                resample_output_to_input_space=resample_output_to_input_space,
+                verbose=verbose,
+            )
+            for img in input_images
+        ]
+
     def modalities(self) -> list[Modality]:
         """Returns the modalities this model supports.
 
@@ -259,6 +304,18 @@ class Segmentation_Model(ABC):
             Acquisition: Acquisition plane/type the model expects, as listed in its inference config.
         """
         return self.inference_config.acquisition
+
+    def set_test_time_augmentation(self, enabled: bool) -> None:
+        """Enables or disables test-time augmentation (mirroring) for this model, if the backend supports it.
+
+        Only the nnU-Net (semantic) backend uses mirroring; for other backends this is a no-op. Mirroring roughly
+        multiplies inference cost, so disabling it is a simple speed-up at a small accuracy cost.
+
+        Args:
+            enabled (bool): Whether to use test-time mirroring augmentation.
+        """
+        if self.predictor is not None and hasattr(self.predictor, "use_mirroring"):
+            self.predictor.use_mirroring = enabled
 
     @abstractmethod
     def run(self, input_nii: list[NII], verbose: bool = False) -> dict[OutputType, NII | None]:
@@ -339,8 +396,8 @@ class Segmentation_Model(ABC):
         return str(self)
 
 
-class Segmentation_Model_NNunet(Segmentation_Model):
-    """Segmentation_Model backed by an nnU-Net predictor."""
+class SegmentationModelNNunet(SegmentationModel):
+    """SegmentationModel backed by an nnU-Net predictor."""
 
     def __init__(
         self,
@@ -420,8 +477,8 @@ class Segmentation_Model_NNunet(Segmentation_Model):
         return {OutputType.seg: seg_nii, OutputType.softmax_logits: softmax_logits}
 
 
-class Segmentation_Model_Unet3D(Segmentation_Model):
-    """Segmentation_Model backed by a single-input 3D U-Net (PyTorch Lightning PLNet).
+class SegmentationModelUnet3D(SegmentationModel):
+    """SegmentationModel backed by a single-input 3D U-Net (PyTorch Lightning PLNet).
 
     Used as the instance (vertebra) model: it takes a segmentation mask as input and refines it into the vertebra instance
     output. Supports both the current multi-channel network and a legacy single-channel network.
@@ -461,12 +518,16 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
             Self: This model with its 3D U-Net predictor loaded and moved to the selected device.
 
         Raises:
-            AssertionError: If exactly one checkpoint file is not found in the model folder.
+            FileNotFoundError: If the model folder is missing or does not contain exactly one checkpoint file.
         """
-        assert os.path.exists(self.model_folder)  # noqa: PTH110
+        if not os.path.exists(self.model_folder):  # noqa: PTH110
+            raise FileNotFoundError(f"model_folder does not exist, got {self.model_folder}")
 
         chktpath = search_path(self.model_folder, "**/*weights*.ckpt")
-        assert len(chktpath) == 1, chktpath
+        if len(chktpath) != 1:
+            raise FileNotFoundError(
+                f"expected exactly one '*weights*.ckpt' checkpoint in {self.model_folder}, found {len(chktpath)}: {chktpath}"
+            )
         try:
             model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False)
         except RuntimeError:
@@ -482,8 +543,8 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
     def run(self, input_nii: list[NII], verbose: bool = False) -> dict[OutputType, NII | None]:
         """Runs the 3D U-Net on a single input segmentation mask.
 
-        Converts the input mask to a network tensor (one-hot encoded for the multi-channel network, or intensity-normalized
-        for the legacy single-channel network), runs the forward pass and returns the per-voxel argmax class as a mask.
+        Thin wrapper around :meth:`run_batch` (batch of one) so the single- and batched-input paths share a single
+        implementation and always produce identical results.
 
         Args:
             input_nii (list[NII]): A single-element list containing the input segmentation mask.
@@ -496,36 +557,120 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
             AssertionError: If more than one input is provided.
         """
         assert len(input_nii) == 1, "Unet3D does not support more than one input"
-        input_nii_ = input_nii[0]
+        return self.run_batch(input_nii, verbose=verbose)[0]
 
-        arr = input_nii_.get_seg_array().astype(np.int16)
+    def run_batch(
+        self,
+        input_nii: list[NII],
+        batch_size: int = 4,
+        amp: bool = False,
+        verbose: bool = False,
+    ) -> list[dict[OutputType, NII | None]]:
+        """Runs the 3D U-Net on a list of equally shaped cutout masks using batched forward passes.
 
-        target = from_numpy(arr)
+        Converts each cutout to a network tensor (one-hot for the multi-channel network, intensity-normalized for the
+        legacy single-channel network), stacks up to ``batch_size`` of them into a single forward pass and returns the
+        per-voxel argmax class for each. Each cutout is processed independently, so (in fp32) the result for every
+        cutout is identical to calling :meth:`run` on it on its own. If a batched forward runs out of GPU memory, it
+        transparently falls back to processing that chunk one cutout at a time.
+
+        Args:
+            input_nii (list[NII]): Cutout masks to segment; all must share the same shape.
+            batch_size (int, optional): Maximum number of cutouts per forward pass. Defaults to 4.
+            amp (bool, optional): If true, runs the forward pass under CUDA autocast (faster, may slightly change
+                values). Defaults to False.
+            verbose (bool, optional): If true, prints verbose information. Defaults to False.
+
+        Returns:
+            list[dict[OutputType, NII | None]]: One ``{OutputType.seg: mask}`` mapping per input, in order.
+        """
+        if self.predictor is None:
+            self.load()
+            assert self.predictor is not None, "self.predictor == None after load(). Error!"
         n_classes = self.predictor.network.channels
+        batch_size = max(1, batch_size)
+        results: list[dict[OutputType, NII | None]] = [None] * len(input_nii)  # type: ignore[list-item]
+        with torch.inference_mode():
+            for start in range(0, len(input_nii), batch_size):
+                chunk = input_nii[start : start + batch_size]
+                tensors = [self._network_input_from_nii(nii, n_classes) for nii in chunk]
+                try:
+                    pred_cls = self._forward_argmax(torch.stack(tensors).to(self.device), amp=amp)
+                except RuntimeError as e:  # pragma: no cover - depends on available GPU memory
+                    if len(tensors) == 1 or "out of memory" not in str(e).lower():
+                        raise
+                    self.print(
+                        f"Out of memory on a batch of {len(tensors)} cutouts, falling back to one-by-one",
+                        Log_Type.WARNING,
+                    )
+                    if self.device.type == "cuda":
+                        torch.cuda.empty_cache()
+                    pred_cls = np.concatenate([self._forward_argmax(t.unsqueeze(0).to(self.device), amp=amp) for t in tensors], axis=0)
+                for offset, nii in enumerate(chunk):
+                    results[start + offset] = {OutputType.seg: nii.set_array(pred_cls[offset])}
+        self.print("Batched segmentation done!", verbose=verbose)
+        return results
 
+    def _network_input_from_nii(self, input_nii: NII, n_classes: int) -> torch.Tensor:
+        """Builds the (channels, *spatial) float input tensor for one cutout mask."""
+        arr = input_nii.get_seg_array().astype(np.int16)
+        target = from_numpy(arr)
         target[target >= n_classes] = 0
-
-        # channel-wise
         if n_classes != 1:
-            targetc = target.to(torch.int64)
-            targetc = F.one_hot(targetc, num_classes=n_classes)
-            targetc = targetc.permute(3, 0, 1, 2)
-            targetc = targetc.unsqueeze(0)
-            targetc = targetc.to(torch.float32)
-            logits = self.predictor.forward(targetc.to(self.device))
-        else:
-            # legacy version
-            target = target.to(torch.float32)
-            target /= LEGACY_LABEL_NORMALIZATION
-            target = target.unsqueeze(0)
-            target = target.unsqueeze(0)
-            logits = self.predictor.forward(target.to(self.device))
-        soft_max = torch.nn.Softmax(dim=1)
-        pred_x = soft_max(logits)
-        _, pred_cls = torch.max(pred_x, 1)
-        del logits
-        del pred_x
-        pred_cls = pred_cls.detach().cpu().numpy()[0]
-        seg_nii: NII = input_nii_.set_array(pred_cls)
-        self.print("out", seg_nii.zoom, seg_nii.orientation, seg_nii.shape) if verbose else None
-        return {OutputType.seg: seg_nii}
+            return F.one_hot(target.to(torch.int64), num_classes=n_classes).permute(3, 0, 1, 2).to(torch.float32)
+        # legacy single-channel network
+        return (target.to(torch.float32) / LEGACY_LABEL_NORMALIZATION).unsqueeze(0)
+
+    def _forward_argmax(self, batch: torch.Tensor, amp: bool = False) -> np.ndarray:
+        """Runs the network on a (batch, channels, *spatial) tensor and returns the per-voxel argmax classes on CPU."""
+        context = torch.autocast(self.device.type) if amp and self.device.type == "cuda" else nullcontext()
+        with context:
+            logits = self.predictor.forward(batch)
+        pred_cls = torch.argmax(torch.softmax(logits.float(), dim=1), dim=1)
+        return pred_cls.detach().cpu().numpy()
+
+    def segment_scan_batch(
+        self,
+        input_images: list[Image_Reference | dict[InputType, Image_Reference]],
+        pad_size: int = 0,
+        step_size: float | None = None,  # noqa: ARG002 - the 3D U-Net has no sliding window
+        resample_to_recommended: bool = True,
+        resample_output_to_input_space: bool = True,
+        batch_size: int = 4,
+        amp: bool = False,
+        verbose: bool = False,
+    ) -> list[dict[OutputType, NII | None]]:
+        """Batched :meth:`segment_scan` for the 3D U-Net.
+
+        Preprocesses each input (optional padding, reorientation, rescaling) exactly as :meth:`segment_scan`, runs them
+        through batched forward passes and maps the outputs back into the input space. Equivalent to calling
+        :meth:`segment_scan` per input, but with a single forward per ``batch_size`` inputs instead of one per input.
+        """
+        if self.predictor is None:
+            self.load()
+        input_type = self.inference_config.expected_inputs[0]
+        prepared: list[NII] = []
+        metas: list[tuple] = []
+        for img in input_images:
+            nii = to_nii(img, seg=input_type == InputType.seg)
+            if pad_size > 0:
+                nii.set_array_(np.pad(nii.get_array(), pad_size, mode="edge"))
+            orig_shape = nii.shape
+            nii.reorient_(self.inference_config.model_expected_orientation, verbose=self.logger)
+            if resample_to_recommended:
+                nii.rescale_(self.calc_recommended_resampling_zoom(nii.zoom), verbose=self.logger)
+            prepared.append(nii)
+            metas.append((orig_shape, img))
+        results = self.run_batch(prepared, batch_size=batch_size, amp=amp, verbose=verbose)
+        for result, (orig_shape, img) in zip(results, metas):
+            for output_type, out_nii in result.items():
+                if not isinstance(out_nii, NII):
+                    continue
+                if resample_output_to_input_space:
+                    out_nii.resample_from_to_(img)
+                    out_nii.pad_to(orig_shape, inplace=True)
+                if output_type == OutputType.seg:
+                    out_nii.map_labels_(self.inference_config.segmentation_labels, verbose=self.logger)
+                if pad_size > 0:
+                    out_nii.set_array_(out_nii.get_array()[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size])
+        return results

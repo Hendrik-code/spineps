@@ -77,18 +77,18 @@ Segment a single scan:
 
 ```bash
 # T2w sagittal
-spineps sample -ignore_bids_filter -ignore_inference_compatibility \
-    -i /path/sub-testsample_T2w.nii.gz -model_semantic t2w -model_instance instance
+spineps sample --ignore-bids-filter --ignore-inference-compatibility \
+    -i /path/sub-testsample_T2w.nii.gz --model-semantic t2w --model-instance instance
 
 # T1w sagittal
-spineps sample -ignore_bids_filter -ignore_inference_compatibility \
-    -i /path/sub-testsample_T1w.nii.gz -model_semantic t1w -model_instance instance
+spineps sample --ignore-bids-filter --ignore-inference-compatibility \
+    -i /path/sub-testsample_T1w.nii.gz --model-semantic t1w --model-instance instance
 ```
 
 Process a whole [BIDS](https://bids-specification.readthedocs.io/en/stable/) dataset:
 
 ```bash
-spineps dataset -i /path/to/dataset -model_semantic t2w -model_instance instance
+spineps dataset -i /path/to/dataset --model-semantic t2w --model-instance instance
 ```
 
 ### Adding vertebra labels (VERIDAH)
@@ -97,23 +97,41 @@ To assign anatomical vertebra labels after segmentation, additionally pass a lab
 
 ```bash
 spineps sample -i /path/sub-test_T2w.nii.gz \
-    -model_semantic t2w -model_instance instance -model_labeling labeling
+    --model-semantic t2w --model-instance instance --model-labeling labeling
 ```
 
 ### From Python
 
+The easiest way is the one-call API, which loads the models and runs the whole pipeline:
+
+```python
+import spineps
+
+result = spineps.segment("/path/to/sub-test_T2w.nii.gz")  # saves a derivatives folder next to the input
+if result.success:
+    print("done:", result.output_paths)
+```
+
+To keep the models loaded across many images, or to get the masks in memory:
+
+```python
+from spineps import SpinepsPipeline, InstanceConfig
+
+pipe = SpinepsPipeline(model_semantic="t2w", model_instance="instance")
+result = pipe.segment(nii, output_in_memory=True, instance=InstanceConfig(batch_size=8))
+semantic, vertebra = result.semantic, result.vertebra
+```
+
+For full control you can still call the underlying pipeline function directly:
+
 ```python
 from TPTBox import BIDS_FILE
-from spineps import get_semantic_model, get_instance_model, process_img_nii
+from spineps import get_semantic_model, get_instance_model, segment_image
 
 semantic = get_semantic_model("t2w")
 instance = get_instance_model("instance")
-
-# img_ref is a TPTBox BIDS_FILE pointing at the input scan
-img_ref = BIDS_FILE("sub-test_T2w.nii.gz", dataset="/path/to/dataset")
-
-process_img_nii(
-    img_ref,
+segment_image(
+    BIDS_FILE("sub-test_T2w.nii.gz", dataset="/path/to/dataset"),
     model_semantic=semantic,
     model_instance=instance,
     derivative_name="derivatives_seg",

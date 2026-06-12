@@ -11,7 +11,7 @@ from TPTBox import NII, ZOOMS, Location, No_Logger, v_name2idx
 from TPTBox.core import poi
 from TPTBox.logger.log_file import format_time_short, get_time
 
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 
 logger = No_Logger(prefix="SPINEPS")
 
@@ -51,7 +51,7 @@ vertebra_subreg_labels = [
 def predict_centroids_from_both(
     vert_nii_cleaned: NII,
     seg_nii: NII,
-    models: list[Segmentation_Model | None],
+    models: list[SegmentationModel | None],
     parameter: dict[str, Any],
 ) -> poi.POI:
     """Calculate the centroids of each vertebra corpus using both the semantic and instance masks.
@@ -63,7 +63,7 @@ def predict_centroids_from_both(
     Args:
         vert_nii_cleaned (NII): Cleaned vertebra instance segmentation mask.
         seg_nii (NII): Subregion semantic segmentation mask.
-        models (list[Segmentation_Model | None]): Models used in the pipeline, recorded in the centroid metadata.
+        models (list[SegmentationModel | None]): Models used in the pipeline, recorded in the centroid metadata.
         parameter (dict[str, Any]): Pipeline parameters to record on the centroid metadata.
 
     Returns:
