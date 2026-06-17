@@ -448,9 +448,17 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True) -> tu
         vert_arr[subreg_arr == Location.Vertebra_Disc.value] = subreg_ivd[subreg_arr == Location.Vertebra_Disc.value]
     n_eps = 0
     n_eps_unique = 0
-    if Location.Endplate.value in seg_t.unique():
+    ep_labels = [
+        Location.Endplate.value,
+        Location.Vertebral_Body_Endplate_Inferior.value,
+        Location.Vertebral_Body_Endplate_Superior.value,
+    ]
+    u = seg_t.unique()
+    has_split_endplates = Location.Vertebral_Body_Endplate_Inferior.value in u or Location.Vertebral_Body_Endplate_Superior.value in u
+    # FIXME Problem: For some reason Endplate are mapped to the IVD in MRI aka the superior endplate hat the IVD of vertebra above instead of below.
+    if Location.Endplate.value in u or has_split_endplates:
         # MAP Endplate
-        ep_cc = seg_t.get_connected_components(labels=Location.Endplate.value)
+        ep_cc = seg_t.get_connected_components(labels=ep_labels)
         ep_cc_n = len(ep_cc.unique())
         ep_cc = ep_cc.get_seg_array()
         cc_ep_labelset = list(range(1, ep_cc_n + 1))
@@ -459,8 +467,14 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True) -> tu
         for c in cc_ep_labelset:
             if c == 0:
                 continue
-            com_y = np_center_of_mass(ep_cc == c)[1][1]  # center_of_mass(c_l)[1]
-            nearest_lower = find_nearest_lower(coms_vert_y, com_y)
+            com_y = np_center_of_mass(ep_cc == c)[1][1]
+            nearest_lower = (
+                find_nearest_lower(coms_vert_y, com_y)
+                if not has_split_endplates
+                or seg_t[ep_cc == c].max()
+                != Location.Vertebral_Body_Endplate_Superior.value  # True for CT, so that is mapped to the vertebra instead of IVD
+                else find_nearest_higher(coms_vert_y, com_y)
+            )
             label = next(i for i in coms_vert_dict if coms_vert_dict[i] == nearest_lower)
             mapping_ep_cc_to_vert_label[c] = label
             n_eps += 1
@@ -468,55 +482,69 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True) -> tu
         subreg_ep = ep_cc.copy()
         n_eps_unique = len(np.unique(list(mapping_ep_cc_to_vert_label.values())))
         subreg_ep = np_map_labels(subreg_ep, label_map=mapping_ep_cc_to_vert_label)
-        subreg_ep += ENDPLATE_LABEL_OFFSET
+        subreg_ep += ENDPLATE_LABEL_OFFSET if not has_split_endplates else 0  # True for CT, so that is mapped to the vertebra itself
         subreg_ep[subreg_ep == ENDPLATE_LABEL_OFFSET] = 0
-        vert_arr[subreg_arr == Location.Endplate.value] = subreg_ep[subreg_arr == Location.Endplate.value]
-        vert_t.set_array_(vert_arr)
-
-        # divide into upper and lower endplate
-        out = seg_t * 0
-        pref = 1
-        old_vol = -1
-        # seg_t and vert_t are not modified in this loop, so compute these invariants once.
-        endplate_nii = seg_t.extract_label(Location.Endplate.value)
-        total = endplate_nii.sum()
-        vert_labels_to_split = vert_t.unique()
-        for dil in range(1, MAX_ENDPLATE_DILATION):
-            curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
-            new_vol = curr.sum()
-            logger.print(rf"{new_vol / total * 100:.2f}% endplates detected", end="\r") if verbose else None
-            if old_vol == new_vol and old_vol != 0:
-                break
-            old_vol = new_vol
-            if total == new_vol:
-                logger.print("Found all Endplates                                      ")
-                break
-            for i in vert_labels_to_split:
-                if i >= INSTANCE_LABEL_LIMIT:
-                    break
+        if not has_split_endplates:
+            # This code sets the IDs to the respective IVD instead of vertebra disc! has_split_endplates is True for CT
+            vert_arr[subreg_arr == Location.Endplate.value] = subreg_ep[subreg_arr == Location.Endplate.value]
+            vert_t.set_array_(vert_arr)
+            # divide into upper and lower endplate
+            out = seg_t * 0
+            pref = 1
+            old_vol = -1
+            # seg_t and vert_t are not modified in this loop, so compute these invariants once.
+            endplate_nii = seg_t.extract_label(ep_labels)
+            total = endplate_nii.sum()
+            vert_labels_to_split = vert_t.unique()
+            for dil in range(1, MAX_ENDPLATE_DILATION):
                 curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
-                v = vert_t.extract_label(i).dilate_msk(dil, verbose=False)
-                end = endplate_nii * v
-                end *= -curr + 1  # type: ignore
-                plates = vert_t * end
-                plates.map_labels_(
-                    {
-                        i + ENDPLATE_LABEL_OFFSET: Location.Vertebral_Body_Endplate_Inferior.value,
-                        pref + ENDPLATE_LABEL_OFFSET: Location.Vertebral_Body_Endplate_Superior.value,
-                    },
-                    verbose=False,
-                )
-                out += plates
-                pref = i
-        curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
-        end = seg_t.extract_label(Location.Endplate.value)
-        end *= -curr + 1
-        # end += end.dilate_msk(3)
-        out += end * Location.Endplate.value
-        seg_t = out.extract_label(
-            [Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value, Location.Endplate.value]
-        )
+                new_vol = curr.sum()
+                logger.print(rf"{new_vol / total * 100:.2f}% endplates detected", end="\r") if verbose else None
+                if old_vol == new_vol and old_vol != 0:
+                    break
+                old_vol = new_vol
+                if total == new_vol:
+                    logger.print("Found all Endplates                                      ")
+                    break
+                for i in vert_labels_to_split:
+                    if i >= INSTANCE_LABEL_LIMIT:
+                        break
+                    curr = out.extract_label(
+                        [Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value]
+                    )
+                    v = vert_t.extract_label(i).dilate_msk(dil, verbose=False)
+                    end = endplate_nii * v
+                    end *= -curr + 1  # type: ignore
+                    plates = vert_t * end
+                    plates.map_labels_(
+                        {
+                            i + ENDPLATE_LABEL_OFFSET: Location.Vertebral_Body_Endplate_Inferior.value,
+                            pref + ENDPLATE_LABEL_OFFSET: Location.Vertebral_Body_Endplate_Superior.value,
+                        },
+                        verbose=False,
+                    )
+                    out += plates
+                    pref = i
+            curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
 
+            end = seg_t.extract_label(ep_labels)
+            end *= -curr + 1
+            # end += end.dilate_msk(3)
+            out += end * Location.Endplate.value
+            seg_t = out.extract_label(
+                [Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value, Location.Endplate.value]
+            )
+        else:
+            # Endplates are already split semantically.
+            # Assign endplate instance IDs while preserving the semantic labels.
+
+            ep_mask = np.isin(
+                subreg_arr,
+                [Location.Endplate.value, Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value],
+            )
+
+            vert_arr[ep_mask] = subreg_ep[ep_mask]
+            vert_t.set_array_(vert_arr)
     logger.print(f"Labeled {n_ivds} IVDs ({n_ivd_unique} unique), and {n_eps} Endplates ({n_eps_unique} unique)")
     return vert_t.set_array_(vert_arr).reorient_(orientation).get_seg_array(), seg_t.reorient_(orientation).get_seg_array()
 
@@ -535,6 +563,22 @@ def find_nearest_lower(seq, x) -> float:
     if len(values_lower) == 0:
         return min(seq)
     return max(values_lower)
+
+
+def find_nearest_higher(seq, x) -> float:
+    """Return the largest element of ``seq`` strictly smaller than ``x``, or the minimum if none exists.
+
+    Args:
+        seq (Sequence[float]): Values to search.
+        x (float): Reference value.
+
+    Returns:
+        float: The greatest element below ``x``, or ``min(seq)`` when no element is below ``x``.
+    """
+    values_higher = [item for item in seq if item > x]
+    if len(values_higher) == 0:
+        return max(seq)
+    return min(values_higher)
 
 
 def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0) -> tuple[NII, np.ndarray]:
