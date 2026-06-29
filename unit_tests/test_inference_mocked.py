@@ -1,4 +1,4 @@
-# Call 'python -m unittest' on this folder  # noqa: INP001
+# Call 'python -m unittest' on this folder
 # coverage run -m unittest
 # coverage report
 # coverage html
@@ -469,7 +469,7 @@ class Test_Process_Dataset_TTA(unittest.TestCase):
         model_sem = _make_unet3d_test_model()
         model_inst = _make_unet3d_test_model()
         calls: list[bool] = []
-        model_sem.set_test_time_augmentation = lambda enabled: calls.append(enabled)  # type: ignore[method-assign]
+        model_sem.set_test_time_augmentation = calls.append  # type: ignore[method-assign]
 
         with tempfile.TemporaryDirectory() as td:
             # empty dataset -> the subject loop is a no-op, but the tta block runs before it

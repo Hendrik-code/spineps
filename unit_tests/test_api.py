@@ -1,4 +1,4 @@
-# Call 'python -m unittest' on this folder  # noqa: INP001
+# Call 'python -m unittest' on this folder
 """Tests for the high-level spineps.segment API, config dataclasses and result wrapping."""
 
 from __future__ import annotations
