@@ -28,6 +28,7 @@ Given a sagittal MR scan, the pipeline:
 - [Pipeline](modules/pipeline.md) — how the two-phase pipeline is structured.
 - [Processing Phases](modules/phases.md) — pre-processing, semantic, instance, labeling and post-processing.
 - [Models & Labeling](modules/models.md) — model loading and the VERIDAH labeling model.
+- [High-Level API](api/high-level.md) — the one-call `spineps.segment()` API and config objects.
 - [API Reference](api/pipeline.md) — full auto-generated API documentation.
 
 ## Quick start
@@ -38,6 +39,14 @@ pip install spineps
 
 # Segment a single T2w sagittal scan
 spineps sample -i /path/sub-test_T2w.nii.gz --model-semantic t2w --model-instance instance
+```
+
+Or in one call from Python:
+
+```python
+import spineps
+
+result = spineps.segment("/path/sub-test_T2w.nii.gz")  # saves a derivatives folder next to the input
 ```
 
 See [Getting Started](getting-started.md) for the full installation guide (including PyTorch setup and

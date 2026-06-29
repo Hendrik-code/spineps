@@ -7,11 +7,13 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Documentation Status](https://readthedocs.org/projects/spineps/badge/?version=latest)](https://spineps.readthedocs.io)
 
-# SPINEPS – Automatic Whole Spine Segmentation of T2w MR images using a Two-Phase Approach to Multi-class Semantic and Instance Segmentation.
-# and
-# VERIDAH: Solving Enumeration Anomaly Aware Vertebra Labeling across Imaging Sequences
+# SPINEPS
 
-This is a segmentation pipeline to automatically, and robustly, segment the whole spine in T2w sagittal images.
+**Automatic whole-spine segmentation of MR (and CT) images** — a two-phase approach to multi-class semantic and
+instance segmentation, with **VERIDAH** ("Solving Enumeration Anomaly Aware Vertebra Labeling across Imaging
+Sequences") for anatomical vertebra labeling.
+
+SPINEPS automatically and robustly segments the whole spine in sagittal images.
 
 ## NOW SUPPORTS BOTH CT AND T2W!
 There is a new release that finally supports both CT and T2W with completely independent, modality specific models. We are already working on completely modality/sequence robust version that works on everything. Stay tuned for that.
@@ -121,12 +123,16 @@ This should throw no errors and return True
 
 ### Setup this package
 
-You have to install the package to use it, even if you just want to locally use the code.
-1. `cd` into the `spineps` folder and install it by running `pip install -e .` or using the `pyproject.toml` inside of the project folder.
-2. If you want to use manual modelweights, download them from the corresponding release page.
-3. Extract the downloaded modelweights folders into a folder of your choice (the "spineps/spineps/models" folders will be used as default), from now on referred to as your models folder.
-This specified folder should have the following structure:
-4. You don't need this, SPINEPS will automatically download the newest weights for you.
+Install the package (required even for local use):
+
+```bash
+cd spineps
+pip install -e .
+```
+
+**Model weights download automatically on first use**, so you usually don't need to do anything else. To manage
+weights manually instead, download them from the corresponding release page and extract each model folder into a
+directory of your choice (default `spineps/spineps/models/`), structured like:
 ```
 <models_folder>
 ├── <model_name 1>
@@ -138,7 +144,7 @@ This specified folder should have the following structure:
 ...
 ```
 
-3. You need to specify this models folder as argument when running. If you want to set it permanently, set the according environment variable in your `.bashrc` or `.zshrc` (whatever you are using).
+Point SPINEPS at that directory via the `SPINEPS_SEGMENTOR_MODELS` environment variable (set it permanently in your `.bashrc`/`.zshrc`):
 ```bash
 export SPINEPS_SEGMENTOR_MODELS=<PATH-to-your-folder>
 ```
@@ -156,17 +162,17 @@ If you **don't** set the environment variable, the pipeline will look into `spin
 
 ## Usage
 
-### Installed as package:
+After installation (`pip install spineps`, or `pip install -e .` from a local clone), the `spineps` command is
+available in your venv:
 
-1. Activate your venv
-2. Run `spineps -h` to see the arguments
-
-### Installed as local clone:
-
-1. Activate your venv
-2. Run `python entrypoint.py -h` to see the arguments.
-3. For example, for a sample, run `python entrypoint.py sample -i <path-to-nifty> --model-semantic <model_name> --model-instance <model_name>`
-(replacing <model_name> with the name of the model you want to use)
+1. Activate your venv.
+2. Run `spineps -h` for the subcommands, and `spineps sample -h` / `spineps dataset -h` for their arguments.
+3. For example, to segment a single scan:
+```bash
+spineps sample -i <path-to-nifty> --model-semantic <model_name> --model-instance <model_name>
+```
+(replacing `<model_name>` with the model you want to use). You can also call SPINEPS from Python — see
+[Using the Code](#using-the-code).
 
 ### Issues
 
@@ -189,15 +195,16 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 | argument | explanation |
 | :--- | --------- |
 | -i   | Absolute path to the single nifty file (.nii.gz) to be processed |
-| --model-semantic , -ms  | The model used for the semantic segmentation |
-| --model-instance , -mv  | The model used for the vertebra instance segmentation |
-| --derivative-name , -dn  | Name of the derivatives folder (default: derivatives_seg) |
-| --save-debug, -sd  | Saves a lot of debug data and intermediate results in a separate debug-labeled folder (default: False) |
-| -save_unc_img, -sui  | Saves a uncertainty image from the subreg prediction (default: False) |
-| -override_semantic, -os  | Will override existing seg-spine files (default: False) |
-| -override_instance, -ov  | Will override existing seg-vert files (default: False) |
-| -override_ctd, -oc  | Will override existing centroid files (default: False) |
-| -verbose, -v  | Prints much more stuff, may fully clutter your terminal (default: False) |
+| --model-semantic, -ms  | The model used for the semantic segmentation |
+| --model-instance, -mi  | The model used for the vertebra instance segmentation |
+| --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling |
+| --derivative-name, -dn  | Name of the derivatives folder (default: derivatives_seg) |
+| --save-debug, -sd  | Saves debug data and intermediate results in a separate folder (default: False) |
+| --override-semantic, -os  | Override existing seg-spine files (default: False) |
+| --override-instance, -oi  | Override existing seg-vert files (default: False) |
+| --override-ctd, -oc  | Override existing centroid files (default: False) |
+| --batch-size, -bs  | Vertebra cutouts per batched forward pass; higher is faster but uses more GPU memory (default: 4) |
+| --verbose, -v  | Prints much more stuff, may fully clutter your terminal (default: False) |
 
 There are a lot more arguments, run `spineps sample -h` to see them.
 
@@ -260,9 +267,8 @@ The pipeline segments in multiple steps:
 1. Semantically segments 14 spinal structures (9 regions for vertebrae, Spinal Cord, Spinal Canal, Intervertebral Discs, Endplate, Sacrum)
 2. From the vertebra regions, segment the different vertebrae as instance mask
 3. Save the first as `seg-spine` mask, the second as `seg-vert` mask
-4. It can save an uncertainty image for the semantic segmentation
-5. From the two segmentations, calculates centroids for each vertebrae center point, endplate, and IVD and saves that into a .json
-6. From the centroid and the segmentations, makes a snapshot showcasing the result as a .png
+4. From the two segmentations, calculates centroids for each vertebrae center point, endplate, and IVD and saves that into a .json
+5. From the centroid and the segmentations, makes a snapshot showcasing the result as a .png
 
 ![example_semantic](spineps/example/figures/example_semantic.png?raw=true)
 

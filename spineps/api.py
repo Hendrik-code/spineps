@@ -146,7 +146,10 @@ class SpinepsPipeline:
             output_in_memory: If true, returns the masks in memory instead of writing a derivatives folder. Defaults to False.
             derivative_name: Name of the derivatives output folder (save mode only). Defaults to ``"derivatives_seg"``.
             override: If true, recomputes and overwrites existing outputs. Defaults to False.
-            semantic, instance, labeling, post: Optional grouped config objects; unset groups use the pipeline defaults.
+            semantic: Optional SemanticConfig overriding the semantic-phase defaults.
+            instance: Optional InstanceConfig overriding the instance-phase defaults.
+            labeling: Optional LabelingConfig overriding the labeling-phase defaults.
+            post: Optional PostConfig overriding the post-processing defaults.
             verbose: If true, prints verbose information. Defaults to False.
 
         Returns:
@@ -206,7 +209,10 @@ def segment(
         output_in_memory: If true, returns the masks in memory instead of writing a derivatives folder. Defaults to False.
         derivative_name: Name of the derivatives output folder (save mode only). Defaults to ``"derivatives_seg"``.
         override: If true, recomputes and overwrites existing outputs. Defaults to False.
-        semantic, instance, labeling, post: Optional grouped config objects (see :mod:`spineps.config`).
+        semantic: Optional SemanticConfig overriding the semantic-phase defaults (see :mod:`spineps.config`).
+        instance: Optional InstanceConfig overriding the instance-phase defaults.
+        labeling: Optional LabelingConfig overriding the labeling-phase defaults.
+        post: Optional PostConfig overriding the post-processing defaults.
         verbose: If true, prints verbose information. Defaults to False.
 
     Returns:

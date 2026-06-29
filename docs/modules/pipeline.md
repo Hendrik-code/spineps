@@ -43,7 +43,7 @@ For each processed scan SPINEPS writes a derivatives folder next to the input co
 - a `seg-vert` mask (vertebra instance segmentation),
 - a centroid file (`.json`) with points of interest for each vertebra, endplate and disc,
 - a snapshot `.png` visualizing the result,
-- optionally: an uncertainty image, the model-resolution masks, softmax logits and debug data.
+- optionally: the model-resolution masks, softmax logits and debug data.
 
 ## Calling from Python
 
