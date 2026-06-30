@@ -349,7 +349,7 @@ def segment_image(  # noqa: C901
     timing=False,
     verbose: bool = False,
     _nii=None,
-    _end_after_subreg=False,
+    _dataset_id_ct_crop=100,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty.
 
@@ -430,7 +430,12 @@ def segment_image(  # noqa: C901
     input_format = img_ref.format
 
     output_paths = output_paths_from_input(
-        img_ref, derivative_name, snapshot_copy_folder, input_format=input_format, non_strict_mode=ignore_bids_filter
+        img_ref,
+        derivative_name,
+        snapshot_copy_folder,
+        input_format=input_format,
+        non_strict_mode=ignore_bids_filter,
+        _dataset_id_ct_crop=_dataset_id_ct_crop,
     )
     out_spine = output_paths["out_spine"]
     out_spine_raw = output_paths["out_spine_raw"]
@@ -517,7 +522,13 @@ def segment_image(  # noqa: C901
                     "Compute spine crop with VIBESegmentator https://link.springer.com/article/10.1007/s00330-025-12035-9", Log_Type.OK
                 )
                 out_vibeseg = output_paths["out_vibeseg"]
-                crop = compute_crop(input_nii, out_vibeseg, ddevice="cpu" if model_semantic.use_cpu else "cuda", logger=logger)
+                crop = compute_crop(
+                    input_nii,
+                    out_vibeseg,
+                    dataset_id=_dataset_id_ct_crop,
+                    ddevice="cpu" if model_semantic.use_cpu else "cuda",
+                    logger=logger,
+                )
                 if timing:
                     logger.print(
                         f"Compute cropping took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
@@ -738,6 +749,7 @@ def output_paths_from_input(
     snapshot_copy_folder: Path | str | None,
     input_format: str,
     non_strict_mode: bool = False,
+    _dataset_id_ct_crop=100,
 ) -> dict[str, Path]:
     """Derives all pipeline output file paths for a given input image.
 
@@ -823,7 +835,7 @@ def output_paths_from_input(
     out_vibeseg = img_ref.get_changed_path(
         bids_format="msk",
         parent=derivative_name,
-        info={"seg": "VIBESeg-100", "mod": img_ref.format},
+        info={"seg": f"VIBESeg-{_dataset_id_ct_crop}", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
         make_parent=False,
     )
