@@ -293,6 +293,17 @@ In the subregion segmentation:
 | 100 | Vertebra_Disc |
 | 26  | Sacrum |
 
+CT only
+| Label | Structure |
+| :---: | --------- |
+| 51  | Dense |
+| 70  | Sacrum_Sacral_Ala_Left |
+| 71  | Sacrum_Sacral_Ala_Right |
+| 72  | Sacrum_Posterior_Sacral_Elements |
+| 73  | Sacrum_Body |
+| 74  | Sacrum_Endplate |
+| 80  | Metal |
+
 In the vertebra instance segmentation mask, each label X in [1, 25] are the unique vertebrae, while 100+X are their corresponding IVD and 200+X their endplates.
 
 ## VERIDAH:

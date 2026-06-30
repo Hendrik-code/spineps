@@ -21,6 +21,19 @@ from tqdm import tqdm
 MAX_VERTEBRA_INSTANCE_LABEL = 25
 
 
+def from_nibabel(nib):
+    try:
+        from ants.utils.convert_nibabel import from_nibabel
+
+        return from_nibabel(nib)
+    except ModuleNotFoundError:
+        from ants.utils.nibabel_nifti_to_ants import (
+            from_nibabel_nifti,
+        )
+
+        return from_nibabel_nifti(nib)
+
+
 def n4_bias(
     nii: NII,
     threshold: int = 60,
@@ -46,7 +59,6 @@ def n4_bias(
     Returns:
         tuple[NII, NII]: The bias-corrected image and the binary foreground mask used for correction.
     """
-    from ants.utils.convert_nibabel import from_nibabel  # they keep renaming that thing. (version 0.4.2)
 
     # print("n4 bias", nii.dtype)
     mask = nii.get_array()
