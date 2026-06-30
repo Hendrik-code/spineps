@@ -366,7 +366,7 @@ def assign_missing_cc(
     return target_arr, reference_arr, deletion_map
 
 
-def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True) -> tuple[np.ndarray, np.ndarray]:
+def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, include_sacrum=False, verbose=True) -> tuple[np.ndarray, np.ndarray]:
     """Attach intervertebral-disc and endplate instance labels and split endplates into superior/inferior.
 
     Reorients both masks to PIR, computes each vertebra corpus center of mass along the inferior-superior axis, then assigns
@@ -388,7 +388,10 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, verbose=True) -> tu
     orientation = whole_vert_nii.orientation
     vert_t = whole_vert_nii.reorient()
     seg_t = seg_nii.reorient()
-    vert_labels = [t for t in vert_t.unique() if t <= 26 or t == 28]  # without zero
+    if include_sacrum:
+        vert_labels = [t for t in vert_t.unique() if t < 40]  # without zero
+    else:
+        vert_labels = [t for t in vert_t.unique() if t <= 26 or t == 28]  # without zero
     vert_arr = vert_t.get_seg_array()
     subreg_arr = seg_t.get_seg_array()
 
@@ -625,7 +628,7 @@ def assign_vertebra_inconsistency(
 
                 vert_arr[cc_map == 1] = to_label
                 logger.print(
-                    f"set cc to {to_label}, with volume decision {gt_volume}, based on {biggest_volume}, {second_volume}", verbose=False
+                    f"set cc to {to_label}, with volume decision {gt_volume}, based on {biggest_volume}, {second_volume}", verbose=verbose
                 )
 
         vert_nii.set_array_(vert_arr)

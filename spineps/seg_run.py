@@ -348,6 +348,8 @@ def segment_image(  # noqa: C901
     return_output_instead_of_save: bool = False,
     timing=False,
     verbose: bool = False,
+    _nii=None,
+    _end_after_subreg=False,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty.
 
@@ -482,12 +484,20 @@ def segment_image(  # noqa: C901
     with logger:
         if verbose:
             model_semantic.logger.default_verbose = True
-        input_nii = img_ref.open_nii()
+        input_nii = _nii if _nii is not None else img_ref.open_nii()
         input_nii.seg = False
         input_nii_ = input_nii.copy()
         if timing:
             logger.print(f"Loading files took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
             start_time2 = perf_counter()
+        if crop is not None:
+            try:
+                logger.print("Input image manuel crop", crop, "from", input_nii.shape)
+                input_nii = input_nii.apply_crop(crop)
+            except Exception:
+                pass
+        logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
+
         # First stage
         if not out_spine_raw.exists() or override_semantic:
             resolution_range = model_semantic.inference_config.resolution_range

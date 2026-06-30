@@ -173,7 +173,10 @@ class SegmentationModel(ABC):
                 logits).
         """
         if self.predictor is None:
-            self.load()
+            try:
+                self.load()
+            except FileNotFoundError:
+                self.load(folds=["all"])
             assert self.predictor is not None, "self.predictor == None after load(). Error!"
 
         # Check if input matches expectation

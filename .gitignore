@@ -159,3 +159,4 @@ derivatives_seg
 robert_test.py
 poetry.lock
 *.DS_Store
+*DS_Store*
