@@ -21,7 +21,12 @@ from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
 from spineps.seg_model import Segmentation_Model
 from spineps.seg_pipeline import logger, predict_centroids_from_both
-from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition, find_best_matching_model
+from spineps.seg_utils import (
+    Modality_Pair,
+    check_input_model_compatibility,
+    check_model_modality_acquisition,
+    find_best_matching_model,
+)
 from spineps.utils.citation_reminder import citation_reminder
 
 
@@ -141,7 +146,9 @@ def process_dataset(
         snapshot_copy_folder = None
 
     if model_semantic is None:
-        model_semantic = [find_best_matching_model(m, expected_resolution=None) for m in modalities]
+        model_semantic = [
+            find_best_matching_model(m, expected_resolution=None) for m in modalities
+        ]
         logger.print("Found matching models:")
         for idx, m in enumerate(model_semantic):
             logger.print("-", str(modalities[idx]), ":", str(m.modelid()))
@@ -152,8 +159,17 @@ def process_dataset(
     # check models and mod, acq tuples
     compatible = True
     for idx, mp in enumerate(modalities):
-        compatible = False if not check_model_modality_acquisition(model_semantic[idx], mp) else compatible
-        compatible = False if model_labeling is not None and not check_model_modality_acquisition(model_labeling, mp) else compatible
+        compatible = (
+            False
+            if not check_model_modality_acquisition(model_semantic[idx], mp)
+            else compatible
+        )
+        compatible = (
+            False
+            if model_labeling is not None
+            and not check_model_modality_acquisition(model_labeling, mp)
+            else compatible
+        )
     del idx, mp
 
     if not compatible and not ignore_model_compatibility:
@@ -162,13 +178,23 @@ def process_dataset(
     # Activate logger
     args = locals()
     if save_log_data:
-        logger = Logger(dataset_path, log_filename="segmentation_pipeline", default_verbose=True, log_arguments=args, prefix="SegPipeline")
+        logger = Logger(
+            dataset_path,
+            log_filename="segmentation_pipeline",
+            default_verbose=True,
+            log_arguments=args,
+            prefix="SegPipeline",
+        )
     logger.print(f"Processing dataset in {dataset_path}", Log_Type.BOLD)
 
     # RUN
-    bids_ds = BIDS_Global_info(datasets=[dataset_path], parents=[rawdata_name, derivative_name], verbose=False)
+    bids_ds = BIDS_Global_info(
+        datasets=[dataset_path], parents=[rawdata_name, derivative_name], verbose=False
+    )
     n_subjects = len(bids_ds)
-    logger.print(f"Found {n_subjects} Subjects in {dataset_path}, parents={bids_ds.parents}")
+    logger.print(
+        f"Found {n_subjects} Subjects in {dataset_path}, parents={bids_ds.parents}"
+    )
 
     processed_seen_counter = 0
     processed_alldone_counter = 0
@@ -177,7 +203,9 @@ def process_dataset(
 
     for s_idx, (name, subject) in enumerate(bids_ds.enumerate_subjects(sort=True)):
         logger.print()
-        logger.print(f"Processing {s_idx + 1} / {n_subjects} subject: {name}", Log_Type.ITALICS)
+        logger.print(
+            f"Processing {s_idx + 1} / {n_subjects} subject: {name}", Log_Type.ITALICS
+        )
         subject_scan_processed = 0
         if name == "unsorted" and not ignore_bids_filter:
             logger.print("Unsorted, will skip")
@@ -196,7 +224,9 @@ def process_dataset(
                 q.filter_non_existence("lesions", required=True)
                 q.filter_non_existence("label", required=True)
                 q.filter("acq", lambda x: x in allowed_acq, required=False)  # noqa: B023
-            scans = q.loop_list(sort=True)  # TODO make it family to allow for multi-inputs
+            scans = q.loop_list(
+                sort=True
+            )  # TODO make it family to allow for multi-inputs
             for s in scans:
                 output_paths, errcode = process_img_nii(
                     img_ref=s,
@@ -248,19 +278,27 @@ def process_dataset(
             logger.print(f"Subject {s_idx + 1}: {name} had no scans to be processed")
 
     logger.print()
-    logger.print(f"Processed {processed_seen_counter} scans with {modalities}", Log_Type.BOLD)
+    logger.print(
+        f"Processed {processed_seen_counter} scans with {modalities}", Log_Type.BOLD
+    )
     (
-        logger.print(f"Scans that were skipped because all derivatives were present: {processed_alldone_counter}")
+        logger.print(
+            f"Scans that were skipped because all derivatives were present: {processed_alldone_counter}"
+        )
         if processed_alldone_counter > 0
         else None
     )
-    not_processed_ok = processed_seen_counter - processed_alldone_counter - processed_counter
+    not_processed_ok = (
+        processed_seen_counter - processed_alldone_counter - processed_counter
+    )
     if not_processed_ok > 0:
         logger.print(f"Scans that were not properly processed: {not_processed_ok}")
         (
             logger.print("Consult the log file for more info!")
             if save_log_data
-            else logger.print("Set save_log_data=True to get a detailed log. Here are the scans in question:")
+            else logger.print(
+                "Set save_log_data=True to get a detailed log. Here are the scans in question:"
+            )
         )
         logger.print(not_properly_processed)
 
@@ -319,6 +357,8 @@ def process_img_nii(  # noqa: C901
     return_output_instead_of_save: bool = False,
     timing=False,
     verbose: bool = False,
+    _nii=None,
+    _dataset_id_ct_crop=100,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty.
 
@@ -393,7 +433,12 @@ def process_img_nii(  # noqa: C901
     input_format = img_ref.format
 
     output_paths = output_paths_from_input(
-        img_ref, derivative_name, snapshot_copy_folder, input_format=input_format, non_strict_mode=ignore_bids_filter
+        img_ref,
+        derivative_name,
+        snapshot_copy_folder,
+        input_format=input_format,
+        non_strict_mode=ignore_bids_filter,
+        _dataset_id_ct_crop=_dataset_id_ct_crop,
     )
     out_spine = output_paths["out_spine"]
     out_spine_raw = output_paths["out_spine_raw"]
@@ -419,7 +464,9 @@ def process_img_nii(  # noqa: C901
         and not override_ctd
         and (snapshot_copy_folder is None or out_snap2.exists())
     ):
-        logger.print(f"{out_spine.name}: Outputs are all already created and no override set, will skip")
+        logger.print(
+            f"{out_spine.name}: Outputs are all already created and no override set, will skip"
+        )
         return output_paths, ErrCode.ALL_DONE
 
     done_something = False
@@ -433,12 +480,18 @@ def process_img_nii(  # noqa: C901
             vertebra_instance_labeling_offset = 1
 
     compatible = check_input_model_compatibility(img_ref, model=model_semantic)
-    compatible_labeling = check_input_model_compatibility(img_ref, model=model_labeling) if model_labeling is not None else True
+    compatible_labeling = (
+        check_input_model_compatibility(img_ref, model=model_labeling)
+        if model_labeling is not None
+        else True
+    )
     if not (compatible and compatible_labeling):
         if not ignore_compatibility_issues:
             return output_paths, ErrCode.COMPATIBILITY
         else:
-            logger.print("Issues are ignored, might not have expected outcome", Log_Type.WARNING)
+            logger.print(
+                "Issues are ignored, might not have expected outcome", Log_Type.WARNING
+            )
 
     start_time = start_time2 = perf_counter()
     file_dir = img_ref.file["nii.gz"]
@@ -451,13 +504,21 @@ def process_img_nii(  # noqa: C901
         input_nii.seg = False
         input_nii_ = input_nii.copy()
         if timing:
-            logger.print(f"Loading files took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+            logger.print(
+                f"Loading files took: {perf_counter() - start_time2:.2f} seconds",
+                Log_Type.OK,
+                verbose=log_inference_time,
+            )
             start_time2 = perf_counter()
         # First stage
         if not out_spine_raw.exists() or override_semantic:
             resolution_range = model_semantic.inference_config.resolution_range
 
-            max_resolution: float = max(resolution_range[1]) if isinstance(resolution_range[0], tuple) else max(resolution_range)  # type: ignore
+            max_resolution: float = (
+                max(resolution_range[1])
+                if isinstance(resolution_range[0], tuple)
+                else max(resolution_range)
+            )  # type: ignore
             num_voxels = math.prod(input_nii.shape)
             if (
                 auto_crop_to_spine is True
@@ -469,13 +530,22 @@ def process_img_nii(  # noqa: C901
                 or model_semantic.inference_config.needs_corp
             ):
                 logger.print(
-                    "Compute spine crop with VIBESegmentator https://link.springer.com/article/10.1007/s00330-025-12035-9", Log_Type.OK
+                    "Compute spine crop with VIBESegmentator https://link.springer.com/article/10.1007/s00330-025-12035-9",
+                    Log_Type.OK,
                 )
                 out_vibeseg = output_paths["out_vibeseg"]
-                crop = compute_crop(input_nii, out_vibeseg, ddevice="cpu" if model_semantic.use_cpu else "cuda", logger=logger)
+                crop = compute_crop(
+                    input_nii,
+                    out_vibeseg,
+                    dataset_id=_dataset_id_ct_crop,
+                    ddevice="cpu" if model_semantic.use_cpu else "cuda",
+                    logger=logger,
+                )
                 if timing:
                     logger.print(
-                        f"Compute cropping took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
+                        f"Compute cropping took: {perf_counter() - start_time2:.2f} seconds",
+                        Log_Type.OK,
+                        verbose=log_inference_time,
                     )
                     start_time2 = perf_counter()
 
@@ -485,7 +555,9 @@ def process_img_nii(  # noqa: C901
                     input_nii = input_nii.apply_crop(crop)
                 except Exception:
                     logger.print_error()
-            logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
+            logger.print(
+                "Input image", input_nii.zoom, input_nii.orientation, input_nii.shape
+            )
 
             input_preprocessed, errcode = preprocess_input(
                 input_nii,
@@ -497,7 +569,11 @@ def process_img_nii(  # noqa: C901
                 verbose=verbose,
             )
             if timing:
-                logger.print(f"Preprocess input took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                logger.print(
+                    f"Preprocess input took: {perf_counter() - start_time2:.2f} seconds",
+                    Log_Type.OK,
+                    verbose=log_inference_time,
+                )
                 start_time2 = perf_counter()
 
             if errcode != ErrCode.OK:
@@ -518,12 +594,26 @@ def process_img_nii(  # noqa: C901
             if errcode != ErrCode.OK:
                 return output_paths, errcode
 
-            assert isinstance(seg_nii_modelres, NII), "subregion segmentation is not a NII!"
-            logger.print("seg_nii out", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape, verbose=verbose)
+            assert isinstance(seg_nii_modelres, NII), (
+                "subregion segmentation is not a NII!"
+            )
+            logger.print(
+                "seg_nii out",
+                seg_nii_modelres.zoom,
+                seg_nii_modelres.orientation,
+                seg_nii_modelres.shape,
+                verbose=verbose,
+            )
             if seg_nii_modelres.is_empty:
                 logger.print("Subregion mask is empty, skip this", Log_Type.FAIL)
                 return output_paths, ErrCode.EMPTY
-            logger.print("Output seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape, verbose=verbose)
+            logger.print(
+                "Output seg_nii",
+                seg_nii_modelres.zoom,
+                seg_nii_modelres.orientation,
+                seg_nii_modelres.shape,
+                verbose=verbose,
+            )
 
             # Lambda Injection
             if lambda_semantic is not None:
@@ -535,12 +625,23 @@ def process_img_nii(  # noqa: C901
                     save_nparray(softmax_logits, out_logits)
             done_something = True
             if timing:
-                logger.print(f"Predict semantic took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                logger.print(
+                    f"Predict semantic took: {perf_counter() - start_time2:.2f} seconds",
+                    Log_Type.OK,
+                    verbose=log_inference_time,
+                )
                 start_time2 = perf_counter()
         else:
-            logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
+            logger.print(
+                "Subreg Mask already exists. Set -override_subreg to create it anew"
+            )
             seg_nii_modelres = NII.load(out_spine_raw, seg=True)
-            logger.print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
+            logger.print(
+                "seg_nii",
+                seg_nii_modelres.zoom,
+                seg_nii_modelres.orientation,
+                seg_nii_modelres.shape,
+            )
         # Second stage
         if not out_vert_raw.exists() or override_instance:
             whole_vert_nii, errcode = predict_instance_mask(
@@ -555,26 +656,49 @@ def process_img_nii(  # noqa: C901
                 proc_inst_largest_k_cc=proc_inst_largest_k_cc,
             )
             if errcode != ErrCode.OK:
-                logger.print(f"Vert Mask creation failed with errcode {errcode}", Log_Type.FAIL)
+                logger.print(
+                    f"Vert Mask creation failed with errcode {errcode}", Log_Type.FAIL
+                )
                 return output_paths, errcode
             assert whole_vert_nii is not None, "whole_vert_nii is None"
-            whole_vert_nii = whole_vert_nii.copy()  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
-            logger.print("vert_out", whole_vert_nii.zoom, whole_vert_nii.orientation, whole_vert_nii.shape, verbose=verbose)
+            whole_vert_nii = (
+                whole_vert_nii.copy()
+            )  # .reorient(orientation, verbose=True).rescale(zms, verbose=True)
+            logger.print(
+                "vert_out",
+                whole_vert_nii.zoom,
+                whole_vert_nii.orientation,
+                whole_vert_nii.shape,
+                verbose=verbose,
+            )
             if save_raw and not return_output_instead_of_save:
                 whole_vert_nii.save(out_vert_raw, verbose=logger)
             done_something = True
             if timing:
-                logger.print(f"Predict instance took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                logger.print(
+                    f"Predict instance took: {perf_counter() - start_time2:.2f} seconds",
+                    Log_Type.OK,
+                    verbose=log_inference_time,
+                )
                 start_time2 = perf_counter()
         else:
-            logger.print("Vert Mask already exists. Set -override_vert to create it anew")
+            logger.print(
+                "Vert Mask already exists. Set -override_vert to create it anew"
+            )
             whole_vert_nii = NII.load(out_vert_raw, seg=True)
 
         # Cleanup Step
-        if not out_spine.exists() or not out_vert.exists() or done_something or override_postpair:
+        if (
+            not out_spine.exists()
+            or not out_vert.exists()
+            or done_something
+            or override_postpair
+        ):
             # back to input space
             #
-            seg_nii_modelres[seg_nii_modelres == Location.Vertebra_Corpus.value] = Location.Vertebra_Corpus_border.value
+            seg_nii_modelres[seg_nii_modelres == Location.Vertebra_Corpus.value] = (
+                Location.Vertebra_Corpus_border.value
+            )
             if not save_modelres_mask:
                 seg_nii_back = seg_nii_modelres.resample_from_to(input_nii_)
                 whole_vert_nii = whole_vert_nii.resample_from_to(input_nii_)
@@ -600,7 +724,11 @@ def process_img_nii(  # noqa: C901
                 disable_c1=not has_c1,
                 sacrum_ids=sacrum_ids,
             )
-            seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
+            seg_nii_clean.assert_affine(
+                shape=vert_nii_clean.shape,
+                zoom=vert_nii_clean.zoom,
+                orientation=vert_nii_clean.orientation,
+            )
             vert_nii_clean.assert_affine(other=input_nii_)
             # input_package.make_nii_from_this(seg_nii_clean)
             # input_package.make_nii_from_this(vert_nii_clean)
@@ -609,7 +737,11 @@ def process_img_nii(  # noqa: C901
                 vert_nii_clean.save(out_vert, verbose=logger)
             done_something = True
             if timing:
-                logger.print(f"Post Postprocess took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                logger.print(
+                    f"Post Postprocess took: {perf_counter() - start_time2:.2f} seconds",
+                    Log_Type.OK,
+                    verbose=log_inference_time,
+                )
                 start_time2 = perf_counter()
         else:
             seg_nii_clean = NII.load(out_spine, seg=True)
@@ -620,16 +752,26 @@ def process_img_nii(  # noqa: C901
             ctd = predict_centroids_from_both(
                 vert_nii_clean,
                 seg_nii_clean,
-                models=[model_semantic, model_instance, model_labeling],  # TODO add labeling info and parameters
+                models=[
+                    model_semantic,
+                    model_instance,
+                    model_labeling,
+                ],  # TODO add labeling info and parameters
                 parameter={l: v for l, v in arguments.items() if "proc_" in l},
             )
             ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
             done_something = True
             if timing:
-                logger.print(f"Centroids took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                logger.print(
+                    f"Centroids took: {perf_counter() - start_time2:.2f} seconds",
+                    Log_Type.OK,
+                    verbose=log_inference_time,
+                )
                 start_time2 = perf_counter()
         else:
-            logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
+            logger.print(
+                "Centroids already exists, will load instead. Set -override_ctd = True to create it anew"
+            )
             ctd = POI.load(out_ctd)
 
         # return_output_instead_of_save:
@@ -644,12 +786,16 @@ def process_img_nii(  # noqa: C901
                 out_debug.parent.mkdir(parents=True, exist_ok=True)
                 for k, v in debug_data_run.items():
                     v.reorient_(input_nii_.orientation).save(
-                        out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False
+                        out_debug.joinpath(k + f"_{input_format}.nii.gz"),
+                        make_parents=True,
+                        verbose=False,
                     )
                 logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
                 if timing:
                     logger.print(
-                        f"Save debug data took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
+                        f"Save debug data took: {perf_counter() - start_time2:.2f} seconds",
+                        Log_Type.OK,
+                        verbose=log_inference_time,
                     )
                     start_time2 = perf_counter()
 
@@ -670,17 +816,31 @@ def process_img_nii(  # noqa: C901
                 )
             except Exception:
                 # Fall back for older TPTBox versions TODO remove later
-                mri_snapshot(img_ref, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
+                mri_snapshot(
+                    img_ref,
+                    vert_nii_clean,
+                    ctd,
+                    subreg_msk=seg_nii_clean,
+                    out_path=out_snap,
+                )
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
             if timing:
-                logger.print(f"Snapshot took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                logger.print(
+                    f"Snapshot took: {perf_counter() - start_time2:.2f} seconds",
+                    Log_Type.OK,
+                    verbose=log_inference_time,
+                )
                 start_time2 = perf_counter()
         elif not out_snap2.exists():
             logger.print(f"Copying snapshot into {snapshot_copy_folder!s}")
             out_snap2.parent.mkdir(exist_ok=True)
             shutil.copy(out_snap, out_snap2)
 
-    logger.print(f"Pipeline took: {perf_counter() - start_time:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+    logger.print(
+        f"Pipeline took: {perf_counter() - start_time:.2f} seconds",
+        Log_Type.OK,
+        verbose=log_inference_time,
+    )
     return output_paths, ErrCode.OK
 
 
@@ -690,6 +850,7 @@ def output_paths_from_input(
     snapshot_copy_folder: Path | str | None,
     input_format: str,
     non_strict_mode: bool = False,
+    _dataset_id_ct_crop=100,
 ) -> dict[str, Path]:
     """Derives all pipeline output file paths for a given input image.
 
@@ -737,7 +898,11 @@ def output_paths_from_input(
         non_strict_mode=non_strict_mode,
         make_parent=False,
     )
-    out_snap2 = Path(snapshot_copy_folder).joinpath(out_snap.name) if snapshot_copy_folder is not None else out_snap
+    out_snap2 = (
+        Path(snapshot_copy_folder).joinpath(out_snap.name)
+        if snapshot_copy_folder is not None
+        else out_snap
+    )
     out_debug = out_vert.parent.joinpath(f"debug_{input_format}")
     out_raw = out_vert.parent.joinpath(f"output_raw_{input_format}")
     out_spine_raw = img_ref.get_changed_path(
@@ -775,7 +940,7 @@ def output_paths_from_input(
     out_vibeseg = img_ref.get_changed_path(
         bids_format="msk",
         parent=derivative_name,
-        info={"seg": "VIBESeg-100", "mod": img_ref.format},
+        info={"seg": f"VIBESeg-{_dataset_id_ct_crop}", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
         make_parent=False,
     )

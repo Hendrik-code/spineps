@@ -57,22 +57,22 @@ def compute_crop(
     Returns:
         tuple[slice, slice, slice]: The crop slices around the segmented spine, with a ``VIBE_CROP_MARGIN_MM`` margin.
     """
-    from TPTBox.core.vert_constants import Full_Body_Instance_Vibe
+    from TPTBox.core.vert_constants import Full_Body_Instance, Full_Body_Instance_Vibe
     from TPTBox.segmentation import run_vibeseg
 
-    if _has_logger_arg(run_vibeseg):
-        out = run_vibeseg(nii, out_file, dataset_id=dataset_id, ddevice=ddevice, gpu=gpu, max_folds=max_folds, logger=logger)
-    else:  # backwards compatibility, can be removed if we force to a new version of TPTBox than 30.Apr.26
-        out = run_vibeseg(nii, out_file, dataset_id=dataset_id, ddevice=ddevice, gpu=gpu, max_folds=max_folds)
+    out = run_vibeseg(nii, out_file, dataset_id=dataset_id, ddevice=ddevice, gpu=gpu, max_folds=max_folds, logger=logger)
     seg = to_nii(out, True)
-    seg.extract_label_(
-        [
-            Full_Body_Instance_Vibe.IVD,
-            Full_Body_Instance_Vibe.vertebra_body,
-            Full_Body_Instance_Vibe.vertebra_posterior_elements,
-            Full_Body_Instance_Vibe.sacrum,
-        ]
-    )
+    if dataset_id in range(30, 120):
+        seg.extract_label_(
+            [
+                Full_Body_Instance_Vibe.IVD,
+                Full_Body_Instance_Vibe.vertebra_body,
+                Full_Body_Instance_Vibe.vertebra_posterior_elements,
+                Full_Body_Instance_Vibe.sacrum,
+            ]
+        )
+    elif dataset_id in range(10, 20):
+        seg.extract_label_([Full_Body_Instance.ivd, Full_Body_Instance.vert_body, Full_Body_Instance.vert_post, Full_Body_Instance.sacrum])
     return seg.compute_crop(0, dist=VIBE_CROP_MARGIN_MM / min(seg.zoom))
 
 
