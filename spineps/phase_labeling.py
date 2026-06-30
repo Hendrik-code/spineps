@@ -8,14 +8,12 @@ from TPTBox import NII, Location, No_Logger
 
 from spineps.architectures.read_labels import (
     VertExact,
-    VertExactClass,
     VertGroup,
     VertRegion,
     VertRel,
     VertT13,
     vert_group_idx_to_exact_idx_dict,
 )
-from spineps.get_models import get_actual_model
 from spineps.lab_model import VertLabelingClassifier
 from spineps.utils.find_min_cost_path import (
     DEFAULT_REGION_STARTS,

@@ -155,7 +155,7 @@ def modelid2folder_labeling() -> dict[str, Path | str]:
 
 
 def check_available_models(
-    models_folder: str | Path, verbose: bool = False
+    models_folder: str | Path, verbose: bool = True
 ) -> tuple[dict[str, Path | str], dict[str, Path | str], dict[str, Path | str]]:
     """Searches the given directory for models and sorts them into semantic, instance and labeling id-to-folder maps.
 
