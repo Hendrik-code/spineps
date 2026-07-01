@@ -8,6 +8,7 @@ from TPTBox import NII, Location, No_Logger
 
 from spineps.architectures.read_labels import (
     VertExact,
+    VertExactClass,
     VertGroup,
     VertRegion,
     VertRel,
