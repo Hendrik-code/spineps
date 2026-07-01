@@ -21,19 +21,6 @@ from tqdm import tqdm
 MAX_VERTEBRA_INSTANCE_LABEL = 25
 
 
-def from_nibabel(nib):
-    try:
-        from ants.utils.convert_nibabel import from_nibabel
-
-        return from_nibabel(nib)
-    except ModuleNotFoundError:
-        from ants.utils.nibabel_nifti_to_ants import (
-            from_nibabel_nifti,
-        )
-
-        return from_nibabel_nifti(nib)
-
-
 def n4_bias(
     nii: NII,
     threshold: int = 60,
@@ -68,7 +55,7 @@ def n4_bias(
     mask[slices] = 1
     mask_nii = nii.set_array(mask)
     mask_nii.seg = True
-    n4: NII = nii.n4_bias_field_correction(threshold=0, mask=from_nibabel(mask_nii.nii), spline_param=spline_param)
+    n4: NII = nii.n4_bias_field_correction(threshold=0, mask=mask_nii, spline_param=spline_param)
     if norm != -1:
         n4 *= norm / n4.max()
     if dtype2nii:
