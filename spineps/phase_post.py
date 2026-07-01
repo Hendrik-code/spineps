@@ -388,10 +388,9 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, include_sacrum=Fals
     orientation = whole_vert_nii.orientation
     vert_t = whole_vert_nii.reorient()
     seg_t = seg_nii.reorient()
-    if include_sacrum:
-        vert_labels = [t for t in vert_t.unique() if t < 40]  # without zero
-    else:
-        vert_labels = [t for t in vert_t.unique() if t <= 26 or t == 28]  # without zero
+    vert_labels = (
+        [t for t in vert_t.unique() if t < 40] if include_sacrum else [t for t in vert_t.unique() if t <= 26 or t == 28]
+    )  # without zero
     vert_arr = vert_t.get_seg_array()
     subreg_arr = seg_t.get_seg_array()
 
@@ -584,7 +583,7 @@ def find_nearest_higher(seq, x) -> float:
     return min(values_higher)
 
 
-def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0) -> tuple[NII, np.ndarray]:
+def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0) -> tuple[NII, list[int]]:
     """Relabel vertebra instances consecutively from top to bottom by center-of-mass height.
 
     Reorients to PIR, sorts the instances by their center of mass along the inferior-superior axis, and assigns consecutive
@@ -595,8 +594,9 @@ def label_instance_top_to_bottom(vert_nii: NII, labeling_offset: int = 0) -> tup
         labeling_offset (int): Offset added to the consecutive labels.
 
     Returns:
-        tuple[NII, np.ndarray]: The relabeled instance mask and its array of unique labels.
+        tuple[NII, list[int]]: The relabeled instance mask and its list of unique labels.
     """
+
     ori = vert_nii.orientation
     vert_nii.reorient_()
     vert_arr = vert_nii.get_seg_array()
@@ -672,7 +672,7 @@ def assign_vertebra_inconsistency(
 
                 vert_arr[cc_map == 1] = to_label
                 logger.print(
-                    f"set cc to {to_label}, with volume decision {gt_volume}, based on {biggest_volume}, {second_volume}", verbose=verbose
+                    f"set cc to {to_label}, with volume decision {gt_volume}, based on {biggest_volume}, {second_volume}",
                 )
 
         vert_nii.set_array_(vert_arr)
