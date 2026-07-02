@@ -97,7 +97,9 @@ def parser_arguments(parser: argparse.ArgumentParser):
         type=int,
         default=4,
         help="Number of vertebra cutouts run through the instance model per batched forward pass. Higher is faster but uses "
-        "more GPU memory; falls back to one-by-one on out-of-memory.",
+        "more GPU memory; falls back to one-by-one on out-of-memory. Only affects GPU memory during the instance model's "
+        "forward pass -- host RAM usage in the instance phase scales with scan length and vertebra count instead, and is "
+        "unaffected by this setting.",
     )
     parser.add_argument(
         "--amp",

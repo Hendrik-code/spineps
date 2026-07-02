@@ -25,6 +25,13 @@ from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, ch
 from spineps.utils.citation_reminder import citation_reminder
 
 
+class _NoOpDebugDict(dict):
+    """Dict-like sink that discards writes; used to skip retaining debug data when it won't be saved."""
+
+    def __setitem__(self, key, value):
+        pass
+
+
 @citation_reminder
 def process_dataset(  # noqa: C901
     dataset_path: Path,
@@ -465,7 +472,8 @@ def segment_image(  # noqa: C901
         return output_paths, ErrCode.ALL_DONE
 
     done_something = False
-    debug_data_run: dict[str, NII] = {}
+    # Avoid retaining full-volume debug copies for the whole run when they'll never be saved (see seg_run.py:699).
+    debug_data_run: dict[str, NII] = {} if save_debug_data else _NoOpDebugDict()
 
     if Modality.CT in model_semantic.modalities():
         proc_normalize_input = False  # Never normalize input if it is an CT

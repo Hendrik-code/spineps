@@ -203,7 +203,7 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 | --override-semantic, -os  | Override existing seg-spine files (default: False) |
 | --override-instance, -oi  | Override existing seg-vert files (default: False) |
 | --override-ctd, -oc  | Override existing centroid files (default: False) |
-| --batch-size, -bs  | Vertebra cutouts per batched forward pass; higher is faster but uses more GPU memory (default: 4) |
+| --batch-size, -bs  | Vertebra cutouts per batched forward pass; higher is faster but uses more GPU memory. Only affects GPU memory; host RAM usage in the instance phase scales with scan length/vertebra count instead (default: 4) |
 | --verbose, -v  | Prints much more stuff, may fully clutter your terminal (default: False) |
 
 There are a lot more arguments, run `spineps sample -h` to see them.

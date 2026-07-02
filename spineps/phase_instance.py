@@ -652,8 +652,6 @@ def collect_vertebra_predictions(
     # which would needlessly inflate this n_coms x 3 x volume array and slow the Dice comparisons below).
     hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=np.uint8)
     # print("hierarchical_predictions", hierarchical_predictions.shape)
-    vert_predict_template = np.zeros(shp, dtype=np.uint16)
-    # print("vert_predict_template", vert_predict_template.shape)
 
     # relabel to the labels expected by the model
     # {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9}
@@ -715,18 +713,18 @@ def collect_vertebra_predictions(
         cutout_sizes = tuple(cutout_coords[i].stop - cutout_coords[i].start for i in range(len(cutout_coords)))
         pad_cutout = tuple(slice(paddings[i][0], paddings[i][0] + cutout_sizes[i]) for i in range(len(paddings)))
         arr = vert_cut_nii.get_seg_array()
-        vert_predict_map = vert_predict_template.copy()
-        vert_predict_map[cutout_coords] = arr[pad_cutout]
-        seg_at_com = vert_predict_map[int(com[0])][int(com[1])][int(com[2])]
+        cutout_vals = arr[pad_cutout]
+        # Write straight into the (already fully-allocated) hierarchical_predictions slice instead of building
+        # full-volume-sized temporaries per vertebra/label: everything outside cutout_coords is 0 either way.
+        local_com = tuple(int(com[i]) - cutout_coords[i].start for i in range(3))
+        seg_at_com = cutout_vals[local_com]
         if seg_at_com == 0:
             logger.print("Zero at cutout center, mistake", Log_Type.WARNING)
         for l in vert_labels:
-            vert_l_map = vert_predict_map.copy()
-            vert_l_map[vert_l_map != l] = 0
-            vert_l_map[vert_l_map != 0] = 1
+            mask = cutout_vals == l
             labelindex = l - 1
-            if vert_l_map.max() > 0:
-                hierarchical_predictions[com_idx][labelindex] = vert_l_map
+            if mask.any():
+                hierarchical_predictions[com_idx, labelindex][cutout_coords] = mask.astype(np.uint8)
                 hierarchical_existing_predictions.append(str_id_com_label(com_idx, labelindex))
     return hierarchical_predictions, hierarchical_existing_predictions, n_corpus_coms
 
@@ -992,6 +990,7 @@ def merge_coupled_predictions(
     """
     whole_vert_nii = seg_nii.copy()
     whole_vert_arr = np.zeros(whole_vert_nii.shape, dtype=np.uint16)  # this is fixed segmentations from vert
+    combine = np.zeros(whole_vert_nii.shape, dtype=whole_vert_nii.dtype)  # reused scratch buffer, reset per couple below
 
     idx = 1
     for k, overall_agreement in coupled_predictions.items():
@@ -999,7 +998,7 @@ def merge_coupled_predictions(
         take_no_overlap = len(k) <= 2
         if overall_agreement < 0.3 + 0.15 * (4 - len(k)):
             take_no_overlap = True
-        combine = np.zeros(whole_vert_nii.shape, dtype=whole_vert_nii.dtype)
+        combine.fill(0)
         for cid in k:
             combine += hierarchical_predictions[cid[0]][cid[1]]
         # print(combine.shape)
@@ -1012,9 +1011,7 @@ def merge_coupled_predictions(
         if count_new == 0:
             logger.print("ZERO instance mask failure on vertebra instance creation", Log_Type.FAIL)
             return seg_nii, debug_data, ErrCode.EMPTY
-        fixed_n = combine.copy()
-        fixed_n[whole_vert_arr != 0] = 0
-        count_cut = np_count_nonzero(fixed_n)
+        count_cut = np_count_nonzero((combine != 0) & (whole_vert_arr == 0))
         relative_overlap = (count_new - count_cut) / count_new
         if relative_overlap > 0.6:
             logger.print(k, f" was skipped because it overlaps {round(relative_overlap, 4)} with established verts", verbose=verbose)
