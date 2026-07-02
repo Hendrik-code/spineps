@@ -100,7 +100,7 @@ class Unet3D(nn.Module):
 
         self.final_res_block = block_klass(dim * 2, dim, time_emb_dim=time_dim)
         self.final_conv = nn.Conv3d(dim, self.out_dim, 1)
-        self.first_forward = False
+        self.first_forward = True
 
     def forward(
         self,
@@ -137,7 +137,8 @@ class Unet3D(nn.Module):
         # time = None
         if time is None:
             time = torch.ones((1,), device=x.device)
-        x = self.init_conv(x)
+
+        x = self.init_conv(x.contiguous().clone())
         r = x.clone()
         if self.first_forward:
             print("-", x.shape)

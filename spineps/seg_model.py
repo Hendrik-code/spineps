@@ -19,7 +19,10 @@ from spineps.seg_enums import Acquisition, InputType, Modality, OutputType
 from spineps.utils.citation_reminder import citation_reminder
 from spineps.utils.filepaths import search_path
 from spineps.utils.inference_api import load_inf_model, run_inference
-from spineps.utils.seg_modelconfig import Segmentation_Inference_Config, load_inference_config
+from spineps.utils.seg_modelconfig import (
+    Segmentation_Inference_Config,
+    load_inference_config,
+)
 
 threads_started = False
 
@@ -217,7 +220,10 @@ class Segmentation_Model(ABC):
 
         assert orig_shape is not None
         if not resample_to_recommended:
-            self.print("resample_to_recommended set to False, segmentation might not work. Proceed at own risk", Log_Type.WARNING)
+            self.print(
+                "resample_to_recommended set to False, segmentation might not work. Proceed at own risk",
+                Log_Type.WARNING,
+            )
 
         # set step_size
         if hasattr(self.predictor, "tile_step_size"):
@@ -504,25 +510,25 @@ class Segmentation_Model_Unet3D(Segmentation_Model):
         n_classes = self.predictor.network.channels
 
         target[target >= n_classes] = 0
-
-        # channel-wise
-        if n_classes != 1:
-            targetc = target.to(torch.int64)
-            targetc = F.one_hot(targetc, num_classes=n_classes)
-            targetc = targetc.permute(3, 0, 1, 2)
-            targetc = targetc.unsqueeze(0)
-            targetc = targetc.to(torch.float32)
-            logits = self.predictor.forward(targetc.to(self.device))
-        else:
-            # legacy version
-            target = target.to(torch.float32)
-            target /= LEGACY_LABEL_NORMALIZATION
-            target = target.unsqueeze(0)
-            target = target.unsqueeze(0)
-            logits = self.predictor.forward(target.to(self.device))
-        soft_max = torch.nn.Softmax(dim=1)
-        pred_x = soft_max(logits)
-        _, pred_cls = torch.max(pred_x, 1)
+        with torch.no_grad():
+            # channel-wise
+            if n_classes != 1:
+                targetc = target.to(torch.int64)
+                targetc = F.one_hot(targetc, num_classes=n_classes)
+                targetc = targetc.permute(3, 0, 1, 2).contiguous()
+                targetc = targetc.unsqueeze(0)
+                targetc = targetc.float()
+                logits = self.predictor.forward(targetc.to(self.device))
+            else:
+                # legacy version
+                target = target.to(torch.float32)
+                target /= LEGACY_LABEL_NORMALIZATION
+                target = target.unsqueeze(0)
+                target = target.unsqueeze(0)
+                logits = self.predictor.forward(target.to(self.device))
+            soft_max = torch.nn.Softmax(dim=1)
+            pred_x = soft_max(logits)
+            _, pred_cls = torch.max(pred_x, 1)
         del logits
         del pred_x
         pred_cls = pred_cls.detach().cpu().numpy()[0]
