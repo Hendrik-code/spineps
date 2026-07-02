@@ -726,18 +726,14 @@ def segment_image(  # noqa: C901
             if snapshot_copy_folder is not None:
                 out_snap = [out_snap, out_snap2]
             ctd = ctd.extract_subregion(Location.Vertebra_Corpus)
-            try:
-                mri_snapshot(  # TODO update snapshot
-                    img_ref,
-                    vert_nii_clean,
-                    ctd,
-                    subreg_msk=seg_nii_clean,
-                    out_path=out_snap,
-                    mode="MRI" if img_ref.bids_format.lower() != "ct" else "CT",
-                )
-            except Exception:
-                # Fall back for older TPTBox versions TODO remove later
-                mri_snapshot(img_ref, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
+            mri_snapshot(
+                img_ref,
+                vert_nii_clean,
+                ctd,
+                subreg_msk=seg_nii_clean,
+                out_path=out_snap,
+                mode="MRI" if img_ref.bids_format.lower() != "ct" else "CT",
+            )
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
             if timing:
                 logger.print(f"Snapshot took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)

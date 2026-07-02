@@ -34,10 +34,10 @@ class Test_filepaths(unittest.TestCase):
     def test_search_path_simple(self):
         package_path = Path(spineps.__file__).parent
         print(package_path)
-        predictor_search = search_path(package_path, query="**/predictor.py")
+        predictor_search = search_path(package_path, query="**/seg_model.py")
         print(predictor_search)
         self.assertTrue(len(predictor_search) == 1)
-        self.assertEqual(predictor_search[0], package_path.joinpath("utils", "predictor.py"))
+        self.assertEqual(predictor_search[0], package_path.joinpath("seg_model.py"))
 
     def test_search_path_multi(self):
         package_path = Path(spineps.__file__).parent

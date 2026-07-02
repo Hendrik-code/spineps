@@ -55,7 +55,7 @@ def n4_bias(
     mask[slices] = 1
     mask_nii = nii.set_array(mask)
     mask_nii.seg = True
-    n4: NII = nii.n4_bias_field_correction(threshold=0, mask=mask_nii, spline_param=spline_param)
+    n4: NII = nii.n4_bias_field_correction(threshold=0, mask=mask_nii.to_ants(), spline_param=spline_param)
     if norm != -1:
         n4 *= norm / n4.max()
     if dtype2nii:

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
-
-# from utils.predictor import nnUNetPredictor
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal
 
@@ -25,18 +22,6 @@ NORMALIZE_MAX_VALUE = 1500
 VIBE_CROP_MARGIN_MM = 25 * min(REFERENCE_ZOOM)
 
 
-def _has_logger_arg(func) -> bool:
-    """Check whether a callable accepts a ``logger`` keyword argument.
-
-    Args:
-        func (Callable): The function whose signature is inspected.
-
-    Returns:
-        bool: True if ``logger`` is among the function's parameters, else False.
-    """
-    return "logger" in inspect.signature(func).parameters
-
-
 def compute_crop(
     nii: NII, out_file: str | Path, dataset_id=100, ddevice: Literal["cpu", "cuda", "mps"] = "cuda", gpu=0, max_folds=None, logger=None
 ) -> tuple[slice, slice, slice]:
@@ -52,7 +37,7 @@ def compute_crop(
         ddevice (Literal["cpu", "cuda", "mps"], optional): Compute device for inference. Defaults to "cuda".
         gpu (int, optional): GPU index used when running on CUDA. Defaults to 0.
         max_folds (int | None, optional): Maximum number of model folds to ensemble. Defaults to None (all folds).
-        logger (optional): Logger forwarded to ``run_vibeseg`` when that version supports it. Defaults to None.
+        logger (optional): Logger forwarded to ``run_vibeseg``. Defaults to None.
 
     Returns:
         tuple[slice, slice, slice]: The crop slices around the segmented spine, with a ``VIBE_CROP_MARGIN_MM`` margin.

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# from utils.predictor import nnUNetPredictor
 import heapq
 
 import numpy as np
