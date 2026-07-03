@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Union
+
 from TPTBox import BIDS_FILE, ZOOMS, Log_Type
 
 from spineps.seg_enums import Acquisition, Modality
 from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import logger
 
-Modality_Pair = tuple[list[Modality] | Modality, Acquisition]
+# NOTE: plain runtime assignment, not an annotation, so `from __future__ import annotations` does not defer it --
+# `X | Y` on bare types needs Python 3.10+, so this must stay `Union[...]` for the 3.9 floor.
+Modality_Pair = tuple[Union[list[Modality], Modality], Acquisition]
 
 
 def find_best_matching_model(
