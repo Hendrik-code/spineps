@@ -225,8 +225,6 @@ def mask_cleaning_other(
     # make copy where both masks clean each other
     vert_arr_cleaned = whole_vert_nii.get_seg_array()
     subreg_vert_arr = subreg_vert_nii.get_seg_array()
-    # if dilation_fill:
-    #    vert_arr_cleaned = np_dilate_msk(vert_arr_cleaned, label_ref=vert_labels, mm=5)  # , mask=subreg_vert_arr
     subreg_arr = seg_nii.get_seg_array()
 
     if proc_assign_missing_cc:
@@ -663,8 +661,6 @@ def assign_vertebra_inconsistency(
                 continue
             biggest_volume = (k_keys_sorted[0], gt_volume[k_keys_sorted[0]])
             second_volume = (k_keys_sorted[1], gt_volume[k_keys_sorted[1]])
-
-            # print(biggest_volume, second_volume)
 
             if biggest_volume[1] * ARTICULAR_DOMINANCE_RATIO > second_volume[1]:
                 to_label = biggest_volume[0] - 1  # int(list(gt_volume.keys())[argmax] - 1)

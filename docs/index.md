@@ -1,9 +1,10 @@
 # SPINEPS
 
-**SPINEPS** is a framework for out-of-the-box **whole-spine segmentation of MR images**. It segments the
-spine in sagittal MR images (T2w, T1w and others) using a two-phase approach to multi-class **semantic**
-and **instance** segmentation, and can additionally assign anatomical **vertebra labels** via the
-**VERIDAH** labeling model.
+**SPINEPS** is a framework for out-of-the-box **whole-spine segmentation of MR and CT images**. It segments
+the spine in sagittal MR images (T2w, T1w and others) and CT scans — each with independent,
+modality-specific models — using a two-phase approach to multi-class **semantic** and **instance**
+segmentation, and can additionally assign anatomical **vertebra labels** via the **VERIDAH** labeling
+model.
 
 [![Paper](https://img.shields.io/badge/Paper-10.1007-blue)](https://link.springer.com/article/10.1007/s00330-024-11155-y)
 [![PyPI version](https://badge.fury.io/py/spineps.svg)](https://pypi.python.org/pypi/spineps/)

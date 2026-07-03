@@ -77,13 +77,15 @@ Segment a single scan:
 
 ```bash
 # T2w sagittal
-spineps sample --ignore-bids-filter --ignore-inference-compatibility \
+spineps sample --ignore-inference-compatibility \
     -i /path/sub-testsample_T2w.nii.gz --model-semantic t2w --model-instance instance
 
 # T1w sagittal
-spineps sample --ignore-bids-filter --ignore-inference-compatibility \
+spineps sample --ignore-inference-compatibility \
     -i /path/sub-testsample_T1w.nii.gz --model-semantic t1w --model-instance instance
 ```
+
+(`--ignore-bids-filter` is a `dataset`-only option, not accepted by `sample`.)
 
 Process a whole [BIDS](https://bids-specification.readthedocs.io/en/stable/) dataset:
 

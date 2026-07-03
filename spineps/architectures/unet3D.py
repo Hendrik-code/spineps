@@ -134,7 +134,6 @@ class Unet3D(nn.Module):
         if self.first_forward:
             print("|", x.shape)
 
-        # time = None
         if time is None:
             time = torch.ones((1,), device=x.device)
         x = self.init_conv(x)

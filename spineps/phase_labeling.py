@@ -481,6 +481,47 @@ def prepare_vertrel(vertrel_softmax_values: np.ndarray, gaussian_sigma: float = 
     return softmax_values
 
 
+def _print_labeling_weights(
+    predict_keys,
+    visible_w,
+    vert_w,
+    region_w,
+    vertrel_w,
+    vertgrp_w,
+    vertt13_w,
+    disable_c1,
+    boost_c2,
+    allow_cervical_skip,
+    region_gaussian_sigma,
+    vert_gaussian_sigma,
+    vert_gaussian_regionwise,
+    vertrel_gaussian_sigma,
+) -> None:
+    """Prints the per-objective weights and gaussian-smoothing settings used by ``find_vert_path_from_predictions``."""
+    if "FULLYVISIBLE" in predict_keys:
+        print("visible_w", visible_w)
+    if "VERT" in predict_keys:
+        print("vert_w", vert_w)
+    if "REGION" in predict_keys:
+        print("region_w", region_w)
+    if "VERTREL" in predict_keys:
+        print("vertrel_w", vertrel_w)
+    if "VERTGRP" in predict_keys:
+        print("vertgrp_w", vertgrp_w)
+    if "VERTT13" in predict_keys:
+        print("vertt13_w", vertt13_w)
+    print("disable_c1", disable_c1)
+    print("boost_c2", boost_c2)
+    print("allow_cervical_skip", allow_cervical_skip)
+    if "VERTREGION" in predict_keys:
+        print("region_gaussian_sigma", region_gaussian_sigma)
+    if "VERT" in predict_keys:
+        print("vert_gaussian_sigma", vert_gaussian_sigma)
+        print("vert_gaussian_regionwise", vert_gaussian_regionwise)
+    if "VERTREL" in predict_keys:
+        print("vertrel_gaussian_sigma", vertrel_gaussian_sigma)
+
+
 def find_vert_path_from_predictions(
     predictions,
     visible_w: float = 0.5,
@@ -576,7 +617,6 @@ def find_vert_path_from_predictions(
     cost_matrix = np.zeros((n_vert, VERT_CLASSES))
     relative_cost_matrix = np.zeros((n_vert, len(VertRel)))
     visible_chain = prepare_visible(predictions, visible_w)
-    # print(visible_chain)
 
     predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())  # noqa: RUF015
     assert "VERT" in predict_keys or "VERTEXACT" in predict_keys or "VERTEX" in predict_keys or "VERTGRP" in predict_keys, (
@@ -601,21 +641,23 @@ def find_vert_path_from_predictions(
     )
 
     if verbose:
-        print("visible_w", visible_w) if "FULLYVISIBLE" in predict_keys else None
-        print("vert_w", vert_w) if "VERT" in predict_keys else None
-        print("region_w", region_w) if "REGION" in predict_keys else None
-        print("vertrel_w", vertrel_w) if "VERTREL" in predict_keys else None
-        print("vertgrp_w", vertgrp_w) if "VERTGRP" in predict_keys else None
-        print("vertt13_w", vertt13_w) if "VERTT13" in predict_keys else None
-        print("disable_c1", disable_c1)
-        print("boost_c2", boost_c2)
-        print("allow_cervical_skip", allow_cervical_skip)
-        print("region_gaussian_sigma", region_gaussian_sigma) if "VERTREGION" in predict_keys else None
-        print("vert_gaussian_sigma", vert_gaussian_sigma) if "VERT" in predict_keys else None
-        print("vert_gaussian_regionwise", vert_gaussian_regionwise) if "VERT" in predict_keys else None
-        print("vertrel_gaussian_sigma", vertrel_gaussian_sigma) if "VERTREL" in predict_keys else None
+        _print_labeling_weights(
+            predict_keys,
+            visible_w=visible_w,
+            vert_w=vert_w,
+            region_w=region_w,
+            vertrel_w=vertrel_w,
+            vertgrp_w=vertgrp_w,
+            vertt13_w=vertt13_w,
+            disable_c1=disable_c1,
+            boost_c2=boost_c2,
+            allow_cervical_skip=allow_cervical_skip,
+            region_gaussian_sigma=region_gaussian_sigma,
+            vert_gaussian_sigma=vert_gaussian_sigma,
+            vert_gaussian_regionwise=vert_gaussian_regionwise,
+            vertrel_gaussian_sigma=vertrel_gaussian_sigma,
+        )
 
-    #
     for idx, (_, k) in enumerate(predictions.items()):
         vert_softmax_output = k["soft"]["VERT"] if "VERT" in predict_keys else np.zeros(len(VertExact))
         vert_values = np.multiply(
@@ -689,9 +731,6 @@ def find_vert_path_from_predictions(
     cost_matrix = np.asarray(cost_matrix)
     # invert rel cost
     relative_cost_matrix = np.multiply(-relative_cost_matrix, vertrel_w)
-    # for i in range(len(relative_cost_matrix)):
-    #    print(relative_cost_matrix[i])
-    #
     if argmax_combined_cost_matrix_instead_of_path_algorithm:
         fcost = 0
         min_costs_path = [[]]

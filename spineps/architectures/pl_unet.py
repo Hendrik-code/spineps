@@ -36,10 +36,6 @@ class PLNet(pl.LightningModule):
         dim_mults = (1, 2, 4, 8)
         dim = 16  # 16
 
-        # if opt.high_res:
-        #    dim = 16
-        #    dim_mults = (2, 4, 8, 8)
-
         self.network = nclass(
             dim=dim,
             dim_mults=dim_mults,

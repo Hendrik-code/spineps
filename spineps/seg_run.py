@@ -43,7 +43,6 @@ def process_dataset(  # noqa: C901
     derivative_name: str = "derivatives_seg",
     modalities: list[Modality_Pair] | Modality_Pair = [(Modality.T2w, Acquisition.sag)],  # noqa: B006
     save_debug_data: bool = False,
-    # save_uncertainty_image: bool = False,
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_log_data: bool = True,
@@ -235,8 +234,6 @@ def process_dataset(  # noqa: C901
                     model_labeling=model_labeling,
                     #
                     derivative_name=derivative_name,
-                    #
-                    # save_uncertainty_image=save_uncertainty_image,
                     save_modelres_mask=save_modelres_mask,
                     save_softmax_logits=save_softmax_logits,
                     save_debug_data=save_debug_data,
@@ -305,8 +302,6 @@ def segment_image(  # noqa: C901
     model_instance: SegmentationModel,
     model_labeling: VertLabelingClassifier | None = None,
     derivative_name: str = "derivatives_seg",
-    #
-    # save_uncertainty_image: bool = False,
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_debug_data: bool = False,
@@ -478,7 +473,6 @@ def segment_image(  # noqa: C901
     if Modality.CT in model_semantic.modalities():
         proc_normalize_input = False  # Never normalize input if it is an CT
         proc_sem_n4_bias_correction = False  # n4_bias_correction is a MRI thing
-        # proc_assign_missing_cc_fast = True  # TODO remove
         if model_semantic.inference_config.has_c1:
             vertebra_instance_labeling_offset = 1
 

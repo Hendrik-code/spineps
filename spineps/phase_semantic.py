@@ -69,7 +69,6 @@ def predict_semantic_mask(
             verbose=verbose,
         )  # type:ignore
         seg_nii = results[OutputType.seg]
-        # unc_nii = results.get(OutputType.unc, None)
         softmax_logits = results[OutputType.softmax_logits]
 
         logger.print("Post-process semantic mask...")
@@ -220,7 +219,6 @@ def semantic_bounding_box_clean(seg_nii: NII) -> NII:
     seg_bin_clean_arr[largest_k_arr == 0] = 0
 
     seg_arr = seg_nii.get_seg_array()
-    # logger.print(seg_nii.volumes())
     seg_arr[seg_bin_clean_arr != 1] = 0
     seg_nii.set_array_(seg_arr)
     seg_nii.reorient_(ori)

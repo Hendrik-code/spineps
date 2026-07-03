@@ -20,7 +20,6 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
 
 from TPTBox import BIDS_FILE, NII, POI
 
@@ -32,8 +31,8 @@ from spineps.seg_model import SegmentationModel
 from spineps.seg_run import segment_image
 
 # Accepted forms for an input image and a model argument.
-ImageInput = Union[str, Path, NII, BIDS_FILE]
-ModelInput = Union[str, Path, SegmentationModel, VertLabelingClassifier]
+ImageInput = str | Path | NII | BIDS_FILE
+ModelInput = str | Path | SegmentationModel | VertLabelingClassifier
 
 
 @dataclass

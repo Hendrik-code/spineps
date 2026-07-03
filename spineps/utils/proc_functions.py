@@ -46,8 +46,6 @@ def n4_bias(
     Returns:
         tuple[NII, NII]: The bias-corrected image and the binary foreground mask used for correction.
     """
-
-    # print("n4 bias", nii.dtype)
     mask = nii.get_array()
     mask[mask < threshold] = 0
     mask[mask != 0] = 1
@@ -131,7 +129,6 @@ def clean_cc_artifacts(
 
     cc_to_clean = {}
     for lidx, label in enumerate(tqdm(labels, desc=f"{logger._get_logger_prefix()} cleaning...", disable=not verbose)):
-        # print(l, subreg_cc_stats[l]["voxel_counts"])
         idx = [i for i, v in enumerate(subreg_cc_stats[label]["voxel_counts"]) if v < cc_size_threshold[lidx] and v > 0]
         if len(idx) > 0:
             cc_to_clean[label] = idx
@@ -155,7 +152,6 @@ def clean_cc_artifacts(
             dilated_m = np_dilate_msk(mask_cc_l, n_pixel=1)
             dilated_m[mask_cc_l != 0] = 0
             neighbor_voxel_count = np_count_nonzero(dilated_m)
-            # print(subreg_cc_stats[label])
 
             mult = mask_arr * dilated_m
             if np_count_nonzero(mult) <= int(neighbor_voxel_count * neighbor_factor_2_delete):
@@ -172,7 +168,6 @@ def clean_cc_artifacts(
                 newlabel = nlabels[np.argmax(volumes_values)]  # type: ignore
                 result_arr[mask_cc_l != 0] = newlabel
                 logger.print(log_string + f"labeled as {newlabel}") if verbose else None
-                # print(labels, count)
     n_to_clean = {k: len(v) for k, v in cc_to_clean.items()}
     # By clearning: look at surrounding neighbor pixels. If too few, remove cc. otherwise, do majority voting
     if len(n_to_clean) != 0:

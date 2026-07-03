@@ -105,11 +105,9 @@ def predict_instance_mask(
 
         # Padding?
         if pad_size > 0:
-            # logger.print(seg_nii_rdy.shape)
             arr = seg_nii_rdy.get_array()
             arr = np.pad(arr, pad_size, mode="edge")
             seg_nii_rdy.set_array_(arr)
-            # logger.print(seg_nii_rdy.shape)
 
         zms = seg_nii_rdy.zoom
         logger.print("zms", zms, verbose=verbose)
@@ -124,10 +122,8 @@ def predict_instance_mask(
         uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape, dtype=seg_nii_uncropped.dtype)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
         crop = seg_nii_rdy.compute_crop(dist=INSTANCE_CROP_MARGIN_MM / min(seg_nii_rdy.zoom))
-        # logger.print("Crop", crop, verbose=verbose)
         seg_nii_rdy.apply_crop_(crop)
         logger.print(f"Crop down from {uncropped_vert_mask.shape} to {seg_nii_rdy.shape}", verbose=verbose)
-        # arr[crop] = X, then set nifty to arr
         logger.print("Vertebra seg_nii_rdy", seg_nii_rdy.zoom, seg_nii_rdy.orientation, seg_nii_rdy.shape, verbose=verbose)
         debug_data["inst_cropped_Subreg_nii_b"] = seg_nii_rdy.copy()
         #
@@ -203,11 +199,9 @@ def predict_instance_mask(
 
         # Uncrop again
         if pad_size > 0:
-            # logger.print(whole_vert_nii_uncropped.shape)
             arr = whole_vert_nii_uncropped.get_array()
             arr = arr[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size]
             whole_vert_nii_uncropped.set_array_(arr)
-            # logger.print(whole_vert_nii_uncropped.shape)
 
     return whole_vert_nii_uncropped, ErrCode.OK
 
@@ -650,13 +644,11 @@ def collect_vertebra_predictions(
     # Holds only binary {0, 1} per-label masks, so uint8 is sufficient (the source dtype can be wider,
     # which would needlessly inflate this n_coms x 3 x volume array and slow the Dice comparisons below).
     hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=np.uint8)
-    # print("hierarchical_predictions", hierarchical_predictions.shape)
 
     # relabel to the labels expected by the model
     # {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9}
     mapping = {int(a): int(b) for a, b in model.inference_config.mapping.items()}
     seg_nii_for_cut: NII = seg_nii.copy().extract_label(list(mapping.keys()), keep_label=True).map_labels_(mapping, verbose=False)
-    # print("seg_nii_for_cut", seg_nii_for_cut.shape)
 
     logger.print("Vertebra collect in", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
 
@@ -948,7 +940,6 @@ def find_prediction_couple(
 
     agreement = 0
     if len(couple) > 0:
-        # print(couple)
         agreement = 0
         for c in couple:
             agreement += dices[c]
@@ -1000,7 +991,6 @@ def merge_coupled_predictions(
         combine.fill(0)
         for cid in k:
             combine += hierarchical_predictions[cid[0]][cid[1]]
-        # print(combine.shape)
         m = 1 if take_no_overlap else 2
         # m = min(max(1, np.max(combine)), 2)  # type:ignore
         combine[combine < m] = 0
@@ -1034,10 +1024,5 @@ def merge_coupled_predictions(
             logger=logger,
             verbose=verbose,
         )
-    # print("whole_vert_arr", whole_vert_arr.shape)
-    # print("seg_nii", seg_nii.shape)
     whole_vert_nii_proc = seg_nii.set_array(whole_vert_arr)
-    # print("whole_vert_arr_proc", whole_vert_arr_proc.shape)
-    # debug_data["whole_vert_arr_proc"] = seg_nii.set_array(whole_vert_arr)
-    # return seg_nii.set_array(whole_vert_arr, verbose=False).map_labels_(com_map, verbose=False), debug_data, ErrCode.OK
     return whole_vert_nii_proc, debug_data, ErrCode.OK

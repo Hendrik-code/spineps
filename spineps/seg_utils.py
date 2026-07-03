@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Union
-
 from TPTBox import BIDS_FILE, ZOOMS, Log_Type
 
 from spineps.seg_enums import Acquisition, Modality
 from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import logger
 
-Modality_Pair = tuple[Union[list[Modality], Modality], Acquisition]
+Modality_Pair = tuple[list[Modality] | Modality, Acquisition]
 
 
 def find_best_matching_model(
@@ -32,21 +30,6 @@ def find_best_matching_model(
         NotImplementedError: Always, as this function is not yet implemented; also for an unmapped modality pair.
     """
     raise NotImplementedError("find_best_matching_model()")
-    logger.print(expected_resolution)
-    # TODO replace with automatic going through model configs to find best matching the resolution
-    mapping: dict = {
-        # (Modality.CT, Acquisition.sag): MODELS.CT_SEGMENTOR,
-        # (Modality.T2w, Acquisition.sag): MODELS.T2w_NAKOSPIDER_HIGHRES,
-        # (Modality.T1w, Acquisition.sag): MODELS.T1w_SEGMENTOR,
-        # (Modality.Vibe, Acquisition.ax): MODELS.VIBE_SEGMENTOR,
-        # (Modality.SEG, Acquisition.sag): MODELS.VERT_HIGHRES,
-    }
-    if isinstance(modality_pair[0], list) and len(modality_pair[0]) == 1:
-        modality_pair = (modality_pair[0][0], modality_pair[1])
-    if modality_pair not in mapping:
-        raise NotImplementedError(str(modality_pair[0]), str(modality_pair[1]))
-    else:
-        return mapping[modality_pair]
 
 
 def check_model_modality_acquisition(

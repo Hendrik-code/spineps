@@ -400,7 +400,6 @@ class Unet2D(nn.Module):
         self.channels = channels
 
         init_dim = default(init_dim, dim)
-        # print(init_dim, channels)
         self.init_conv = nn.Conv2d((channels + conditional_dimensions) * patch_size * patch_size, init_dim, 7, padding=3)
 
         dims = [init_dim, *(int(dim * m) for m in dim_mults)]

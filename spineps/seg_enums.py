@@ -195,12 +195,10 @@ class InputType(Enum_Compare):
 
 
 class OutputType(Enum_Compare):
-    """Type of model output: a segmentation (``seg``), softmax logits or an uncertainty map (``unc``)."""
+    """Type of model output: a segmentation (``seg``) or softmax logits."""
 
     seg = auto()
-    # seg_modelres = auto()
     softmax_logits = auto()
-    unc = auto()
 
 
 class ErrCode(Enum_Compare):

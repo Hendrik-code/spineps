@@ -377,9 +377,6 @@ class SegmentationModel(ABC):
             "aquisition": str(self.acquisition()),
             "resolution_range": str(self.inference_config.resolution_range),
         }
-        # if input_zms is not None:
-        #    proc_zms = self.calc_recommended_resampling_zoom(input_zms)
-        #    info["resolution_processed"] = str(proc_zms)
         return info
 
     def __str__(self) -> str:

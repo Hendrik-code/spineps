@@ -34,6 +34,18 @@ The semantic mask uses these labels:
 | 100   | Vertebra_Disc            |
 | 26    | Sacrum                   |
 
+CT models additionally use these labels:
+
+| Label | Structure                        |
+| :---: | --------------------------------- |
+| 51    | Dens_axis (odontoid process of C2) |
+| 70    | Sacrum_Sacral_Ala_Left            |
+| 71    | Sacrum_Sacral_Ala_Right           |
+| 72    | Sacrum_Posterior_Sacral_Elements  |
+| 73    | Sacrum_Body                       |
+| 74    | Sacrum_Endplate                   |
+| 80    | Metal                             |
+
 ## Instance phase — [`spineps.phase_instance`](../api/phases.md)
 
 Derives a per-vertebra instance mask from the vertebra subregions. For each corpus center of mass it
