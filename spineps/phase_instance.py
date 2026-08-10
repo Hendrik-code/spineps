@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from TPTBox import NII, Location, Log_Type
 from TPTBox.core.np_utils import (
-    np_calc_crop_around_centerpoint,
+    _np_get_min_max_pad,
     np_center_of_mass,
     np_connected_components,
     np_count_nonzero,
@@ -105,11 +105,7 @@ def predict_instance_mask(
 
         # Padding?
         if pad_size > 0:
-            # logger.print(seg_nii_rdy.shape)
-            arr = seg_nii_rdy.get_array()
-            arr = np.pad(arr, pad_size, mode="edge")
-            seg_nii_rdy.set_array_(arr)
-            # logger.print(seg_nii_rdy.shape)
+            seg_nii_rdy = seg_nii_rdy.apply_pad(pad_size)
 
         zms = seg_nii_rdy.zoom
         logger.print("zms", zms, verbose=verbose)
@@ -203,11 +199,7 @@ def predict_instance_mask(
 
         # Uncrop again
         if pad_size > 0:
-            # logger.print(whole_vert_nii_uncropped.shape)
-            arr = whole_vert_nii_uncropped.get_array()
-            arr = arr[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size]
-            whole_vert_nii_uncropped.set_array_(arr)
-            # logger.print(whole_vert_nii_uncropped.shape)
+            whole_vert_nii_uncropped.apply_pad(-pad_size)
 
     return whole_vert_nii_uncropped, ErrCode.OK
 
@@ -585,6 +577,53 @@ def split_by_plane(
     return segvert
 
 
+def nii_calc_crop_around_centerpoint(
+    poi: tuple[int, ...] | tuple[float, ...],
+    arr: NII,
+    cutout_size: tuple[int, ...],
+    pad_to_size: Sequence[int] | np.ndarray | int = 0,
+) -> tuple[NII, tuple[slice, slice, slice], tuple]:
+    """Crops a fixed-size region centred on a given point, optionally padding near-edge regions.
+
+    Args:
+        poi: Center point of the cutout, one coordinate per dimension.
+        arr: Input array to crop.
+        cutout_size: Desired size of the cutout in each dimension.
+        pad_to_size: Additional symmetric padding to add around the cutout.
+            Can be a single int (same for all dims) or a per-dim sequence.
+            Defaults to 0.
+
+    Returns:
+        tuple: A 3-element tuple containing:
+            - np.ndarray: The cropped (and padded) sub-array.
+            - tuple[slice, ...]: Slices used to extract the cutout from ``arr``.
+            - tuple: Per-dimension padding amounts applied as ``(pad_before, pad_after)``.
+    """
+    n_dim = len(poi)
+    if isinstance(pad_to_size, int):
+        pad_to_size = np.ones(n_dim) * pad_to_size
+    assert n_dim == len(arr.shape) == len(cutout_size) == len(pad_to_size), (
+        f"dimension mismatch, got dim {n_dim}, poi {poi}, arr shape {arr.shape}, cutout {cutout_size}, pad_to_size {pad_to_size}"
+    )
+
+    poi = tuple(int(i) for i in poi)
+    shape = arr.shape
+    # Get cutout range
+    cutout_coords = []
+    padding = []
+    for d in range(n_dim):
+        _min, _max, _pad_min, _pad_max = _np_get_min_max_pad(poi[d], shape[d], cutout_size[d] // 2, pad_to_size[d] // 2)
+        cutout_coords += [_min, _max]
+        padding.append((int(_pad_min), int(_pad_max)))
+    # cutout_coords = (x_min, x_max, y_min, y_max, z_min, z_max)
+    # padding = ((x_pad_min, x_pad_max), (y_pad_min, y_pad_max), (z_pad_min, z_pad_max))
+
+    cutout_coords_slices = tuple(slice(cutout_coords[i], cutout_coords[i + 1]) for i in range(0, n_dim * 2, 2))
+    arr_cut: NII = arr[cutout_coords_slices]
+    arr_cut = arr_cut.apply_pad(tuple(padding), verbose=False)
+    return (arr_cut, cutout_coords_slices, tuple(padding))
+
+
 def collect_vertebra_predictions(
     seg_nii: NII,
     model: SegmentationModel,
@@ -661,7 +700,7 @@ def collect_vertebra_predictions(
     logger.print("Vertebra collect in", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
 
     # seg_nii_for_cut is constant across the loop; read its array once instead of copying it per centroid.
-    seg_arr_c = seg_nii_for_cut.get_seg_array()
+    seg_arr_c = seg_nii_for_cut  # .get_seg_array()
     # First gather every cutout, then run them through the model in batched forward passes instead of one GPU call
     # per centroid. Every cutout has the same fixed cutout_size, so they stack cleanly into one batch and the batched
     # result is identical (in fp32) to predicting each cutout on its own.
@@ -669,7 +708,7 @@ def collect_vertebra_predictions(
     cut_meta: list[tuple[int, tuple, tuple, tuple]] = []  # (com_idx, com, cutout_coords, paddings)
     for com_idx, com in enumerate(tqdm(corpus_coms, desc=logger._get_logger_prefix() + " Vertebra Body cutouts")):
         # Shift the com until there is a segmentation there (to account for mishaps in the com calculation)
-        seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
+        seg_at_com = seg_arr_c[int(com[0]), int(com[1]), int(com[2])] != 0
         orig_com = (com[0], com[1], com[2])
         while not seg_at_com:
             com = (com[0], com[1] + 5, com[2])  # noqa: PLW2901
@@ -677,11 +716,10 @@ def collect_vertebra_predictions(
                 logger.print("Collect Vertebra Predictions: One Cutout at weird position", Log_Type.FAIL)
                 com = orig_com  # noqa: PLW2901
                 break
-            seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
-
+            seg_at_com = seg_arr_c[int(com[0]), int(com[1]), int(com[2])] != 0
         # Calc cutout
-        arr_cut, cutout_coords, paddings = np_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size)
-        cut_nii = seg_nii_for_cut.set_array(arr_cut, verbose=False).reorient_()
+        cut_nii, cutout_coords, paddings = nii_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size)
+        # cut_nii = seg_nii_for_cut.set_array(arr_cut, verbose=False).reorient_()
         debug_data[f"inst_cutout_vert_nii_{com_idx}_cut"] = cut_nii
         cut_niis.append(cut_nii)
         cut_meta.append((com_idx, com, cutout_coords, paddings))

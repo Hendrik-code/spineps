@@ -48,7 +48,7 @@ class PLNet(pl.LightningModule):
     Dice metric logging and optimizer configuration.
     """
 
-    def __init__(self, opt: Namespace, do2D: bool = False, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
+    def __init__(self, opt: Namespace, do2D: bool = False, num_channels=11, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         """Build the network and configure losses, metrics and training hyperparameters.
 
         Args:
@@ -66,7 +66,7 @@ class PLNet(pl.LightningModule):
             dim=8,
             dim_mults=(1, 2, 4, 8),
             out_dim=4,
-            channels=1 if not opt.channelwise else 11,
+            channels=1 if not opt.channelwise else num_channels,
         )
 
         self.do2D = do2D
