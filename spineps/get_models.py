@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, Union
 
 from TPTBox import Log_Type, No_Logger
 from tqdm import tqdm
@@ -107,9 +106,9 @@ def get_labeling_model(model_name: str, **kwargs) -> VertLabelingClassifier:
     return _get_model_by_name(model_name, modelid2folder_labeling(), SpinepsPhase.LABELING, "labeling", **kwargs)
 
 
-_modelid2folder_semantic: Optional[dict[str, Union[Path, str]]] = None
-_modelid2folder_instance: Optional[dict[str, Union[Path, str]]] = None
-_modelid2folder_labeling: Optional[dict[str, Union[Path, str]]] = None
+_modelid2folder_semantic: dict[str, Path | str] | None = None
+_modelid2folder_instance: dict[str, Path | str] | None = None
+_modelid2folder_labeling: dict[str, Path | str] | None = None
 
 
 def modelid2folder_semantic() -> dict[str, Path | str]:
@@ -248,10 +247,6 @@ def get_actual_model(
         FileNotFoundError: If no inference_config.json is found in the given folder.
         AssertionError: If more than one inference_config.json is found in the given folder.
     """
-    # if isinstance(in_config, MODELS):
-    #    in_dir = filepath_model(in_config.value, model_dir=None)
-    # else:
-
     in_dir = in_config
 
     if os.path.isdir(str(in_dir)):  # noqa: PTH112
@@ -267,9 +262,6 @@ def get_actual_model(
             f"get_actual_model: found more than one inference_config.json in {in_dir}/**/*inference_config.json. Ambiguous behavior, please manually correct this by removing one of these.\nFound {path_search}"
         )
         in_dir = path_search[0]
-    # else:
-    #    base = filepath_model(in_config, model_dir=None)
-    #    in_dir = base
 
     inference_config = load_inference_config(str(in_dir))
     modeltype: type[SegmentationModel] = modeltype2class(inference_config.modeltype)

@@ -112,7 +112,6 @@ class VertLabelingClassifier(SegmentationModel):
         """
         super().__init__(model_folder, inference_config, use_cpu, default_verbose, default_allow_tqdm)
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
-        # self.model: PLClassifier = model
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.final_size: tuple[int, int, int] = DEFAULT_CLASSIFIER_INPUT_SIZE
         self.totensor = ToTensor()
@@ -192,7 +191,6 @@ class VertLabelingClassifier(SegmentationModel):
             NotImplementedError: Always; use from_checkpoint_path instead.
         """
         raise NotImplementedError()
-        # find checkpoint yourself, then load from checkpoitn path
 
     @classmethod
     def from_checkpoint_path(cls, checkpoint_path: str | Path) -> VertLabelingClassifier:
@@ -212,9 +210,6 @@ class VertLabelingClassifier(SegmentationModel):
         if isinstance(checkpoint_path, str):
             checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f"Checkpoint path does not exist: {checkpoint_path}"
-        # model = PLClassifier.load_from_checkpoint(
-        #    str(checkpoint_path),
-        # )
         d = cls(checkpoint_path.parent.parent)
         logger.print("Model loaded from", checkpoint_path, verbose=True)
         return d
@@ -339,7 +334,6 @@ class VertLabelingClassifier(SegmentationModel):
         img_v = img.set_array(arr_cut).reorient_(("I", "P", "L"))
         seg_v = seg.set_array(sem_cut).reorient_(("I", "P", "L"))
 
-        # angle = 0
         if angle is not None and angle != 0:
             arr_cut = rotate_patch_sagitally(img_v.get_array(), -angle, msk=False)
             sem_cut = rotate_patch_sagitally(seg_v.get_seg_array(), -angle, msk=True)
@@ -358,8 +352,6 @@ class VertLabelingClassifier(SegmentationModel):
 
         img_v.set_array_(arr_cut).reorient_(ori)
         seg_v.set_array_(sem_cut).reorient_(ori)
-        # img_v.save("/DATA/NAS/ongoing_projects/hendrik/img_v.nii.gz")
-        # seg_v.save("/DATA/NAS/ongoing_projects/hendrik/seg_v.nii.gz")
         return self._run_array(img_v.get_array(), seg_v.get_seg_array())  # sem_cut
 
     def _run_nii(self, img_nii: NII):
@@ -426,9 +418,7 @@ class VertLabelingClassifier(SegmentationModel):
         # TODO seg channelwise and stuff
 
         model_input = d["img"]
-        # print(model_input.shape)
         model_input.unsqueeze_(0)
-        # print(model_input.shape)
         model_input = model_input.to(torch.float32)
         model_input = model_input.to(self.device)
 

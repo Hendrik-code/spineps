@@ -268,22 +268,11 @@ def find_most_probably_sequence(  # noqa: C901
                 logger.print(f"Setting vert {r}, label {c} to {cost_value}, {internal_to_real_path(p)}")
             return min_costs_path[r][c]
 
-    # def t13_cost(r, c, pnext, p, region_cur):
-    #    cost_add = 0
-    #    if vertt13_cost is not None:
-    #        vt13_cost = vertt13_cost[r][1]
-    #        # print(r, c, p[-1][1], p[-2][1], internal_to_real_path(p))
-    #        if p[-1][1] == 18 and p[-2][1] == 18:
-    #            print(f"Added F {vt13_cost} to {r}, {c}, {internal_to_real_path(p)}")
-    #            cost_add += vt13_cost
-    #    return cost_add
-
     def t13_cost_single(r, c):
         cost_add = 0
         if vertt13_cost is not None:
             vt13_cost = vertt13_cost[r][1]
             if c == 18:
-                # print(f"Added F {vt13_cost} to {r}, {c}")
                 cost_add += vt13_cost
         return cost_add
 

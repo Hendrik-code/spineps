@@ -4,8 +4,12 @@
 # coverage html
 from __future__ import annotations
 
+import contextlib
+import io
+import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 from TPTBox import No_Logger
@@ -18,7 +22,14 @@ logger = No_Logger()
 
 class Test_DiscLabels(unittest.TestCase):
     def test_main_without_args(self):
-        self.skipTest("Not implemented")
+        # --path-vert is required; omitting it must exit via argparse, not proceed.
+        with (
+            self.assertRaises(SystemExit) as cm,
+            mock.patch.object(sys, "argv", ["generate_disc_labels"]),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            main()
+        self.assertEqual(cm.exception.code, 2)
 
     def test_image(self):
         img = Image(param=np.array([0, 0, 0, 0]))

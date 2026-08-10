@@ -290,8 +290,6 @@ def run_sample(opt: Namespace):
         "model_instance": model_instance,
         "model_labeling": model_labeling,
         "derivative_name": opt.derivative_name,
-        #
-        # "save_uncertainty_image": opt.save_unc_img,
         "save_softmax_logits": opt.save_softmax_logits,
         "save_debug_data": opt.save_debug,
         "save_modelres_mask": opt.save_modelres_mask,
@@ -388,8 +386,6 @@ def run_dataset(opt: Namespace):
         "model_labeling": model_labeling,
         "rawdata_name": opt.rawdata_name,
         "derivative_name": opt.derivative_name,
-        #
-        # "save_uncertainty_image": opt.save_unc_img,
         "save_modelres_mask": opt.save_modelres_mask,
         "save_softmax_logits": opt.save_softmax_logits,
         "save_debug_data": opt.save_debug,

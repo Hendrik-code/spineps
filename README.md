@@ -194,16 +194,36 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 
 | argument | explanation |
 | :--- | --------- |
-| -i   | Absolute path to the single nifty file (.nii.gz) to be processed |
-| --model-semantic, -ms  | The model used for the semantic segmentation |
-| --model-instance, -mi  | The model used for the vertebra instance segmentation |
-| --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling |
+| --input, -i   | Absolute path to the single nifty file (.nii.gz) to be processed (required) |
+| --model-semantic, -ms  | The model used for the semantic segmentation (required) |
+| --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: instance) |
+| --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling (default: t2w_labeling) |
+
+Plus the common processing options below, shared with `dataset` mode. Run `spineps sample -h` for the full list
+with defaults.
+
+#### Common processing options (both `sample` and `dataset`)
+
+| argument | explanation |
+| :--- | --------- |
 | --derivative-name, -dn  | Name of the derivatives folder (default: derivatives_seg) |
 | --save-debug, -sd  | Saves debug data and intermediate results in a separate folder (default: False) |
+| --save-softmax-logits, -ssl | Saves an .npz of the semantic model's raw softmax logits (default: False) |
+| --save-modelres-mask, -smrm | Also saves the semantic mask at the model's native resolution (default: False) |
 | --override-semantic, -os  | Override existing seg-spine files (default: False) |
 | --override-instance, -oi  | Override existing seg-vert files (default: False) |
+| --override-postpair, -opp | Override existing cleaned/paired files (default: False) |
 | --override-ctd, -oc  | Override existing centroid files (default: False) |
+| --ignore-inference-compatibility, -iic | Don't skip inputs whose modality doesn't match the models (default: False) |
+| --crop / --no-crop | Crop the input to the spine before semantic segmentation (default: on) |
+| --n4 / --no-n4 | N4 bias field correction before semantic segmentation, MRI only (default: on) |
+| --enforce-12-thoracic | Force the labeling model to predict exactly 12 thoracic vertebrae (default: False) |
 | --batch-size, -bs  | Vertebra cutouts per batched forward pass; higher is faster but uses more GPU memory. Only affects GPU memory; host RAM usage in the instance phase scales with scan length/vertebra count instead (default: 4) |
+| --amp | Run the instance model's forward pass under CUDA autocast, faster but may slightly change output (default: False) |
+| --step-size | Semantic model sliding-window tile step size; larger is faster but less accurate (default: model's own setting) |
+| --tta / --no-tta | Force test-time mirroring augmentation on/off for the semantic model (default: model's own setting) |
+| --cpu | Run on CPU instead of GPU, much slower (default: False) |
+| --run-cprofiler, -rcp | Runs a cProfiler over the entire run (default: False) |
 | --verbose, -v  | Prints much more stuff, may fully clutter your terminal (default: False) |
 
 There are a lot more arguments, run `spineps sample -h` to see them.
@@ -211,10 +231,11 @@ There are a lot more arguments, run `spineps sample -h` to see them.
 #### Example
 ```bash
 #T2w sagittal
-spineps sample --ignore-bids-filter --ignore-inference-compatibility -i /path/sub-testsample_T2w.nii.gz --model-semantic t2w --model-instance instance
+spineps sample --ignore-inference-compatibility -i /path/sub-testsample_T2w.nii.gz --model-semantic t2w --model-instance instance
 #T1w sagittal
-spineps sample --ignore-bids-filter --ignore-inference-compatibility -i ~/path/sub-testsample_T1w.nii.gz --model-semantic t1w --model-instance instance
+spineps sample --ignore-inference-compatibility -i ~/path/sub-testsample_T1w.nii.gz --model-semantic t1w --model-instance instance
 ```
+(`--ignore-bids-filter` is a `dataset`-only option — see below — it isn't accepted by `sample`.)
 
 
 ### Dataset
@@ -249,16 +270,25 @@ Meaning you can have some key-value pairs (like `sub-<id>`) in the name. Those k
 
 To that end, we are using TPTBox (see https://github.com/Hendrik-code/TPTBox)
 
-It supports the same arguments as in sample mode (see table above), and additionally:
 | argument | explanation |
 | :--- | --------- |
+| --directory, -i, -d | Absolute path to the dataset directory, preferably a BIDS dataset (required) |
+| --model-semantic, -ms  | The model used for the semantic segmentation, or `auto` to select automatically by modality (default: t2w) |
+| --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: instance) |
+| --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling (default: t2w_labeling) |
 | --rawdata-name, -rn | Sets the name of the rawdata folder of the dataset (default: "rawdata")
 | --ignore-bids-filter, -ibf   | If true, will search the BIDS dataset without the strict filters. Use with care! (default: False) |
 | --ignore-model-compatibility, -imc  | If true, will not stop the pipeline to use the given models on unfitting input modalities (default: False) |
 | --save-log, -sl  | If true, saves the log into a separate folder in the dataset directory (default: False) |
 | --save-snaps-folder, -ssf  | If true, additionally saves the snapshots in a separate folder in the dataset directory (default: False) |
 
-For a full list of arguments, call `spineps dataset -h`
+It also accepts all of the [common processing options](#single-nifty) listed above (`--batch-size`, `--crop`,
+`--n4`, `--amp`, etc.). For a full list of arguments, call `spineps dataset -h`.
+
+#### Example
+```bash
+spineps dataset --ignore-bids-filter -i /path/to/dataset-folder --model-semantic t2w --model-instance instance
+```
 
 
 ## Segmentation
@@ -296,7 +326,7 @@ In the subregion segmentation:
 CT only
 | Label | Structure |
 | :---: | --------- |
-| 51  | Dense |
+| 51  | Dens_axis (odontoid process of C2) |
 | 70  | Sacrum_Sacral_Ala_Left |
 | 71  | Sacrum_Sacral_Ala_Right |
 | 72  | Sacrum_Posterior_Sacral_Elements |

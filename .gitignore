@@ -4,7 +4,6 @@ nnUNet/*
 .vscode/
 spineps/models/*
 
-*.png
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -109,8 +108,6 @@ ENV/
 .mypy_cache/
 
 # project directories
-code/bids
-code/bids/*
 data
 data/*
 output/A/
@@ -121,22 +118,8 @@ unet/out*/
 *.nii
 *.png
 *.csv
-FashionMNIST/
-MNIST/
 .idea/
-anomaly_logs/*
-anomaly_logs
-forward_weighting_tests
-forward_weighting_tests/*
 evaluation_logs/
-corner_detection_test/
-corner_detection_test/*
-paper/
-paper/*
-code/Unet3D/lightning_logs/
-code/Unet3D/lightning_logs/*
-code/Unet3D/L_logs_archive/
-code/Unet3D/L_logs_archive/*
 
 # model checkpoints
 *.pth
@@ -146,10 +129,9 @@ code/Unet3D/L_logs_archive/*
 unet/*_seg/
 *.jpg
 
-*.txt !Notes/
+*.txt
 weights/
 *.gif
-*.png
 *.npy
 
 lightning_logs/

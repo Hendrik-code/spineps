@@ -32,6 +32,8 @@ from spineps.seg_model import SegmentationModel
 from spineps.seg_run import segment_image
 
 # Accepted forms for an input image and a model argument.
+# NOTE: these are plain runtime assignments, not annotations, so `from __future__ import annotations` does not
+# defer them -- `X | Y` on bare types needs Python 3.10+, so this must stay `Union[...]` for the 3.9 floor.
 ImageInput = Union[str, Path, NII, BIDS_FILE]
 ModelInput = Union[str, Path, SegmentationModel, VertLabelingClassifier]
 
