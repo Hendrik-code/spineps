@@ -68,6 +68,7 @@ def phase_postprocess_combined(
     verbose: bool = False,
     disable_c1=True,
     sacrum_ids=(v_name2idx["S1"],),
+    metal_ids=(Location.Metal.value,),
 ) -> tuple[NII, NII]:
     """Run the combined semantic/instance post-processing pipeline and return cleaned, anatomically labeled masks.
 
@@ -165,6 +166,7 @@ def phase_postprocess_combined(
         logger.print("seg_nii", seg_nii_cleaned.unique())
 
         whole_vert_nii_cleaned[seg_nii_cleaned.extract_label(sacrum_ids).get_seg_array() == 1] = v_name2idx["S1"]
+        whole_vert_nii_cleaned[seg_nii_cleaned.extract_label(metal_ids).get_seg_array() == 1] = Location.Metal.value
         whole_vert_nii_cleaned[seg_nii_cleaned == Location.Dens_axis.value] = C2_INSTANCE_LABEL
         vert_arr_cleaned, seg_arr_cleaned = add_ivd_ep_vert_label(whole_vert_nii_cleaned, seg_nii_cleaned)
         #

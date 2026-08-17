@@ -645,6 +645,7 @@ def segment_image(  # noqa: C901
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             has_c1 = model_semantic.inference_config.has_c1
             sacrum_ids = model_semantic.inference_config.sacrum_ids
+            metal_ids = model_semantic.inference_config.metal_ids
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
                 img_nii=input_nii_,
                 seg_nii=seg_nii_back,
@@ -660,6 +661,7 @@ def segment_image(  # noqa: C901
                 verbose=verbose,
                 disable_c1=not has_c1,
                 sacrum_ids=sacrum_ids,
+                metal_ids=metal_ids,
             )
             seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
             vert_nii_clean.assert_affine(other=input_nii_)

@@ -523,18 +523,18 @@ class SegmentationModelUnet3D(SegmentationModel):
         if not os.path.exists(self.model_folder):  # noqa: PTH110
             raise FileNotFoundError(f"model_folder does not exist, got {self.model_folder}")
 
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() and not self.use_cpu else "cpu")
         chktpath = search_path(self.model_folder, "**/*weights*.ckpt")
         if len(chktpath) != 1:
             raise FileNotFoundError(
                 f"expected exactly one '*weights*.ckpt' checkpoint in {self.model_folder}, found {len(chktpath)}: {chktpath}"
             )
         try:
-            model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False)
+            model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False, map_location=self.device)
         except RuntimeError:
-            model = PLNet_new.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False)
+            model = PLNet_new.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False, map_location=self.device)
 
         model.eval()
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() and not self.use_cpu else "cpu")
         model.to(self.device)
         self.predictor = model
         self.print("Model loaded from", self.model_folder, Log_Type.OK, verbose=True)

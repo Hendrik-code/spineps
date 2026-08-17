@@ -17,6 +17,7 @@ SPATIAL_DIMS = 3
 # thresholds are multiplied by the resolution scaling factor at runtime.
 DEFAULT_CUTOUT_SIZE = (248, 304, 64)
 DEFAULT_SACRUM_IDS = (26,)
+DEFAULT_METAL = (Location.Metal.value,)
 DEFAULT_CORPUS_SIZE_CLEANING = 100  # minimum corpus component size in voxels
 DEFAULT_CORPUS_BORDER_THRESHOLD = 10
 DEFAULT_VERT_SIZE_THRESHOLD = 250  # minimum vertebra size in voxels
@@ -49,6 +50,7 @@ class Segmentation_Inference_Config:
         corpus_size_cleaning=DEFAULT_CORPUS_SIZE_CLEANING,
         corpus_border_threshold=DEFAULT_CORPUS_BORDER_THRESHOLD,
         vert_size_threshold=DEFAULT_VERT_SIZE_THRESHOLD,
+        metal=DEFAULT_METAL,
         mapping=None,
         **kwargs,
     ):
@@ -109,6 +111,7 @@ class Segmentation_Inference_Config:
         self.has_c1 = has_c1
         self.needs_corp = needs_corp
         self.sacrum_ids = sacrum_ids
+        self.metal_ids = metal
         self.cutout_size = cutout_size
         self.corpus_size_cleaning = corpus_size_cleaning * scaling_factor  # voxel threshold * resolution
         self.corpus_border_threshold = corpus_border_threshold
