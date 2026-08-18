@@ -17,7 +17,7 @@ link = "https://github.com/Hendrik-code/spineps/releases/download/"
 current_highest_version = "v1.0.9"
 current_instance_highest_version = "v1.2.0"
 current_labeling_highest_version = "v1.4.0"
-current_highest_ct_version = "v1.4.2"
+current_highest_ct_version = "v2.0.0"
 
 
 phase_to_version: dict[str, str] = {
@@ -25,6 +25,7 @@ phase_to_version: dict[str, str] = {
     SpinepsPhase.INSTANCE.name: current_instance_highest_version,
     SpinepsPhase.LABELING.name: current_labeling_highest_version,
     SpinepsPhase.SEMANTIC.name + "_ct": current_highest_ct_version,
+    SpinepsPhase.INSTANCE.name + "_ct_instance": current_highest_ct_version,
 }
 
 instances: dict[str, Path | str] = {
@@ -37,6 +38,9 @@ semantic: dict[str, Path | str] = {
     "vibe": link + current_highest_version + "/vibe.zip",
     "ct": link + current_highest_ct_version + "/ct.zip",
 }
+for i, j in semantic.copy().items():
+    semantic[i + "_semantic"] = j
+
 labeling: dict[str, Path | str] = {
     "t2w_labeling": link + current_labeling_highest_version + "/labeling.zip",
     "ct_labeling": link + current_labeling_highest_version + "/ct_labeling.zip",
@@ -68,7 +72,7 @@ def download_if_missing(key: str, url: Path | str, phase: SpinepsPhase) -> Path:
     Returns:
         Path: Path to the local model folder containing the (possibly just downloaded) weights.
     """
-    version = phase_to_version.get(f"{phase}_{key}", phase_to_version[phase.name])
+    version = phase_to_version.get(f"{phase.name}_{key}", phase_to_version[phase.name])
     out_path = Path(get_mri_segmentor_models_dir(), download_names[key] + "_" + version)
     if not out_path.exists():
         download_weights(url, out_path)
