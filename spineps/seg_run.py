@@ -50,7 +50,7 @@ def process_dataset(  # noqa: C901
     override_instance: bool = False,
     override_postpair: bool = False,
     override_ctd: bool = False,
-    snapshot_copy_folder: Path | None | bool = None,
+    snapshot_copy_folder: Path | bool | None = None,
     pad_size: int = 4,
     # Processings
     # Semantic

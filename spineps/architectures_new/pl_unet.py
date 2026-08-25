@@ -48,7 +48,7 @@ class PLNet(pl.LightningModule):
     Dice metric logging and optimizer configuration.
     """
 
-    def __init__(self, opt: Namespace, do2D: bool = False, num_channels=11, dim=8, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
+    def __init__(self, opt: Namespace | None = None, do2D: bool = False, num_channels=11, dim=8, *args: Any, **kwargs: Any) -> None:  # ruff: ignore[unused-method-argument]
         """Build the network and configure losses, metrics and training hyperparameters.
 
         Args:
@@ -58,9 +58,11 @@ class PLNet(pl.LightningModule):
             *args (Any): Unused positional arguments.
             **kwargs (Any): Unused keyword arguments.
         """
+        if opt is None:
+            opt = Namespace(**kwargs)
+
         super().__init__()
         self.save_hyperparameters()
-
         arch = Unet2D if do2D else Unet3D
         self.network = arch(
             dim=dim,

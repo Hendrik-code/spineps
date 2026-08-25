@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 from TPTBox import NII, Location, Log_Type
 from TPTBox.core.np_utils import (

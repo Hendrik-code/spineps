@@ -384,7 +384,7 @@ class VertLabelingClassifier(SegmentationModel):
             predictions[v] = {"soft": logits_soft, "pred": pred_cls}
         return predictions
 
-    def _run_array(self, img_arr: np.ndarray, seg_arr: np.ndarray | None | torch.Tensor = None):  # , seg_arr: np.ndarray):
+    def _run_array(self, img_arr: np.ndarray, seg_arr: np.ndarray | torch.Tensor | None = None):  # , seg_arr: np.ndarray):
         """Applies preprocessing and runs the classifier forward pass on a single image patch.
 
         Converts the patch (and optional segmentation) to tensors, applies intensity normalization and center cropping,
