@@ -19,24 +19,30 @@ from spineps.phase_post import phase_postprocess_combined
 from spineps.phase_pre import compute_crop, preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import logger, predict_centroids_from_both
 from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition, find_best_matching_model
 from spineps.utils.citation_reminder import citation_reminder
 
 
+class _NoOpDebugDict(dict):
+    """Dict-like sink that discards writes; used to skip retaining debug data when it won't be saved."""
+
+    def __setitem__(self, key, value):
+        pass
+
+
 @citation_reminder
-def process_dataset(
+def process_dataset(  # noqa: C901
     dataset_path: Path,
-    model_instance: Segmentation_Model,
-    model_semantic: list[Segmentation_Model] | Segmentation_Model | None = None,
+    model_instance: SegmentationModel,
+    model_semantic: list[SegmentationModel] | SegmentationModel | None = None,
     model_labeling: VertLabelingClassifier | None = None,
     #
     rawdata_name: str = "rawdata",
     derivative_name: str = "derivatives_seg",
     modalities: list[Modality_Pair] | Modality_Pair = [(Modality.T2w, Acquisition.sag)],  # noqa: B006
     save_debug_data: bool = False,
-    # save_uncertainty_image: bool = False,
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_log_data: bool = True,
@@ -44,7 +50,7 @@ def process_dataset(
     override_instance: bool = False,
     override_postpair: bool = False,
     override_ctd: bool = False,
-    snapshot_copy_folder: Path | None | bool = None,
+    snapshot_copy_folder: Path | bool | None = None,
     pad_size: int = 4,
     # Processings
     # Semantic
@@ -53,11 +59,14 @@ def process_dataset(
     proc_sem_remove_inferior_beyond_canal: bool = False,
     proc_sem_clean_beyond_largest_bounding_box: bool = True,
     proc_sem_clean_small_cc_artifacts: bool = True,
+    proc_sem_step_size: float | None = None,
     # Instance
     proc_inst_corpus_clean: bool = True,
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
+    proc_inst_batch_size: int = 4,
+    proc_inst_amp: bool = False,
     # Labeling
     proc_lab_force_no_tl_anomaly: bool = False,
     # Both
@@ -69,18 +78,19 @@ def process_dataset(
     ignore_model_compatibility: bool = False,
     ignore_inference_compatibility: bool = False,
     ignore_bids_filter: bool = False,
+    tta: bool | None = None,
     log_inference_time: bool = True,
     verbose: bool = False,
 ):
     """Runs the SPINEPS framework over a whole BIDS-conform dataset.
 
     Iterates over every subject in the BIDS dataset, queries the matching scans for each requested modality pair and runs
-    process_img_nii on each, producing semantic (subregion), vertebra (instance) and centroid outputs plus a snapshot.
+    segment_image on each, producing semantic (subregion), vertebra (instance) and centroid outputs plus a snapshot.
 
     Args:
         dataset_path (Path): Path to the BIDS dataset.
-        model_instance (Segmentation_Model): Model for the vertebra (instance) segmentation.
-        model_semantic (list[Segmentation_Model] | Segmentation_Model | None, optional): Models for the subregion (semantic)
+        model_instance (SegmentationModel): Model for the vertebra (instance) segmentation.
+        model_semantic (list[SegmentationModel] | SegmentationModel | None, optional): Models for the subregion (semantic)
             segmentation, one per modality pair. If None, attempts to find a matching model for each modality. Defaults to None.
         model_labeling (VertLabelingClassifier | None, optional): Classifier used to label the vertebra instances. Defaults to None.
         rawdata_name (str, optional): Name of the rawdata folder. Defaults to "rawdata".
@@ -109,12 +119,18 @@ def process_dataset(
             bounding box. Defaults to True.
         proc_sem_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
             semantic mask. Defaults to True.
+        proc_sem_step_size (float | None, optional): Sliding-window tile step size for the semantic model; larger is
+            faster but less accurate. If None, uses the model's configured default. Defaults to None.
         proc_inst_corpus_clean (bool, optional): If true, cleans the vertebra corpus during instance processing. Defaults to True.
         proc_inst_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
             instance mask. Defaults to True.
         proc_inst_largest_k_cc (int, optional): If greater than 0, keeps only the largest k connected components of the instance
             mask. Defaults to 0.
         proc_inst_detect_and_solve_merged_corpi (bool, optional): If true, detects and splits merged vertebra corpi. Defaults to True.
+        proc_inst_batch_size (int, optional): Number of vertebra cutouts run through the instance model per batched forward
+            pass. Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
+        proc_inst_amp (bool, optional): Run the instance forward pass under CUDA autocast (faster, may slightly change
+            values). Defaults to False.
         proc_lab_force_no_tl_anomaly (bool, optional): If true, forces the labeling to assume no thoracolumbar transition anomaly.
             Defaults to False.
         proc_fill_3d_holes (bool, optional): If true, fills 3D holes during post-processing. Defaults to True.
@@ -125,6 +141,9 @@ def process_dataset(
         ignore_inference_compatibility (bool, optional): If true, ignores compatibility issues between models and individual inputs.
             Defaults to False.
         ignore_bids_filter (bool, optional): If true, disables the BIDS query filters and processes all niftys found. Defaults to False.
+        tta (bool | None, optional): If not None, forces test-time augmentation (mirroring) on/off for the semantic
+            model(s), covering both explicitly-passed and auto-resolved models. If None, uses each model's configured
+            setting. Defaults to None.
         log_inference_time (bool, optional): If true, logs the inference time of each step. Defaults to True.
         verbose (bool, optional): If true, prints verbose information. Defaults to False.
     """
@@ -133,7 +152,8 @@ def process_dataset(
     # INITIALIZATION
     if not isinstance(modalities, list):
         modalities = [modalities]
-    assert len(modalities) > 0, "you must specifiy the modalities to be segmented!"
+    if len(modalities) == 0:
+        raise ValueError("you must specify the modalities to be segmented!")
 
     if snapshot_copy_folder is True:
         snapshot_copy_folder = dataset_path.joinpath("snaps_seg")
@@ -148,6 +168,15 @@ def process_dataset(
         del idx, m
     if not isinstance(model_semantic, list):
         model_semantic = [model_semantic]
+
+    # Optionally force test-time augmentation (mirroring) on/off for the semantic model(s); covers both
+    # explicitly-passed and auto-resolved models. Load eagerly so the toggle reaches the predictor.
+    if tta is not None:
+        for m in model_semantic:
+            if m is not None:
+                if m.predictor is None:
+                    m.load()
+                m.set_test_time_augmentation(tta)
 
     # check models and mod, acq tuples
     compatible = True
@@ -198,15 +227,13 @@ def process_dataset(
                 q.filter("acq", lambda x: x in allowed_acq, required=False)  # noqa: B023
             scans = q.loop_list(sort=True)  # TODO make it family to allow for multi-inputs
             for s in scans:
-                output_paths, errcode = process_img_nii(
+                output_paths, errcode = segment_image(
                     img_ref=s,
                     model_semantic=model,
                     model_instance=model_instance,
                     model_labeling=model_labeling,
                     #
                     derivative_name=derivative_name,
-                    #
-                    # save_uncertainty_image=save_uncertainty_image,
                     save_modelres_mask=save_modelres_mask,
                     save_softmax_logits=save_softmax_logits,
                     save_debug_data=save_debug_data,
@@ -221,11 +248,14 @@ def process_dataset(
                     proc_sem_remove_inferior_beyond_canal=proc_sem_remove_inferior_beyond_canal,
                     proc_sem_clean_beyond_largest_bounding_box=proc_sem_clean_beyond_largest_bounding_box,
                     proc_sem_clean_small_cc_artifacts=proc_sem_clean_small_cc_artifacts,
+                    proc_sem_step_size=proc_sem_step_size,
                     proc_inst_detect_and_solve_merged_corpi=proc_inst_detect_and_solve_merged_corpi,
                     proc_inst_corpus_clean=proc_inst_corpus_clean,
                     proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
                     proc_assign_missing_cc=proc_assign_missing_cc,
                     proc_inst_largest_k_cc=proc_inst_largest_k_cc,
+                    proc_inst_batch_size=proc_inst_batch_size,
+                    proc_inst_amp=proc_inst_amp,
                     proc_clean_inst_by_sem=proc_clean_inst_by_sem,
                     proc_lab_force_no_tl_anomaly=proc_lab_force_no_tl_anomaly,
                     proc_vertebra_inconsistency=proc_vertebra_inconsistency,
@@ -266,14 +296,12 @@ def process_dataset(
 
 
 @citation_reminder
-def process_img_nii(  # noqa: C901
+def segment_image(  # noqa: C901
     img_ref: BIDS_FILE,
-    model_semantic: Segmentation_Model,
-    model_instance: Segmentation_Model,
+    model_semantic: SegmentationModel,
+    model_instance: SegmentationModel,
     model_labeling: VertLabelingClassifier | None = None,
     derivative_name: str = "derivatives_seg",
-    #
-    # save_uncertainty_image: bool = False,
     save_modelres_mask: bool = False,
     save_softmax_logits: bool = False,
     save_debug_data: bool = False,
@@ -296,11 +324,14 @@ def process_img_nii(  # noqa: C901
     proc_sem_remove_inferior_beyond_canal: bool = False,
     proc_sem_clean_beyond_largest_bounding_box: bool = True,
     proc_sem_clean_small_cc_artifacts: bool = True,
+    proc_sem_step_size: float | None = None,
     # Instance
     proc_inst_corpus_clean: bool = True,
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
     proc_inst_detect_and_solve_merged_corpi: bool = True,
+    proc_inst_batch_size: int = 4,
+    proc_inst_amp: bool = False,
     vertebra_instance_labeling_offset=2,
     # Labeling
     proc_lab_force_no_tl_anomaly: bool = False,
@@ -319,6 +350,8 @@ def process_img_nii(  # noqa: C901
     return_output_instead_of_save: bool = False,
     timing=False,
     verbose: bool = False,
+    _nii=None,
+    _dataset_id_ct_crop=100,
 ) -> tuple[dict[str, Path], ErrCode]:
     """Runs the SPINEPS framework over one nifty.
 
@@ -327,8 +360,8 @@ def process_img_nii(  # noqa: C901
 
     Args:
         img_ref (BIDS_FILE): Input BIDS_FILE referencing the image to segment.
-        model_semantic (Segmentation_Model): Model for the subregion (semantic) segmentation.
-        model_instance (Segmentation_Model): Model for the vertebra (instance) segmentation.
+        model_semantic (SegmentationModel): Model for the subregion (semantic) segmentation.
+        model_instance (SegmentationModel): Model for the vertebra (instance) segmentation.
         model_labeling (VertLabelingClassifier | None, optional): Classifier used to label the vertebra instances. Defaults to None.
         derivative_name (str, optional): Name of the derivatives output folder. Defaults to "derivatives_seg".
         save_modelres_mask (bool, optional): If true, additionally saves the semantic mask in the resolution of the model.
@@ -359,12 +392,18 @@ def process_img_nii(  # noqa: C901
             bounding box. Defaults to True.
         proc_sem_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
             semantic mask. Defaults to True.
+        proc_sem_step_size (float | None, optional): Sliding-window tile step size for the semantic model; larger is
+            faster but less accurate. If None, uses the model's configured default. Defaults to None.
         proc_inst_corpus_clean (bool, optional): If true, cleans the vertebra corpus during instance processing. Defaults to True.
         proc_inst_clean_small_cc_artifacts (bool, optional): If true, removes small connected-component artifacts from the
             instance mask. Defaults to True.
         proc_inst_largest_k_cc (int, optional): If greater than 0, keeps only the largest k connected components of the instance
             mask. Defaults to 0.
         proc_inst_detect_and_solve_merged_corpi (bool, optional): If true, detects and splits merged vertebra corpi. Defaults to True.
+        proc_inst_batch_size (int, optional): Number of vertebra cutouts run through the instance model per batched forward
+            pass. Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
+        proc_inst_amp (bool, optional): Run the instance forward pass under CUDA autocast (faster, may slightly change
+            values). Defaults to False.
         vertebra_instance_labeling_offset (int, optional): Offset applied when mapping instance ids to vertebra labels (set to 1
             for CT models that include C1). Defaults to 2.
         proc_lab_force_no_tl_anomaly (bool, optional): If true, forces the labeling to assume no thoracolumbar transition anomaly.
@@ -393,7 +432,12 @@ def process_img_nii(  # noqa: C901
     input_format = img_ref.format
 
     output_paths = output_paths_from_input(
-        img_ref, derivative_name, snapshot_copy_folder, input_format=input_format, non_strict_mode=ignore_bids_filter
+        img_ref,
+        derivative_name,
+        snapshot_copy_folder,
+        input_format=input_format,
+        non_strict_mode=ignore_bids_filter,
+        _dataset_id_ct_crop=_dataset_id_ct_crop,
     )
     out_spine = output_paths["out_spine"]
     out_spine_raw = output_paths["out_spine_raw"]
@@ -423,12 +467,12 @@ def process_img_nii(  # noqa: C901
         return output_paths, ErrCode.ALL_DONE
 
     done_something = False
-    debug_data_run: dict[str, NII] = {}
+    # Avoid retaining full-volume debug copies for the whole run when they'll never be saved (see seg_run.py:699).
+    debug_data_run: dict[str, NII] = {} if save_debug_data else _NoOpDebugDict()
 
     if Modality.CT in model_semantic.modalities():
         proc_normalize_input = False  # Never normalize input if it is an CT
         proc_sem_n4_bias_correction = False  # n4_bias_correction is a MRI thing
-        # proc_assign_missing_cc_fast = True  # TODO remove
         if model_semantic.inference_config.has_c1:
             vertebra_instance_labeling_offset = 1
 
@@ -447,12 +491,20 @@ def process_img_nii(  # noqa: C901
     with logger:
         if verbose:
             model_semantic.logger.default_verbose = True
-        input_nii = img_ref.open_nii()
+        input_nii = _nii if _nii is not None else img_ref.open_nii()
         input_nii.seg = False
         input_nii_ = input_nii.copy()
         if timing:
             logger.print(f"Loading files took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
             start_time2 = perf_counter()
+        if crop is not None:
+            try:
+                logger.print("Input image manuel crop", crop, "from", input_nii.shape)
+                input_nii = input_nii.apply_crop(crop)
+            except Exception:
+                pass
+        logger.print("Input image", input_nii.zoom, input_nii.orientation, input_nii.shape)
+
         # First stage
         if not out_spine_raw.exists() or override_semantic:
             resolution_range = model_semantic.inference_config.resolution_range
@@ -472,7 +524,13 @@ def process_img_nii(  # noqa: C901
                     "Compute spine crop with VIBESegmentator https://link.springer.com/article/10.1007/s00330-025-12035-9", Log_Type.OK
                 )
                 out_vibeseg = output_paths["out_vibeseg"]
-                crop = compute_crop(input_nii, out_vibeseg, ddevice="cpu" if model_semantic.use_cpu else "cuda", logger=logger)
+                crop = compute_crop(
+                    input_nii,
+                    out_vibeseg,
+                    dataset_id=_dataset_id_ct_crop,
+                    ddevice="cpu" if model_semantic.use_cpu else "cuda",
+                    logger=logger,
+                )
                 if timing:
                     logger.print(
                         f"Compute cropping took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
@@ -514,6 +572,7 @@ def process_img_nii(  # noqa: C901
                 proc_clean_small_cc_artifacts=proc_sem_clean_small_cc_artifacts,
                 proc_clean_beyond_largest_bounding_box=proc_sem_clean_beyond_largest_bounding_box,
                 proc_remove_inferior_beyond_canal=proc_sem_remove_inferior_beyond_canal,
+                step_size=proc_sem_step_size,
             )
             if errcode != ErrCode.OK:
                 return output_paths, errcode
@@ -553,6 +612,8 @@ def process_img_nii(  # noqa: C901
                 proc_corpus_clean=proc_inst_corpus_clean,
                 proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
                 proc_inst_largest_k_cc=proc_inst_largest_k_cc,
+                proc_inst_batch_size=proc_inst_batch_size,
+                proc_inst_amp=proc_inst_amp,
             )
             if errcode != ErrCode.OK:
                 logger.print(f"Vert Mask creation failed with errcode {errcode}", Log_Type.FAIL)
@@ -584,6 +645,7 @@ def process_img_nii(  # noqa: C901
             # use both seg_raw and vert_raw to clean each other, add ivd_ep ...
             has_c1 = model_semantic.inference_config.has_c1
             sacrum_ids = model_semantic.inference_config.sacrum_ids
+            metal_ids = model_semantic.inference_config.metal_ids
             seg_nii_clean, vert_nii_clean = phase_postprocess_combined(
                 img_nii=input_nii_,
                 seg_nii=seg_nii_back,
@@ -599,6 +661,7 @@ def process_img_nii(  # noqa: C901
                 verbose=verbose,
                 disable_c1=not has_c1,
                 sacrum_ids=sacrum_ids,
+                metal_ids=metal_ids,
             )
             seg_nii_clean.assert_affine(shape=vert_nii_clean.shape, zoom=vert_nii_clean.zoom, orientation=vert_nii_clean.orientation)
             vert_nii_clean.assert_affine(other=input_nii_)
@@ -659,18 +722,14 @@ def process_img_nii(  # noqa: C901
             if snapshot_copy_folder is not None:
                 out_snap = [out_snap, out_snap2]
             ctd = ctd.extract_subregion(Location.Vertebra_Corpus)
-            try:
-                mri_snapshot(  # TODO update snapshot
-                    img_ref,
-                    vert_nii_clean,
-                    ctd,
-                    subreg_msk=seg_nii_clean,
-                    out_path=out_snap,
-                    mode="MRI" if img_ref.bids_format.lower() != "ct" else "CT",
-                )
-            except Exception:
-                # Fall back for older TPTBox versions TODO remove later
-                mri_snapshot(img_ref, vert_nii_clean, ctd, subreg_msk=seg_nii_clean, out_path=out_snap)
+            mri_snapshot(
+                img_ref,
+                vert_nii_clean,
+                ctd,
+                subreg_msk=seg_nii_clean,
+                out_path=out_snap,
+                mode="MRI" if img_ref.bids_format.lower() != "ct" else "CT",
+            )
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
             if timing:
                 logger.print(f"Snapshot took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
@@ -690,6 +749,7 @@ def output_paths_from_input(
     snapshot_copy_folder: Path | str | None,
     input_format: str,
     non_strict_mode: bool = False,
+    _dataset_id_ct_crop=100,
 ) -> dict[str, Path]:
     """Derives all pipeline output file paths for a given input image.
 
@@ -775,7 +835,7 @@ def output_paths_from_input(
     out_vibeseg = img_ref.get_changed_path(
         bids_format="msk",
         parent=derivative_name,
-        info={"seg": "VIBESeg-100", "mod": img_ref.format},
+        info={"seg": f"VIBESeg-{_dataset_id_ct_crop}", "mod": img_ref.format},
         non_strict_mode=non_strict_mode,
         make_parent=False,
     )

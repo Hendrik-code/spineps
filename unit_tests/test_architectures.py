@@ -1,4 +1,4 @@
-# Call 'python -m unittest' on this folder  # noqa: INP001
+# Call 'python -m unittest' on this folder
 # coverage run -m unittest
 # coverage report
 # coverage html
@@ -33,7 +33,7 @@ from spineps.seg_model import Segmentation_Inference_Config
 logger = No_Logger()
 
 
-class Test_Labeling_Model_Dummy(VertLabelingClassifier):
+class LabelingModelDummy(VertLabelingClassifier):
     def __init__(
         self,
         model_folder: str | Path = __file__,
@@ -155,3 +155,26 @@ class Test_Labeling_Read_Labels(unittest.TestCase):
             _, entry = get_vert_entry(v, subject_info)
             label = objectives(entry)
             print(v, label)
+
+    def test_objective(self):
+        objectives = Objectives(
+            [
+                Target.FULLYVISIBLE,
+                Target.REGION,
+                Target.VERTREL,
+                Target.VERT,
+            ],
+            as_group=True,
+        )
+
+        entry_dict = {
+            "vert_exact": VertExact.L1,
+            "vert_region": VertRegion.LWS,
+            "vert_rel": VertRel.FIRST_LWK,
+            "vert_cut": True,
+        }
+
+        label = objectives(entry_dict)
+        self.assertEqual(label["FULLYVISIBLE"], [1, 0])
+        self.assertEqual(label["REGION"], [0, 0, 1])
+        self.assertEqual(label["VERTREL"], [0, 0, 0, 0, 1, 0])

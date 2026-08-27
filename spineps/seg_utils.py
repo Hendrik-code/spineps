@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-# from utils.predictor import nnUNetPredictor
 from typing import Union
 
-import nibabel as nib
-from TPTBox import BIDS_FILE, NII, ZOOMS, Log_Type
+from TPTBox import BIDS_FILE, ZOOMS, Log_Type
 
 from spineps.seg_enums import Acquisition, Modality
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import logger
 
+# NOTE: plain runtime assignment, not an annotation, so `from __future__ import annotations` does not defer it --
+# `X | Y` on bare types needs Python 3.10+, so this must stay `Union[...]` for the 3.9 floor.
 Modality_Pair = tuple[Union[list[Modality], Modality], Acquisition]
 
 
 def find_best_matching_model(
     modality_pair: Modality_Pair,
     expected_resolution: ZOOMS | None,  # actual resolution here?
-) -> Segmentation_Model:
+) -> SegmentationModel:
     """Select the segmentation model best matching a modality/acquisition pair and resolution.
 
     Not yet implemented: intended to iterate over model configs and pick the one best matching the requested resolution.
@@ -28,31 +28,16 @@ def find_best_matching_model(
         expected_resolution (ZOOMS | None): The desired voxel resolution, or None.
 
     Returns:
-        Segmentation_Model: The best-matching model (once implemented).
+        SegmentationModel: The best-matching model (once implemented).
 
     Raises:
         NotImplementedError: Always, as this function is not yet implemented; also for an unmapped modality pair.
     """
     raise NotImplementedError("find_best_matching_model()")
-    logger.print(expected_resolution)
-    # TODO replace with automatic going through model configs to find best matching the resolution
-    mapping: dict = {
-        # (Modality.CT, Acquisition.sag): MODELS.CT_SEGMENTOR,
-        # (Modality.T2w, Acquisition.sag): MODELS.T2w_NAKOSPIDER_HIGHRES,
-        # (Modality.T1w, Acquisition.sag): MODELS.T1w_SEGMENTOR,
-        # (Modality.Vibe, Acquisition.ax): MODELS.VIBE_SEGMENTOR,
-        # (Modality.SEG, Acquisition.sag): MODELS.VERT_HIGHRES,
-    }
-    if isinstance(modality_pair[0], list) and len(modality_pair[0]) == 1:
-        modality_pair = (modality_pair[0][0], modality_pair[1])
-    if modality_pair not in mapping:
-        raise NotImplementedError(str(modality_pair[0]), str(modality_pair[1]))
-    else:
-        return mapping[modality_pair]
 
 
 def check_model_modality_acquisition(
-    model: Segmentation_Model,
+    model: SegmentationModel,
     mod_pair: Modality_Pair,
     verbose: bool = True,
 ) -> bool:
@@ -62,7 +47,7 @@ def check_model_modality_acquisition(
     mismatch when ``verbose`` is True.
 
     Args:
-        model (Segmentation_Model): The model to check.
+        model (SegmentationModel): The model to check.
         mod_pair (Modality_Pair): The required ``(modality(ies), acquisition)`` pair.
         verbose (bool): If True, log a warning when incompatible.
 
@@ -116,7 +101,7 @@ def add_ignore_text(logger_texts: list[str]) -> None:
 
 def check_input_model_compatibility(
     img_ref: BIDS_FILE,
-    model: Segmentation_Model,
+    model: SegmentationModel,
     ignore_modality: bool = False,
     ignore_acquisition: bool = False,
     ignore_labelkey: bool = False,
@@ -130,7 +115,7 @@ def check_input_model_compatibility(
 
     Args:
         img_ref (BIDS_FILE): Reference to the input image file.
-        model (Segmentation_Model): The model to check against.
+        model (SegmentationModel): The model to check against.
         ignore_modality (bool): If True, tolerate a modality/format mismatch.
         ignore_acquisition (bool): If True, tolerate an acquisition mismatch.
         ignore_labelkey (bool): If True, tolerate an unexpected ``label`` key in the filename.
@@ -190,7 +175,7 @@ def check_input_model_compatibility(
 
     img_nii = img_ref.open_nii()
     if img_nii.get_plane() not in ["iso", *allowed_acq]:
-        logger_texts.append(f"input get_plane() is not 'iso' or one of the expected {allowed_acq}.")
+        logger_texts.append(f"input {img_nii.get_plane()=} is not 'iso' or one of the expected {allowed_acq}.")
         compatible = False
 
     if len(logger_texts) > 1:

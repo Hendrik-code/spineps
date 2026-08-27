@@ -1,4 +1,4 @@
-# Call 'python -m unittest' on this folder  # noqa: INP001
+# Call 'python -m unittest' on this folder
 # coverage run -m unittest
 # coverage report
 # coverage html
@@ -9,6 +9,10 @@ import unittest
 import numpy as np
 
 from spineps.utils.find_min_cost_path import (
+    DEFAULT_REGION_STARTS_EXACT,
+    DEFAULT_SKIPPABLE_CLASSES_EXACT,
+    T12_CLASS_IDX_EXACT,
+    T13_CLASS_IDX_EXACT,
     argmin,
     c_to_region_idx,
     find_most_probably_sequence,
@@ -372,6 +376,63 @@ class Test_FindMostProbableSequence(unittest.TestCase):
         # Memo table shape mirrors the cost matrix.
         self.assertEqual(len(min_costs_path), cost.shape[0])
         self.assertEqual(len(min_costs_path[0]), cost.shape[1])
+
+
+class Test_SkippableClasses(unittest.TestCase):
+    """The 26-class (VertExactClass) axis, where T13/L6 are explicit classes and T12/T13 may be omitted."""
+
+    @staticmethod
+    def _solve(true_classes, n_classes=26, punish_skip_class=0.0, skippable=None):
+        # One-hot-ish cost matrix: the true class scores 1.0, everything else a small constant.
+        cost = np.full((len(true_classes), n_classes), 0.01)
+        for r, c in enumerate(true_classes):
+            cost[r, c] = 1.0
+        if skippable is None:
+            skippable = list(DEFAULT_SKIPPABLE_CLASSES_EXACT)
+        _, fpath, _ = find_most_probably_sequence(
+            cost,
+            min_start_class=0,
+            regions=list(DEFAULT_REGION_STARTS_EXACT),
+            allow_multiple_at_class=[],
+            allow_skip_at_class=[],
+            allow_skip_at_region=[],
+            skippable_classes=skippable,
+            punish_skip_class=punish_skip_class,
+        )
+        return fpath
+
+    def test_normal_spine_skips_t13(self):
+        # C1..T12 then L1..L5: T13 (class 19) is simply absent from the path.
+        expected = [*range(19), *range(20, 25)]
+        self.assertEqual(self._solve(expected), expected)
+
+    def test_thirteen_thoracic_keeps_t13(self):
+        expected = [*range(20), *range(20, 25)]
+        self.assertEqual(self._solve(expected), expected)
+
+    def test_eleven_thoracic_skips_t12_and_t13(self):
+        # Both optional classes are jumped over in one step: T11 -> L1.
+        expected = [*range(18), *range(20, 25)]
+        self.assertEqual(self._solve(expected), expected)
+
+    def test_l6_needs_no_skip(self):
+        expected = [*range(19), *range(20, 26)]
+        self.assertEqual(self._solve(expected), expected)
+
+    def test_no_skippable_classes_forces_contiguous_path(self):
+        # Without skippable classes the solver cannot jump T13, so the tail is shifted by one.
+        expected = [*range(19), *range(20, 25)]
+        self.assertNotEqual(self._solve(expected, skippable=[]), expected)
+
+    def test_punish_skip_can_force_t13(self):
+        # A large per-class skip penalty makes keeping T13 cheaper than omitting it.
+        true_classes = [*range(19), *range(20, 25)]
+        fpath = self._solve(true_classes, punish_skip_class={T13_CLASS_IDX_EXACT: 100.0, T12_CLASS_IDX_EXACT: 100.0})
+        self.assertIn(T13_CLASS_IDX_EXACT, fpath)
+
+    def test_path_stays_strictly_increasing(self):
+        fpath = self._solve([*range(19), *range(20, 25)])
+        self.assertTrue(all(fpath[i] < fpath[i + 1] for i in range(len(fpath) - 1)))
 
 
 if __name__ == "__main__":

@@ -69,6 +69,7 @@ nav:
       - Processing Phases: modules/phases.md
       - Models & Labeling: modules/models.md
   - API Reference:
+      - High-Level API: api/high-level.md
       - Pipeline & Run: api/pipeline.md
       - Models: api/models.md
       - Processing Phases: api/phases.md

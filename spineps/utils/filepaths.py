@@ -7,6 +7,10 @@ import warnings
 from itertools import chain
 from pathlib import Path
 
+from TPTBox import No_Logger
+
+logger = No_Logger(prefix="filepaths")
+
 spineps_environment_path_override = None  # Path(
 #    "/DATA/NAS/ongoing_projects/hendrik/mri_usage/models/"
 # )  # None  # You can put an absolute path to the model weights here instead of using environment variable
@@ -19,6 +23,10 @@ def get_mri_segmentor_models_dir() -> Path:
 
     Returns:
         Path: Path to the overall models folder
+
+    Raises:
+        RuntimeError: If no models directory could be determined from the environment variable, override or backup.
+        FileNotFoundError: If the resolved models directory does not exist.
     """
     folder_path = (
         os.environ.get("SPINEPS_SEGMENTOR_MODELS")
@@ -28,11 +36,14 @@ def get_mri_segmentor_models_dir() -> Path:
     if folder_path is None and spineps_environment_path_backup is not None:
         folder_path = spineps_environment_path_backup
 
-    assert folder_path is not None, (
-        "Environment variable 'SPINEPS_SEGMENTOR_MODELS' is not defined. Setup the environment variable as stated in the readme or set the override in utils.filepaths.py"
-    )
+    if folder_path is None:
+        raise RuntimeError(
+            "Environment variable 'SPINEPS_SEGMENTOR_MODELS' is not defined. Setup the environment variable as stated "
+            "in the readme or set the override in utils.filepaths.py"
+        )
     folder_path = Path(folder_path)
-    assert folder_path.exists(), f"Environment variable 'SPINEPS_SEGMENTOR_MODELS' = {folder_path} does not exist"
+    if not folder_path.exists():
+        raise FileNotFoundError(f"Environment variable 'SPINEPS_SEGMENTOR_MODELS' = {folder_path} does not exist")
     return folder_path
 
 
@@ -75,7 +86,7 @@ def search_path(basepath: str | Path, query: str, verbose: bool = False, suppres
     basepath = str(basepath)
     if not basepath.endswith("/"):
         basepath += "/"
-    print(f"search_path: in {basepath}{query}") if verbose else None
+    logger.print(f"search_path: in {basepath}{query}", verbose=verbose)
     paths = sorted(chain(list(Path(f"{basepath}").glob(f"{query}"))))
     if len(paths) == 0 and not suppress:
         warnings.warn(f"did not find any paths in {basepath}{query}", UserWarning, stacklevel=1)

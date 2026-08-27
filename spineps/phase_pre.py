@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
-
-# from utils.predictor import nnUNetPredictor
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal
 
@@ -25,18 +22,6 @@ NORMALIZE_MAX_VALUE = 1500
 VIBE_CROP_MARGIN_MM = 25 * min(REFERENCE_ZOOM)
 
 
-def _has_logger_arg(func) -> bool:
-    """Check whether a callable accepts a ``logger`` keyword argument.
-
-    Args:
-        func (Callable): The function whose signature is inspected.
-
-    Returns:
-        bool: True if ``logger`` is among the function's parameters, else False.
-    """
-    return "logger" in inspect.signature(func).parameters
-
-
 def compute_crop(
     nii: NII, out_file: str | Path, dataset_id=100, ddevice: Literal["cpu", "cuda", "mps"] = "cuda", gpu=0, max_folds=None, logger=None
 ) -> tuple[slice, slice, slice]:
@@ -52,27 +37,27 @@ def compute_crop(
         ddevice (Literal["cpu", "cuda", "mps"], optional): Compute device for inference. Defaults to "cuda".
         gpu (int, optional): GPU index used when running on CUDA. Defaults to 0.
         max_folds (int | None, optional): Maximum number of model folds to ensemble. Defaults to None (all folds).
-        logger (optional): Logger forwarded to ``run_vibeseg`` when that version supports it. Defaults to None.
+        logger (optional): Logger forwarded to ``run_vibeseg``. Defaults to None.
 
     Returns:
         tuple[slice, slice, slice]: The crop slices around the segmented spine, with a ``VIBE_CROP_MARGIN_MM`` margin.
     """
-    from TPTBox.core.vert_constants import Full_Body_Instance_Vibe
+    from TPTBox.core.vert_constants import Full_Body_Instance, Full_Body_Instance_Vibe
     from TPTBox.segmentation import run_vibeseg
 
-    if _has_logger_arg(run_vibeseg):
-        out = run_vibeseg(nii, out_file, dataset_id=dataset_id, ddevice=ddevice, gpu=gpu, max_folds=max_folds, logger=logger)
-    else:  # backwards compatibility, can be removed if we force to a new version of TPTBox than 30.Apr.26
-        out = run_vibeseg(nii, out_file, dataset_id=dataset_id, ddevice=ddevice, gpu=gpu, max_folds=max_folds)
+    out = run_vibeseg(nii, out_file, dataset_id=dataset_id, ddevice=ddevice, gpu=gpu, max_folds=max_folds, logger=logger)
     seg = to_nii(out, True)
-    seg.extract_label_(
-        [
-            Full_Body_Instance_Vibe.IVD,
-            Full_Body_Instance_Vibe.vertebra_body,
-            Full_Body_Instance_Vibe.vertebra_posterior_elements,
-            Full_Body_Instance_Vibe.sacrum,
-        ]
-    )
+    if dataset_id in range(30, 120):
+        seg.extract_label_(
+            [
+                Full_Body_Instance_Vibe.IVD,
+                Full_Body_Instance_Vibe.vertebra_body,
+                Full_Body_Instance_Vibe.vertebra_posterior_elements,
+                Full_Body_Instance_Vibe.sacrum,
+            ]
+        )
+    elif dataset_id in range(10, 20):
+        seg.extract_label_([Full_Body_Instance.ivd, Full_Body_Instance.vert_body, Full_Body_Instance.vert_post, Full_Body_Instance.sacrum])
     return seg.compute_crop(0, dist=VIBE_CROP_MARGIN_MM / min(seg.zoom))
 
 

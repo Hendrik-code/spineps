@@ -6,7 +6,6 @@ import shutil
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Union
 
 from TPTBox import Print_Logger
 from tqdm import tqdm
@@ -18,7 +17,7 @@ link = "https://github.com/Hendrik-code/spineps/releases/download/"
 current_highest_version = "v1.0.9"
 current_instance_highest_version = "v1.2.0"
 current_labeling_highest_version = "v1.4.0"
-current_highest_ct_version = "v1.4.2"
+current_highest_ct_version = "v2.0.0"
 
 
 phase_to_version: dict[str, str] = {
@@ -26,19 +25,23 @@ phase_to_version: dict[str, str] = {
     SpinepsPhase.INSTANCE.name: current_instance_highest_version,
     SpinepsPhase.LABELING.name: current_labeling_highest_version,
     SpinepsPhase.SEMANTIC.name + "_ct": current_highest_ct_version,
+    SpinepsPhase.INSTANCE.name + "_ct_instance": current_highest_ct_version,
 }
 
-instances: dict[str, Union[Path, str]] = {
+instances: dict[str, Path | str] = {
     "instance": link + current_instance_highest_version + "/instance.zip",
     "ct_instance": link + current_highest_ct_version + "/CT_instance.zip",
 }
-semantic: dict[str, Union[Path, str]] = {
+semantic: dict[str, Path | str] = {
     "t2w": link + current_highest_version + "/t2w.zip",
     "t1w": link + current_highest_version + "/t1w.zip",
     "vibe": link + current_highest_version + "/vibe.zip",
     "ct": link + current_highest_ct_version + "/ct.zip",
 }
-labeling: dict[str, Union[Path, str]] = {
+for i, j in semantic.copy().items():
+    semantic[i + "_semantic"] = j
+
+labeling: dict[str, Path | str] = {
     "t2w_labeling": link + current_labeling_highest_version + "/labeling.zip",
     "ct_labeling": link + current_labeling_highest_version + "/ct_labeling.zip",
 }
@@ -55,7 +58,7 @@ download_names = {
 }
 
 
-def download_if_missing(key: str, url: Union[Path, str], phase: SpinepsPhase) -> Path:
+def download_if_missing(key: str, url: Path | str, phase: SpinepsPhase) -> Path:
     """Return the local model folder for a model, downloading and extracting its weights if absent.
 
     The target folder name combines the model's download name with the version resolved for its phase (and the
@@ -69,7 +72,7 @@ def download_if_missing(key: str, url: Union[Path, str], phase: SpinepsPhase) ->
     Returns:
         Path: Path to the local model folder containing the (possibly just downloaded) weights.
     """
-    version = phase_to_version.get(f"{phase}_{key}", phase_to_version[phase.name])
+    version = phase_to_version.get(f"{phase.name}_{key}", phase_to_version[phase.name])
     out_path = Path(get_mri_segmentor_models_dir(), download_names[key] + "_" + version)
     if not out_path.exists():
         download_weights(url, out_path)
@@ -77,7 +80,7 @@ def download_if_missing(key: str, url: Union[Path, str], phase: SpinepsPhase) ->
     return out_path
 
 
-def download_weights(weights_url: Union[Path, str], out_path: Union[Path, str]) -> None:
+def download_weights(weights_url: Path | str, out_path: Path | str) -> None:
     """Download a weights zip archive, extract it into ``out_path`` and remove the archive.
 
     Shows a progress bar during download. If the extracted archive nests its contents in an extra subfolder

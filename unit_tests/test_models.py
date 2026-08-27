@@ -1,4 +1,4 @@
-# Call 'python -m unittest' on this folder  # noqa: INP001
+# Call 'python -m unittest' on this folder
 # coverage run -m unittest
 # coverage report
 # coverage html
@@ -39,5 +39,6 @@ class Test_GetModel(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             get_actual_model(Path(__file__).parent)
 
-        with self.assertRaises(NotADirectoryError):
+        # a file used as a directory component: POSIX reports ENOTDIR, Windows reports ENOENT
+        with self.assertRaises((NotADirectoryError, FileNotFoundError)):
             get_actual_model(__file__ + "/inference_config.json")

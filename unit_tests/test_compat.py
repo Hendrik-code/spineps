@@ -1,4 +1,4 @@
-# Call "python -m unittest" on this folder  # noqa: INP001
+# Call "python -m unittest" on this folder
 # coverage run -m unittest
 # coverage report
 # coverage html

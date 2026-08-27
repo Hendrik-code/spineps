@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, Union
 
 from TPTBox import Log_Type, No_Logger
 from tqdm import tqdm
 
 from spineps.lab_model import VertLabelingClassifier
 from spineps.seg_enums import Modality, ModelType, SpinepsPhase
-from spineps.seg_model import Segmentation_Model, Segmentation_Model_NNunet, Segmentation_Model_Unet3D
+from spineps.seg_model import SegmentationModel, SegmentationModelNNunet, SegmentationModelUnet3D
 from spineps.utils.auto_download import download_if_missing, instances, labeling, semantic
 from spineps.utils.filepaths import get_mri_segmentor_models_dir, search_path
 from spineps.utils.seg_modelconfig import load_inference_config
@@ -33,7 +32,7 @@ def _get_model_by_name(
     phase: SpinepsPhase,
     kind: str,
     **kwargs,
-) -> Segmentation_Model | VertLabelingClassifier:
+) -> SegmentationModel | VertLabelingClassifier:
     """Looks up a model by name in a model-id-to-folder map and instantiates it.
 
     Shared implementation behind get_semantic_model / get_instance_model / get_labeling_model.
@@ -42,18 +41,21 @@ def _get_model_by_name(
     possible_keys = list(modelid2folder.keys())
     if len(possible_keys) == 0:
         logger.print(_NO_MODELS_AVAILABLE_MSG.format(kind=kind), Log_Type.FAIL)
-        raise KeyError(model_name)
+        raise FileNotFoundError(_NO_MODELS_AVAILABLE_MSG.format(kind=kind))
     if model_name not in possible_keys:
         logger.print(f"Model with name {model_name} does not exist, options are {possible_keys}", Log_Type.FAIL)
-        raise KeyError(model_name)
+        raise KeyError(f"Model '{model_name}' does not exist. Available {kind} models: {possible_keys}")
     config_path = modelid2folder[model_name]
     if str(config_path).startswith("http"):
-        # Resolve HTTP
-        config_path = download_if_missing(model_name, config_path, phase=phase)
+        # Resolve HTTP (download the model weights on first use)
+        try:
+            config_path = download_if_missing(model_name, config_path, phase=phase)
+        except Exception as e:
+            raise RuntimeError(f"Failed to download model '{model_name}' from {config_path}: {e}") from e
     return get_actual_model(config_path, **kwargs)
 
 
-def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
+def get_semantic_model(model_name: str, **kwargs) -> SegmentationModel:
     """Finds and returns a semantic (subregion) model by name.
 
     Args:
@@ -61,15 +63,16 @@ def get_semantic_model(model_name: str, **kwargs) -> Segmentation_Model:
         **kwargs: Extra keyword arguments forwarded to the model constructor.
 
     Returns:
-        Segmentation_Model: The instantiated semantic model.
+        SegmentationModel: The instantiated semantic model.
 
     Raises:
-        KeyError: If no model with the given name is available.
+        KeyError: If the given model name is not among the available models.
+        FileNotFoundError: If no models of this kind are installed at all.
     """
     return _get_model_by_name(model_name, modelid2folder_semantic(), SpinepsPhase.SEMANTIC, "semantic", **kwargs)
 
 
-def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
+def get_instance_model(model_name: str, **kwargs) -> SegmentationModel:
     """Finds and returns an instance (vertebra) model by name.
 
     Args:
@@ -77,10 +80,11 @@ def get_instance_model(model_name: str, **kwargs) -> Segmentation_Model:
         **kwargs: Extra keyword arguments forwarded to the model constructor.
 
     Returns:
-        Segmentation_Model: The instantiated instance model.
+        SegmentationModel: The instantiated instance model.
 
     Raises:
-        KeyError: If no model with the given name is available.
+        KeyError: If the given model name is not among the available models.
+        FileNotFoundError: If no models of this kind are installed at all.
     """
     return _get_model_by_name(model_name, modelid2folder_instance(), SpinepsPhase.INSTANCE, "instance", **kwargs)
 
@@ -96,14 +100,15 @@ def get_labeling_model(model_name: str, **kwargs) -> VertLabelingClassifier:
         VertLabelingClassifier: The instantiated labeling classifier.
 
     Raises:
-        KeyError: If no model with the given name is available.
+        KeyError: If the given model name is not among the available models.
+        FileNotFoundError: If no models of this kind are installed at all.
     """
     return _get_model_by_name(model_name, modelid2folder_labeling(), SpinepsPhase.LABELING, "labeling", **kwargs)
 
 
-_modelid2folder_semantic: Optional[dict[str, Union[Path, str]]] = None
-_modelid2folder_instance: Optional[dict[str, Union[Path, str]]] = None
-_modelid2folder_labeling: Optional[dict[str, Union[Path, str]]] = None
+_modelid2folder_semantic: dict[str, Path | str] | None = None
+_modelid2folder_instance: dict[str, Path | str] | None = None
+_modelid2folder_labeling: dict[str, Path | str] | None = None
 
 
 def modelid2folder_semantic() -> dict[str, Path | str]:
@@ -149,7 +154,7 @@ def modelid2folder_labeling() -> dict[str, Path | str]:
 
 
 def check_available_models(
-    models_folder: str | Path, verbose: bool = False
+    models_folder: str | Path, verbose: bool = True
 ) -> tuple[dict[str, Path | str], dict[str, Path | str], dict[str, Path | str]]:
     """Searches the given directory for models and sorts them into semantic, instance and labeling id-to-folder maps.
 
@@ -167,12 +172,13 @@ def check_available_models(
             id-to-folder maps.
 
     Raises:
-        AssertionError: If models_folder does not exist.
+        FileNotFoundError: If models_folder does not exist.
     """
     logger.print("Check available models...")
     if isinstance(models_folder, str):
         models_folder = Path(models_folder)
-    assert models_folder.exists(), f"models_folder {models_folder} does not exist"
+    if not models_folder.exists():
+        raise FileNotFoundError(f"models_folder {models_folder} does not exist")
 
     config_paths = search_path(models_folder, query="**/inference_config.json", suppress=True)
     global _modelid2folder_semantic, _modelid2folder_instance, _modelid2folder_labeling  # noqa: PLW0603
@@ -207,12 +213,12 @@ def modeltype2class(modeltype: ModelType) -> type:
         NotImplementedError: If the model type is not supported.
 
     Returns:
-        type: The class to instantiate (Segmentation_Model_NNunet, Segmentation_Model_Unet3D or VertLabelingClassifier).
+        type: The class to instantiate (SegmentationModelNNunet, SegmentationModelUnet3D or VertLabelingClassifier).
     """
     if modeltype == ModelType.nnunet:
-        return Segmentation_Model_NNunet
+        return SegmentationModelNNunet
     elif modeltype == ModelType.unet:
-        return Segmentation_Model_Unet3D
+        return SegmentationModelUnet3D
     elif modeltype == ModelType.classifier:
         return VertLabelingClassifier
     else:
@@ -223,7 +229,7 @@ def get_actual_model(
     in_config: str | Path,
     use_cpu: bool = False,
     **kwargs,
-) -> Segmentation_Model | VertLabelingClassifier:
+) -> SegmentationModel | VertLabelingClassifier:
     """Creates and returns the appropriate model from a given inference config path.
 
     Accepts either a path to an inference_config.json file or a folder containing exactly one such file (searched
@@ -235,16 +241,12 @@ def get_actual_model(
         **kwargs: Extra keyword arguments forwarded to the model constructor.
 
     Returns:
-        Segmentation_Model | VertLabelingClassifier: The instantiated model.
+        SegmentationModel | VertLabelingClassifier: The instantiated model.
 
     Raises:
         FileNotFoundError: If no inference_config.json is found in the given folder.
         AssertionError: If more than one inference_config.json is found in the given folder.
     """
-    # if isinstance(in_config, MODELS):
-    #    in_dir = filepath_model(in_config.value, model_dir=None)
-    # else:
-
     in_dir = in_config
 
     if os.path.isdir(str(in_dir)):  # noqa: PTH112
@@ -260,10 +262,7 @@ def get_actual_model(
             f"get_actual_model: found more than one inference_config.json in {in_dir}/**/*inference_config.json. Ambiguous behavior, please manually correct this by removing one of these.\nFound {path_search}"
         )
         in_dir = path_search[0]
-    # else:
-    #    base = filepath_model(in_config, model_dir=None)
-    #    in_dir = base
 
     inference_config = load_inference_config(str(in_dir))
-    modeltype: type[Segmentation_Model] = modeltype2class(inference_config.modeltype)
+    modeltype: type[SegmentationModel] = modeltype2class(inference_config.modeltype)
     return modeltype(model_folder=in_config, inference_config=inference_config, use_cpu=use_cpu, **kwargs)

@@ -21,11 +21,11 @@ the weights if needed, reads the model's `inference_config.json` and instantiate
 The concrete model classes are defined in [`spineps.seg_model`](../api/models.md) and
 [`spineps.lab_model`](../api/models.md):
 
-- **`Segmentation_Model`** — abstract base wrapping a network plus its inference configuration. It handles
+- **`SegmentationModel`** — abstract base wrapping a network plus its inference configuration. It handles
   input preparation (reorientation, rescaling to the recommended zoom, padding), running the model and
   mapping outputs back into the input space.
-- **`Segmentation_Model_NNunet`** — an nnU-Net backend.
-- **`Segmentation_Model_Unet3D`** — a 3D U-Net backend.
+- **`SegmentationModelNNunet`** — an nnU-Net backend.
+- **`SegmentationModelUnet3D`** — a 3D U-Net backend.
 - **`VertLabelingClassifier`** — the VERIDAH vertebra-labeling classifier.
 
 The model type is selected from the `inference_config.json` via `ModelType` (see
@@ -43,4 +43,4 @@ VERIDAH ("solving Enumeration Anomaly Aware Vertebra Labeling across Imaging Seq
 anatomical labels to the detected vertebra instances. It combines a per-vertebra classifier with a
 min-cost path solver that enforces a plausible ordering and is aware of enumeration anomalies such as a
 13th thoracic vertebra (T13) or a sixth lumbar vertebra (L6). Enable it by passing a labeling model to
-the pipeline (`-model_labeling` on the CLI, or `model_labeling=` in Python).
+the pipeline (`--model-labeling` on the CLI, or `model_labeling=` in Python).

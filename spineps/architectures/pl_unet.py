@@ -8,7 +8,6 @@ import pytorch_lightning as pl
 import torch
 import torchmetrics.functional as mF
 from torch import nn
-from torch.optim import lr_scheduler
 
 from spineps.architectures.unet3D import Unet3D
 
@@ -36,10 +35,6 @@ class PLNet(pl.LightningModule):
 
         dim_mults = (1, 2, 4, 8)
         dim = 16  # 16
-
-        # if opt.high_res:
-        #    dim = 16
-        #    dim_mults = (2, 4, 8, 8)
 
         self.network = nclass(
             dim=dim,

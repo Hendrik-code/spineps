@@ -14,7 +14,7 @@ import argparse  # noqa: E402
 from TPTBox import BIDS_FILE  # noqa: E402
 
 from spineps.get_models import get_instance_model, get_semantic_model  # noqa: E402
-from spineps.seg_run import process_img_nii  # noqa: E402
+from spineps.seg_run import segment_image  # noqa: E402
 
 # Example
 # python /spineps/example/helper_parallel.py -i PATH/TO/IMG.nii.gz -ds DATASET-PATH -der derivatives -ms [t1w,t2w,vibe] -mv instance
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     mv = get_instance_model(opt.mv)
     if opt.snap is not None:
         Path(opt.snap).mkdir(exist_ok=True, parents=True)
-    process_img_nii(
+    segment_image(
         img_ref=input_bids_file,
         derivative_name=opt.der,
         model_semantic=ms,

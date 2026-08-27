@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import functools
 import os
 
 from rich.console import Console
@@ -17,6 +18,7 @@ has_reminded_citation = False
 def citation_reminder(func):
     """Decorator to remind users to cite SPINEPS."""
 
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         global has_reminded_citation  # noqa: PLW0603
         if not has_reminded_citation and os.environ.get("SPINEPS_TURN_OF_CITATION_REMINDER", "FALSE") != "TRUE":

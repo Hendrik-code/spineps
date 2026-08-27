@@ -1,9 +1,10 @@
 # SPINEPS
 
-**SPINEPS** is a framework for out-of-the-box **whole-spine segmentation of MR images**. It segments the
-spine in sagittal MR images (T2w, T1w and others) using a two-phase approach to multi-class **semantic**
-and **instance** segmentation, and can additionally assign anatomical **vertebra labels** via the
-**VERIDAH** labeling model.
+**SPINEPS** is a framework for out-of-the-box **whole-spine segmentation of MR and CT images**. It segments
+the spine in sagittal MR images (T2w, T1w and others) and CT scans — each with independent,
+modality-specific models — using a two-phase approach to multi-class **semantic** and **instance**
+segmentation, and can additionally assign anatomical **vertebra labels** via the **VERIDAH** labeling
+model.
 
 [![Paper](https://img.shields.io/badge/Paper-10.1007-blue)](https://link.springer.com/article/10.1007/s00330-024-11155-y)
 [![PyPI version](https://badge.fury.io/py/spineps.svg)](https://pypi.python.org/pypi/spineps/)
@@ -28,6 +29,7 @@ Given a sagittal MR scan, the pipeline:
 - [Pipeline](modules/pipeline.md) — how the two-phase pipeline is structured.
 - [Processing Phases](modules/phases.md) — pre-processing, semantic, instance, labeling and post-processing.
 - [Models & Labeling](modules/models.md) — model loading and the VERIDAH labeling model.
+- [High-Level API](api/high-level.md) — the one-call `spineps.segment()` API and config objects.
 - [API Reference](api/pipeline.md) — full auto-generated API documentation.
 
 ## Quick start
@@ -37,7 +39,15 @@ Given a sagittal MR scan, the pipeline:
 pip install spineps
 
 # Segment a single T2w sagittal scan
-spineps sample -i /path/sub-test_T2w.nii.gz -model_semantic t2w -model_instance instance
+spineps sample -i /path/sub-test_T2w.nii.gz --model-semantic t2w --model-instance instance
+```
+
+Or in one call from Python:
+
+```python
+import spineps
+
+result = spineps.segment("/path/sub-test_T2w.nii.gz")  # saves a derivatives folder next to the input
 ```
 
 See [Getting Started](getting-started.md) for the full installation guide (including PyTorch setup and

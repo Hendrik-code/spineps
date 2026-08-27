@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-# from utils.predictor import nnUNetPredictor
+from collections.abc import Sequence
+
 import numpy as np
 from TPTBox import NII, Location, Log_Type
 from TPTBox.core.np_utils import (
-    np_calc_crop_around_centerpoint,
+    _np_get_min_max_pad,
     np_center_of_mass,
     np_connected_components,
     np_count_nonzero,
@@ -21,7 +22,7 @@ from TPTBox.core.np_utils import (
 from tqdm import tqdm
 
 from spineps.seg_enums import ErrCode, OutputType
-from spineps.seg_model import Segmentation_Model
+from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import IVD_LABEL_OFFSET, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 from spineps.utils.resolution import (
@@ -49,7 +50,7 @@ MERGED_CORPUS_VOLUME_RATIO = 1.5
 
 def predict_instance_mask(
     seg_nii: NII,
-    model: Segmentation_Model,
+    model: SegmentationModel,
     debug_data: dict,
     pad_size: int = 0,
     proc_inst_fill_3d_holes: bool = True,
@@ -57,6 +58,8 @@ def predict_instance_mask(
     proc_corpus_clean: bool = True,
     proc_inst_clean_small_cc_artifacts: bool = True,
     proc_inst_largest_k_cc: int = 0,
+    proc_inst_batch_size: int = 4,
+    proc_inst_amp: bool = False,
     verbose: bool = False,
 ) -> tuple[NII | None, ErrCode]:
     """Build a per-vertebra instance mask from a subregion semantic segmentation.
@@ -67,7 +70,7 @@ def predict_instance_mask(
 
     Args:
         seg_nii (NII): Subregion (semantic) segmentation mask used as input.
-        model (Segmentation_Model): Instance model producing the per-vertebra-body cutout predictions.
+        model (SegmentationModel): Instance model producing the per-vertebra-body cutout predictions.
         debug_data (dict): Dictionary for collecting intermediate results across the pipeline.
         pad_size (int, optional): Edge padding added before processing and removed afterwards. Defaults to 0.
         proc_inst_fill_3d_holes (bool, optional): Whether to fill 3D holes in the final vertebra mask. Defaults to True.
@@ -75,6 +78,10 @@ def predict_instance_mask(
         proc_corpus_clean (bool, optional): Whether to clean small corpus connected-component artifacts. Defaults to True.
         proc_inst_clean_small_cc_artifacts (bool, optional): Whether to delete small instance artifacts. Defaults to True.
         proc_inst_largest_k_cc (int, optional): Keep only the largest k connected components per cutout label; 0 disables. Defaults to 0.
+        proc_inst_batch_size (int, optional): Number of cutouts run through the instance model per batched forward pass.
+            Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
+        proc_inst_amp (bool, optional): Run the instance forward pass under CUDA autocast (faster, may slightly change
+            values). Defaults to False.
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
@@ -100,11 +107,7 @@ def predict_instance_mask(
 
         # Padding?
         if pad_size > 0:
-            # logger.print(seg_nii_rdy.shape)
-            arr = seg_nii_rdy.get_array()
-            arr = np.pad(arr, pad_size, mode="edge")
-            seg_nii_rdy.set_array_(arr)
-            # logger.print(seg_nii_rdy.shape)
+            seg_nii_rdy = seg_nii_rdy.apply_pad(pad_size)
 
         zms = seg_nii_rdy.zoom
         logger.print("zms", zms, verbose=verbose)
@@ -119,10 +122,8 @@ def predict_instance_mask(
         uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape, dtype=seg_nii_uncropped.dtype)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
         crop = seg_nii_rdy.compute_crop(dist=INSTANCE_CROP_MARGIN_MM / min(seg_nii_rdy.zoom))
-        # logger.print("Crop", crop, verbose=verbose)
         seg_nii_rdy.apply_crop_(crop)
         logger.print(f"Crop down from {uncropped_vert_mask.shape} to {seg_nii_rdy.shape}", verbose=verbose)
-        # arr[crop] = X, then set nifty to arr
         logger.print("Vertebra seg_nii_rdy", seg_nii_rdy.zoom, seg_nii_rdy.orientation, seg_nii_rdy.shape, verbose=verbose)
         debug_data["inst_cropped_Subreg_nii_b"] = seg_nii_rdy.copy()
         #
@@ -146,6 +147,8 @@ def predict_instance_mask(
             process_detect_and_solve_merged_corpi=proc_detect_and_solve_merged_corpi,
             proc_inst_largest_k_cc=proc_inst_largest_k_cc,
             proc_inst_fill_holes=False,
+            instance_batch_size=proc_inst_batch_size,
+            amp=proc_inst_amp,
             verbose=verbose,
         )
         if vert_predictions is None:
@@ -196,11 +199,7 @@ def predict_instance_mask(
 
         # Uncrop again
         if pad_size > 0:
-            # logger.print(whole_vert_nii_uncropped.shape)
-            arr = whole_vert_nii_uncropped.get_array()
-            arr = arr[pad_size:-pad_size, pad_size:-pad_size, pad_size:-pad_size]
-            whole_vert_nii_uncropped.set_array_(arr)
-            # logger.print(whole_vert_nii_uncropped.shape)
+            whole_vert_nii_uncropped.apply_pad(-pad_size)
 
     return whole_vert_nii_uncropped, ErrCode.OK
 
@@ -578,15 +577,64 @@ def split_by_plane(
     return segvert
 
 
+def nii_calc_crop_around_centerpoint(
+    poi: tuple[int, ...] | tuple[float, ...],
+    arr: NII,
+    cutout_size: tuple[int, ...],
+    pad_to_size: Sequence[int] | np.ndarray | int = 0,
+) -> tuple[NII, tuple[slice, slice, slice], tuple]:
+    """Crops a fixed-size region centred on a given point, optionally padding near-edge regions.
+
+    Args:
+        poi: Center point of the cutout, one coordinate per dimension.
+        arr: Input array to crop.
+        cutout_size: Desired size of the cutout in each dimension.
+        pad_to_size: Additional symmetric padding to add around the cutout.
+            Can be a single int (same for all dims) or a per-dim sequence.
+            Defaults to 0.
+
+    Returns:
+        tuple: A 3-element tuple containing:
+            - np.ndarray: The cropped (and padded) sub-array.
+            - tuple[slice, ...]: Slices used to extract the cutout from ``arr``.
+            - tuple: Per-dimension padding amounts applied as ``(pad_before, pad_after)``.
+    """
+    n_dim = len(poi)
+    if isinstance(pad_to_size, int):
+        pad_to_size = np.ones(n_dim) * pad_to_size
+    assert n_dim == len(arr.shape) == len(cutout_size) == len(pad_to_size), (
+        f"dimension mismatch, got dim {n_dim}, poi {poi}, arr shape {arr.shape}, cutout {cutout_size}, pad_to_size {pad_to_size}"
+    )
+
+    poi = tuple(int(i) for i in poi)
+    shape = arr.shape
+    # Get cutout range
+    cutout_coords = []
+    padding = []
+    for d in range(n_dim):
+        _min, _max, _pad_min, _pad_max = _np_get_min_max_pad(poi[d], shape[d], cutout_size[d] // 2, pad_to_size[d] // 2)
+        cutout_coords += [_min, _max]
+        padding.append((int(_pad_min), int(_pad_max)))
+    # cutout_coords = (x_min, x_max, y_min, y_max, z_min, z_max)
+    # padding = ((x_pad_min, x_pad_max), (y_pad_min, y_pad_max), (z_pad_min, z_pad_max))
+
+    cutout_coords_slices = tuple(slice(cutout_coords[i], cutout_coords[i + 1]) for i in range(0, n_dim * 2, 2))
+    arr_cut: NII = arr[cutout_coords_slices]
+    arr_cut = arr_cut.apply_pad(tuple(padding), verbose=False)
+    return (arr_cut, cutout_coords_slices, tuple(padding))
+
+
 def collect_vertebra_predictions(
     seg_nii: NII,
-    model: Segmentation_Model,
+    model: SegmentationModel,
     corpus_size_cleaning: int,
     cutout_size: tuple[int, int, int],
     debug_data: dict,
     proc_inst_largest_k_cc: int = 0,
     process_detect_and_solve_merged_corpi: bool = True,
     proc_inst_fill_holes: bool = False,
+    instance_batch_size: int = 4,
+    amp: bool = False,
     verbose: bool = False,
 ) -> tuple[np.ndarray | None, list[str], int]:
     """Run the instance model on a cutout around each corpus center of mass and collect per-label predictions.
@@ -598,13 +646,17 @@ def collect_vertebra_predictions(
 
     Args:
         seg_nii (NII): Subregion semantic mask used for the cutouts.
-        model (Segmentation_Model): Instance model producing the three-vertebra-body cutout predictions.
+        model (SegmentationModel): Instance model producing the three-vertebra-body cutout predictions.
         corpus_size_cleaning (int): Voxel threshold for cleaning small corpus artifacts when finding coms; 0 disables.
         cutout_size: Cutout window size (per axis) extracted around each center of mass.
         debug_data (dict): Dictionary for collecting per-cutout intermediate results.
         proc_inst_largest_k_cc (int, optional): Keep only the largest k connected components per cutout label; 0 disables. Defaults to 0.
         process_detect_and_solve_merged_corpi (bool, optional): Whether to detect and split merged corpora. Defaults to True.
         proc_inst_fill_holes (bool, optional): Whether to fill holes in each cutout prediction. Defaults to False.
+        instance_batch_size (int, optional): Number of cutouts run through the instance model per batched forward
+            pass. Higher is faster but uses more GPU memory; falls back to one-by-one on out-of-memory. Defaults to 4.
+        amp (bool, optional): Run the instance forward pass under CUDA autocast (faster, may slightly change values).
+            Defaults to False.
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
@@ -637,24 +689,24 @@ def collect_vertebra_predictions(
     # Holds only binary {0, 1} per-label masks, so uint8 is sufficient (the source dtype can be wider,
     # which would needlessly inflate this n_coms x 3 x volume array and slow the Dice comparisons below).
     hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=np.uint8)
-    # print("hierarchical_predictions", hierarchical_predictions.shape)
-    vert_predict_template = np.zeros(shp, dtype=np.uint16)
-    # print("vert_predict_template", vert_predict_template.shape)
 
     # relabel to the labels expected by the model
     # {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9}
     mapping = {int(a): int(b) for a, b in model.inference_config.mapping.items()}
     seg_nii_for_cut: NII = seg_nii.copy().extract_label(list(mapping.keys()), keep_label=True).map_labels_(mapping, verbose=False)
-    # print("seg_nii_for_cut", seg_nii_for_cut.shape)
 
     logger.print("Vertebra collect in", seg_nii.zoom, seg_nii.orientation, seg_nii.shape, verbose=verbose)
 
     # seg_nii_for_cut is constant across the loop; read its array once instead of copying it per centroid.
-    seg_arr_c = seg_nii_for_cut.get_seg_array()
-    # iterate over sorted coms and segment vertebra from subreg
-    for com_idx, com in enumerate(tqdm(corpus_coms, desc=logger._get_logger_prefix() + " Vertebra Body predictions")):
+    seg_arr_c = seg_nii_for_cut  # .get_seg_array()
+    # First gather every cutout, then run them through the model in batched forward passes instead of one GPU call
+    # per centroid. Every cutout has the same fixed cutout_size, so they stack cleanly into one batch and the batched
+    # result is identical (in fp32) to predicting each cutout on its own.
+    cut_niis: list[NII] = []
+    cut_meta: list[tuple[int, tuple, tuple, tuple]] = []  # (com_idx, com, cutout_coords, paddings)
+    for com_idx, com in enumerate(tqdm(corpus_coms, desc=logger._get_logger_prefix() + " Vertebra Body cutouts")):
         # Shift the com until there is a segmentation there (to account for mishaps in the com calculation)
-        seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
+        seg_at_com = seg_arr_c[int(com[0]), int(com[1]), int(com[2])] != 0
         orig_com = (com[0], com[1], com[2])
         while not seg_at_com:
             com = (com[0], com[1] + 5, com[2])  # noqa: PLW2901
@@ -662,22 +714,27 @@ def collect_vertebra_predictions(
                 logger.print("Collect Vertebra Predictions: One Cutout at weird position", Log_Type.FAIL)
                 com = orig_com  # noqa: PLW2901
                 break
-            seg_at_com = seg_arr_c[int(com[0])][int(com[1])][int(com[2])] != 0
-
+            seg_at_com = seg_arr_c[int(com[0]), int(com[1]), int(com[2])] != 0
         # Calc cutout
-        arr_cut, cutout_coords, paddings = np_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size)
-        cut_nii = seg_nii_for_cut.set_array(arr_cut, verbose=False).reorient_()
+        cut_nii, cutout_coords, paddings = nii_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size)
+        # cut_nii = seg_nii_for_cut.set_array(arr_cut, verbose=False).reorient_()
         debug_data[f"inst_cutout_vert_nii_{com_idx}_cut"] = cut_nii
-        results = model.segment_scan(
-            cut_nii,
-            resample_to_recommended=False,
-            pad_size=0,
-            resample_output_to_input_space=False,
-            verbose=False,
-        )
+        cut_niis.append(cut_nii)
+        cut_meta.append((com_idx, com, cutout_coords, paddings))
+
+    # Batched inference: one forward per chunk of `instance_batch_size` cutouts instead of one per cutout.
+    batched_results = model.segment_scan_batch(
+        cut_niis,
+        resample_to_recommended=False,
+        pad_size=0,
+        resample_output_to_input_space=False,
+        batch_size=instance_batch_size,
+        amp=amp,
+        verbose=False,
+    )
+
+    for (com_idx, com, cutout_coords, paddings), results in zip(cut_meta, batched_results):
         vert_cut_nii = results[OutputType.seg].reorient_()
-        # print("vert_cut_nii", vert_cut_nii.shape)
-        # logger.print(f"Done {com_idx}")
         debug_data[f"inst_cutout_vert_nii_{com_idx}_pred"] = vert_cut_nii.copy()
         vert_cut_nii = post_process_single_3vert_prediction(
             vert_cut_nii,
@@ -690,29 +747,19 @@ def collect_vertebra_predictions(
 
         cutout_sizes = tuple(cutout_coords[i].stop - cutout_coords[i].start for i in range(len(cutout_coords)))
         pad_cutout = tuple(slice(paddings[i][0], paddings[i][0] + cutout_sizes[i]) for i in range(len(paddings)))
-        # print("cutout_sizes", cutout_sizes)
-        # print("pad_cutout", pad_cutout)
         arr = vert_cut_nii.get_seg_array()
-        vert_predict_map = vert_predict_template.copy()
-        vert_predict_map[cutout_coords] = arr[pad_cutout]
-        # vert_predict_map[com_idx][cutout_coords][vert_predict_map[com_idx][cutout_coords] == 0] = arr[pad_cutout][
-        #    vert_predict_map[com_idx][cutout_coords] == 0
-        # ]
-        seg_at_com = vert_predict_map[int(com[0])][int(com[1])][int(com[2])]
+        cutout_vals = arr[pad_cutout]
+        # Write straight into the (already fully-allocated) hierarchical_predictions slice instead of building
+        # full-volume-sized temporaries per vertebra/label: everything outside cutout_coords is 0 either way.
+        local_com = tuple(int(com[i]) - cutout_coords[i].start for i in range(3))
+        seg_at_com = cutout_vals[local_com]
         if seg_at_com == 0:
             logger.print("Zero at cutout center, mistake", Log_Type.WARNING)
-        # if seg_at_com != 0:
-        #    # before (1) is above
-        #    shift = 2 - seg_at_com
-        #    vert_predictions[com_idx][vert_predictions[com_idx] != 0] = vert_predictions[com_idx][vert_predictions[com_idx] != 0] + shift
-        # debug_data[f"vert_nii_{com_idx}_proc2"] = seg_nii_for_cut.set_array(vert_predictions[com_idx][cutout_coords])
         for l in vert_labels:
-            vert_l_map = vert_predict_map.copy()
-            vert_l_map[vert_l_map != l] = 0
-            vert_l_map[vert_l_map != 0] = 1
+            mask = cutout_vals == l
             labelindex = l - 1
-            if vert_l_map.max() > 0:
-                hierarchical_predictions[com_idx][labelindex] = vert_l_map
+            if mask.any():
+                hierarchical_predictions[com_idx, labelindex][cutout_coords] = mask.astype(np.uint8)
                 hierarchical_existing_predictions.append(str_id_com_label(com_idx, labelindex))
     return hierarchical_predictions, hierarchical_existing_predictions, n_corpus_coms
 
@@ -937,7 +984,6 @@ def find_prediction_couple(
 
     agreement = 0
     if len(couple) > 0:
-        # print(couple)
         agreement = 0
         for c in couple:
             agreement += dices[c]
@@ -978,6 +1024,7 @@ def merge_coupled_predictions(
     """
     whole_vert_nii = seg_nii.copy()
     whole_vert_arr = np.zeros(whole_vert_nii.shape, dtype=np.uint16)  # this is fixed segmentations from vert
+    combine = np.zeros(whole_vert_nii.shape, dtype=whole_vert_nii.dtype)  # reused scratch buffer, reset per couple below
 
     idx = 1
     for k, overall_agreement in coupled_predictions.items():
@@ -985,10 +1032,9 @@ def merge_coupled_predictions(
         take_no_overlap = len(k) <= 2
         if overall_agreement < 0.3 + 0.15 * (4 - len(k)):
             take_no_overlap = True
-        combine = np.zeros(whole_vert_nii.shape, dtype=whole_vert_nii.dtype)
+        combine.fill(0)
         for cid in k:
             combine += hierarchical_predictions[cid[0]][cid[1]]
-        # print(combine.shape)
         m = 1 if take_no_overlap else 2
         # m = min(max(1, np.max(combine)), 2)  # type:ignore
         combine[combine < m] = 0
@@ -998,9 +1044,7 @@ def merge_coupled_predictions(
         if count_new == 0:
             logger.print("ZERO instance mask failure on vertebra instance creation", Log_Type.FAIL)
             return seg_nii, debug_data, ErrCode.EMPTY
-        fixed_n = combine.copy()
-        fixed_n[whole_vert_arr != 0] = 0
-        count_cut = np_count_nonzero(fixed_n)
+        count_cut = np_count_nonzero((combine != 0) & (whole_vert_arr == 0))
         relative_overlap = (count_new - count_cut) / count_new
         if relative_overlap > 0.6:
             logger.print(k, f" was skipped because it overlaps {round(relative_overlap, 4)} with established verts", verbose=verbose)
@@ -1024,10 +1068,5 @@ def merge_coupled_predictions(
             logger=logger,
             verbose=verbose,
         )
-    # print("whole_vert_arr", whole_vert_arr.shape)
-    # print("seg_nii", seg_nii.shape)
     whole_vert_nii_proc = seg_nii.set_array(whole_vert_arr)
-    # print("whole_vert_arr_proc", whole_vert_arr_proc.shape)
-    # debug_data["whole_vert_arr_proc"] = seg_nii.set_array(whole_vert_arr)
-    # return seg_nii.set_array(whole_vert_arr, verbose=False).map_labels_(com_map, verbose=False), debug_data, ErrCode.OK
     return whole_vert_nii_proc, debug_data, ErrCode.OK

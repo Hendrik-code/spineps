@@ -15,7 +15,7 @@ import numpy as np  # noqa: E402
 from TPTBox import BIDS_FILE, NII, POI, BIDS_Global_info, No_Logger  # noqa: E402
 
 from spineps.get_models import get_instance_model, get_semantic_model  # noqa: E402
-from spineps.seg_run import ErrCode, process_img_nii  # noqa: E402
+from spineps.seg_run import ErrCode, segment_image  # noqa: E402
 
 # INPUT
 in_ds = Path("DATASET_PATH")  # TODO change this to the path to your dataset folder
@@ -80,7 +80,7 @@ for name, subject in bids_ds.enumerate_subjects(sort=True):
         start_time = time.perf_counter()
         ref: BIDS_FILE = f["T2w_part-inphase"][0] if "T2w_part-inphase" in f else f["T2w"][0]
         # Call to the pipeline
-        output_paths, errcode = process_img_nii(
+        output_paths, errcode = segment_image(
             img_ref=ref,
             derivative_name=der,
             model_semantic=model_semantic,

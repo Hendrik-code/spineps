@@ -4,7 +4,8 @@ build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry]
 name = "SPINEPS"
-version = "1.0.0"
+# Fallback only: poetry-dynamic-versioning derives the real version from git tags at build time.
+version = "2.0.0"
 description = "Framework for out-of-the box whole spine MRI segmentation."
 authors = ["Hendrik Möller <hendrik.moeller@tum.de>"]
 repository = "https://github.com/Hendrik-code/spineps"
@@ -12,7 +13,7 @@ homepage = "https://github.com/Hendrik-code/spineps"
 documentation = "https://spineps.readthedocs.io"
 license = "Apache License Version 2.0, January 2004"
 readme = "README.md"
-exclude = ["models", "examples"]
+exclude = ["spineps/models", "spineps/example"]
 
 [tool.poetry.scripts]
 spineps = 'spineps.entrypoint:entry_point'
@@ -25,16 +26,28 @@ pytorch-lightning = "^2.0.8"
 torchmetrics = "^1.1.2"
 tqdm = "^4.66.1"
 einops= "^0.6.1"
-nnunetv2 = "^2.4.2"
-TPTBox = "*"
-antspyx = "0.4.2"
+TPTBox = "^0.8.1"
+# TPTBox needs ants.utils.nibabel_nifti_to_ants, which only exists from antspyx 0.6 on, and antspyx ships no
+# Windows/macOS cp39 wheel from 0.6.0 on -- so Python 3.9 is Linux-only (see the CI matrix exclude).
+antspyx = "0.6.3"
 rich = "^13.6.0"
 monai="^1.3.0"
-acvl-utils = "0.2"
 TypeSaveArgParse="^1.0.1"
+# nnunetv2/acvl-utils/blosc2/python-gdcm are transitive dependencies of TPTBox's nnU-Net inference path
+# (TPTBox.segmentation.nnUnet_utils.inference_api); pinned directly here to control the resolved versions.
 python-gdcm = [
   { version = "==3.0.25", python = ">=3.9,<3.10" },
 ]
+blosc2 = "*"
+nnunetv2 = [
+  { version = "2.4.2", python = "<3.10" },
+  { version = "^2.8.0", python = ">=3.10" }
+]
+acvl-utils = [
+  { version = "0.2", python = "<3.10" },
+  { version = "*", python = ">=3.10" },
+]
+
 
 
 [tool.poetry.group.dev.dependencies]
@@ -42,12 +55,6 @@ pytest = "^7.4.4"
 pre-commit = "*"
 coverage = ">=7.0.1"
 pytest-mock = "^3.6.0"
-pandas = "^2.1.0"
-joblib = "^1.3.2"
-future = "^0.18.3"
-flake8 = ">=4.0.1"
-#auxiliary = ">=0.1.0"
-tqdm = ">=4.62.3"
 
 
 [tool.poetry.group.docs]
@@ -87,14 +94,6 @@ exclude = [
     "dist",
     "node_modules",
     "venv",
-    "spineps/Unet3D",
-    "spineps/utils/data_iterators.py",
-    "spineps/utils/default_preprocessor.py",
-    "spineps/utils/export_prediction.py",
-    "spineps/utils/get_network_from_plans.py",
-    "spineps/utils/plans_handler.py",
-    "spineps/utils/predictor.py",
-    "spineps/utils/sliding_window_prediction.py",
     "spineps/utils/image.py",  # vendored from spinalcordtoolbox
     ".toml",
 ]
@@ -179,6 +178,7 @@ ignore = [
     "N803",
     "N806",
     "N812",
+    "PLR0917",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
