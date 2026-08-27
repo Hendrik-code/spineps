@@ -20,6 +20,20 @@ DEFAULT_REGION_STARTS = (0, 7, 19)
 # A class flagged as "multiple-allowed" may appear at most this many times in a path.
 MAX_REPEATS_PER_CLASS = 2
 
+# --- 26-class (VertExactClass) axis -------------------------------------------------------
+# Here T13 and L6 are explicit classes instead of being encoded as a repeated T12 / L5, so the
+# path is strictly monotone and transitional anatomy is expressed by *omitting* a class:
+#   12 thoracic (normal): ... T11 -> T12 -> L1     (T13 skipped)
+#   13 thoracic          : ... T12 -> T13 -> L1    (no skip)
+#   11 thoracic          : ... T10 -> T11 -> L1    (T12 and T13 both skipped)
+# L6 needs no skip: a path simply ends at L5 when there is no sixth lumbar vertebra.
+T12_CLASS_IDX_EXACT = 18
+T13_CLASS_IDX_EXACT = 19
+L6_CLASS_IDX_EXACT = 25
+DEFAULT_REGION_STARTS_EXACT = (0, 7, 20)
+# Classes that may be absent from a 26-class path, i.e. the thoracolumbar transitional slots.
+DEFAULT_SKIPPABLE_CLASSES_EXACT = (T12_CLASS_IDX_EXACT, T13_CLASS_IDX_EXACT)
+
 
 def argmin(lst: list) -> tuple[int, ...]:
     """Return the index and value of the smallest element in a list.
@@ -92,6 +106,9 @@ def find_most_probably_sequence(  # noqa: C901
     allow_skip_at_region: list[int] | None = None,
     punish_skip_at_region_sequence: float = 0.2,
     #
+    skippable_classes: list[int] | None = None,
+    punish_skip_class: dict[int, float] | float = 0.0,
+    #
     verbose: bool = False,
 ) -> tuple[float, list[int], list]:
     """Find the most probable vertebra-label sequence as a min-cost monotone path through a cost matrix.
@@ -123,6 +140,12 @@ def find_most_probably_sequence(  # noqa: C901
         allow_skip_at_region (list[int] | None, optional): Regions in which a single skip is permitted. Defaults
             to ``[0]``.
         punish_skip_at_region_sequence (float, optional): Extra cost added for a region-level skip. Defaults to 0.2.
+        skippable_classes (list[int] | None, optional): Classes that may be absent from the path entirely. Any
+            run of consecutive skippable classes can be jumped over in one step. Used by the 26-class
+            (``VertExactClass``) axis, where omitting T13 is the *normal* anatomy rather than an anomaly.
+            Defaults to None (no such skips).
+        punish_skip_class (dict[int, float] | float, optional): Cost charged per skipped class, either one
+            value for all of them or per class index. Defaults to 0.0.
         verbose (bool, optional): Enable verbose logging of the recursion. Defaults to False.
 
     Returns:
@@ -144,6 +167,9 @@ def find_most_probably_sequence(  # noqa: C901
         allow_multiple_at_class = [T12_CLASS_IDX, L5_CLASS_IDX]
     if regions is None:
         regions = list(DEFAULT_REGION_STARTS)
+    skippable = set(skippable_classes) if skippable_classes else set()
+    if not isinstance(punish_skip_class, dict):
+        punish_skip_class = dict.fromkeys(skippable, float(punish_skip_class))
     # convert to np arrays
     if isinstance(cost, list):
         cost = np.asarray(cost)
@@ -248,6 +274,19 @@ def find_most_probably_sequence(  # noqa: C901
                 cost_add = punish_skip_at_region_sequence
                 with logger:
                     add_option_path(options, r + 1, c + 2, punish_skip_at_region_sequence)
+            # Jump over a run of consecutive skippable classes (26-class axis: T12/T13).
+            # The landing class must itself be non-skippable: landing *inside* the run would mean
+            # keeping a later optional class while dropping an earlier one, which for T12/T13 is
+            # anatomically impossible (there is no T13 without a T12).
+            if skippable:
+                cost_add = 0.0
+                nxt = c + 1
+                while nxt in skippable and nxt < n_classes:
+                    cost_add += punish_skip_class.get(nxt, 0.0)
+                    if (nxt + 1) not in skippable:
+                        with logger:
+                            add_option_path(options, r + 1, nxt + 1, cost_add)
+                    nxt += 1
             # find min
             minidx, minval = argmin([o[0] for o in options])
             pnext = options[minidx][1]
