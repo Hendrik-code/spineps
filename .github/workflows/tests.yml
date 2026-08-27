@@ -18,6 +18,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        exclude:
+          # antspyx (required by TPTBox) ships no Windows cp39 wheel from 0.6.0 on, so this combination
+          # cannot be installed without building antspyx from source.
+          - os: windows-latest
+            python-version: "3.9"
 
     steps:
     - uses: actions/checkout@v4
@@ -35,6 +40,9 @@ jobs:
       run: |
         python -m poetry install
     - name: Test with pytest and create coverage report
+      # bash on every OS: PowerShell only propagates the last command's exit code, so a failing pytest
+      # would be masked by the coverage call that follows it.
+      shell: bash
       run: |
         python -m poetry run coverage run --source=spineps -m pytest
         python -m poetry run coverage xml

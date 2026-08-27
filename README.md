@@ -99,6 +99,9 @@ BibTeX citation:
 
 This installation assumes you know your way around conda and virtual environments.
 
+SPINEPS supports Python 3.9 to 3.13. On Windows, Python 3.10 or newer is required: antspyx (pulled in via TPTBox)
+publishes no Windows wheel for 3.9, so installing it there would mean building it from source.
+
 ### Setup Venv
 
 The order of the following instructions is important!
