@@ -626,7 +626,8 @@ class SegmentationModelUnet3D(SegmentationModel):
         context = torch.autocast(self.device.type) if amp and self.device.type == "cuda" else nullcontext()
         with context:
             logits = self.predictor.forward(batch)
-        pred_cls = torch.argmax(torch.softmax(logits.float(), dim=1), dim=1)
+        # softmax is monotone over the class dim, so argmax(softmax(logits)) == argmax(logits)
+        pred_cls = torch.argmax(logits, dim=1)
         return pred_cls.detach().cpu().numpy()
 
     def segment_scan_batch(
@@ -652,7 +653,9 @@ class SegmentationModelUnet3D(SegmentationModel):
         prepared: list[NII] = []
         metas: list[tuple] = []
         for img in input_images:
-            nii = to_nii(img, seg=input_type == InputType.seg)
+            # a dict input is resolved to the model's first expected input, as segment_scan does
+            img_ref = img[input_type] if isinstance(img, dict) else img
+            nii = to_nii(img_ref, seg=input_type == InputType.seg)
             if pad_size > 0:
                 nii.set_array_(np.pad(nii.get_array(), pad_size, mode="edge"))
             orig_shape = nii.shape
@@ -660,14 +663,14 @@ class SegmentationModelUnet3D(SegmentationModel):
             if resample_to_recommended:
                 nii.rescale_(self.calc_recommended_resampling_zoom(nii.zoom), verbose=self.logger)
             prepared.append(nii)
-            metas.append((orig_shape, img))
+            metas.append((orig_shape, img_ref))
         results = self.run_batch(prepared, batch_size=batch_size, amp=amp, verbose=verbose)
-        for result, (orig_shape, img) in zip(results, metas):
+        for result, (orig_shape, img_ref) in zip(results, metas):
             for output_type, out_nii in result.items():
                 if not isinstance(out_nii, NII):
                     continue
                 if resample_output_to_input_space:
-                    out_nii.resample_from_to_(img)
+                    out_nii.resample_from_to_(img_ref)
                     out_nii.pad_to(orig_shape, inplace=True)
                 if output_type == OutputType.seg:
                     out_nii.map_labels_(self.inference_config.segmentation_labels, verbose=self.logger)

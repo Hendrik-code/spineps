@@ -28,7 +28,7 @@ for path in paths:
 
 ## CLI flags
 
-All long flags are now `--kebab-case` (short aliases are unchanged). Negative flags became positive on/off pairs.
+All long flags are now `--kebab-case`; short aliases are unchanged wherever the flag kept its meaning. Negative flags became positive on/off pairs, and because their polarity flipped their old short aliases (`-nc`, `-ntl`) were dropped rather than silently reused for the opposite behaviour.
 
 | Old | New |
 | --- | --- |
