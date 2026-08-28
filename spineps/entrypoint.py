@@ -182,7 +182,7 @@ def entry_point():
         "--model-semantic",
         "-ms",
         default="t2w",
-        help="The model used for the subregion segmentation. Pass 'auto' to auto-select a model by modality, or an absolute path to the model folder",
+        help="The model used for the subregion segmentation. You can also pass an absolute path to the model folder",
     )
     parser_dataset.add_argument(
         "--model-instance",
@@ -333,8 +333,8 @@ def run_sample(opt: Namespace):
 def run_dataset(opt: Namespace):
     """Run the segmentation pipeline over a whole (preferably BIDS) dataset directory.
 
-    Resolves the semantic, instance and (optional) labeling models (``"auto"`` defers model selection to the
-    pipeline), then calls :func:`process_dataset`, optionally under a cProfiler.
+    Resolves the semantic, instance and (optional) labeling models, then calls :func:`process_dataset`,
+    optionally under a cProfiler.
 
     Args:
         opt (Namespace): Parsed CLI arguments from the ``dataset`` subcommand (dataset directory, rawdata and
@@ -355,9 +355,7 @@ def run_dataset(opt: Namespace):
         raise NotADirectoryError(f"-directory is not a directory, got {input_dir}")
 
     # Model semantic
-    if opt.model_semantic == "auto":
-        model_semantic = None
-    elif "/" in str(opt.model_semantic):
+    if "/" in str(opt.model_semantic):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()

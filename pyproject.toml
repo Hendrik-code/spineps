@@ -94,7 +94,6 @@ exclude = [
     "dist",
     "node_modules",
     "venv",
-    "spineps/utils/image.py",  # vendored from spinalcordtoolbox
     ".toml",
 ]
 line-length = 140

@@ -112,7 +112,7 @@ class VertLabelingClassifier(SegmentationModel):
         """
         super().__init__(model_folder, inference_config, use_cpu, default_verbose, default_allow_tqdm)
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() and not use_cpu else "cpu")
         self.final_size: tuple[int, int, int] = DEFAULT_CLASSIFIER_INPUT_SIZE
         self.totensor = ToTensor()
         self.transform = Compose(
@@ -334,9 +334,13 @@ class VertLabelingClassifier(SegmentationModel):
         img_v = img.set_array(arr_cut).reorient_(("I", "P", "L"))
         seg_v = seg.set_array(sem_cut).reorient_(("I", "P", "L"))
 
+        # Read the patches back in the model orientation: the cutouts above are still in the input's axis
+        # order, and the crop below (and set_array_) assume (I, P, L).
+        arr_cut = img_v.get_array()
+        sem_cut = seg_v.get_seg_array()
         if angle is not None and angle != 0:
-            arr_cut = rotate_patch_sagitally(img_v.get_array(), -angle, msk=False)
-            sem_cut = rotate_patch_sagitally(seg_v.get_seg_array(), -angle, msk=True)
+            arr_cut = rotate_patch_sagitally(arr_cut, -angle, msk=False)
+            sem_cut = rotate_patch_sagitally(sem_cut, -angle, msk=True)
 
         # crop down to final cutout size (200, 160, 32)
         arr_cut = arr_cut[
@@ -422,9 +426,10 @@ class VertLabelingClassifier(SegmentationModel):
         model_input = model_input.to(torch.float32)
         model_input = model_input.to(self.device)
 
-        self.predictor.eval()
-        self.predictor.to(self.device)
-        logits_dict = self.predictor.forward(model_input)
-        logits_soft = {k: self.predictor.softmax(v)[0].detach().cpu().numpy() for k, v in logits_dict.items()}
+        # eval()/to(device) are done once in load(); the autograd graph built without inference_mode was
+        # allocated and thrown away for every single vertebra.
+        with torch.inference_mode():
+            logits_dict = self.predictor.forward(model_input)
+            logits_soft = {k: self.predictor.softmax(v)[0].detach().cpu().numpy() for k, v in logits_dict.items()}
         pred_cls = {k: np.argmax(v, 0) for k, v in logits_soft.items()}
         return logits_soft, pred_cls

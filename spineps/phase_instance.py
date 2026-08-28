@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import NamedTuple
 
 import numpy as np
 from TPTBox import NII, Location, Log_Type
@@ -11,7 +12,6 @@ from TPTBox.core.np_utils import (
     np_center_of_mass,
     np_connected_components,
     np_count_nonzero,
-    np_dice,
     np_dilate_msk,
     np_erode_msk,
     np_filter_connected_components,
@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import SegmentationModel
-from spineps.seg_pipeline import IVD_LABEL_OFFSET, logger
+from spineps.seg_pipeline import IVD_LABEL_OFFSET, debug_put, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 from spineps.utils.resolution import (
     INFERIOR_AXIS_PIR,
@@ -46,6 +46,71 @@ NEIGHBOR_OFFSETS = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
 MIN_NEIGHBORS_FOR_VOLUME_CHECK = 2
 # A corpus is considered merged when its volume exceeds the neighbor average by this ratio.
 MERGED_CORPUS_VOLUME_RATIO = 1.5
+# Minimum Dice for two cutout predictions to be considered the same vertebra.
+PREDICTION_COUPLE_DICE_THRESHOLD = 0.3
+# A couple overlapping already-established vertebrae by more than this fraction is discarded.
+MAX_ESTABLISHED_OVERLAP = 0.6
+
+
+class SparsePrediction(NamedTuple):
+    """One cutout prediction, stored where it actually lives instead of in a whole-volume array.
+
+    Each cutout only ever covers ``cutout_size`` voxels, so the dense ``(n_coms, 3, *volume)`` array this
+    replaces was almost entirely zeros -- hundreds of megabytes for a whole-spine scan, and every Dice
+    comparison below had to read all of it.
+
+    Attributes:
+        bbox: Location of ``mask`` inside the cropped volume, one slice per axis.
+        mask: Boolean cutout mask, shaped like ``bbox``.
+    """
+
+    bbox: tuple[slice, slice, slice]
+    mask: np.ndarray
+
+    @property
+    def size(self) -> int:
+        """Number of foreground voxels."""
+        return int(np.count_nonzero(self.mask))
+
+
+def _bbox_overlap(a: tuple[slice, ...], b: tuple[slice, ...]) -> tuple[slice, ...] | None:
+    """Intersection of two bounding boxes, or None when they do not overlap."""
+    out = []
+    for sa, sb in zip(a, b):
+        start = max(sa.start, sb.start)
+        stop = min(sa.stop, sb.stop)
+        if start >= stop:
+            return None
+        out.append(slice(start, stop))
+    return tuple(out)
+
+
+def _local(bbox: tuple[slice, ...], window: tuple[slice, ...]) -> tuple[slice, ...]:
+    """Express ``window`` (absolute coordinates) relative to the start of ``bbox``."""
+    return tuple(slice(w.start - b.start, w.stop - b.start) for b, w in zip(bbox, window))
+
+
+def sparse_dice(a: SparsePrediction, b: SparsePrediction) -> float:
+    """Dice score between two sparsely stored binary predictions.
+
+    Identical to ``np_dice`` on the two full-volume masks: outside the intersection of the bounding
+    boxes at least one operand is zero everywhere, so it cannot contribute to the intersection.
+
+    Args:
+        a (SparsePrediction): First prediction.
+        b (SparsePrediction): Second prediction.
+
+    Returns:
+        float: The Dice score; 1.0 when both masks are empty, matching ``np_dice``'s NaN handling.
+    """
+    denom = a.size + b.size
+    if denom == 0:
+        return 1.0
+    window = _bbox_overlap(a.bbox, b.bbox)
+    if window is None:
+        return 0.0
+    intersect = int(np.count_nonzero(a.mask[_local(a.bbox, window)] & b.mask[_local(b.bbox, window)]))
+    return (2.0 * intersect) / denom
 
 
 def predict_instance_mask(
@@ -103,7 +168,7 @@ def predict_instance_mask(
         # shp = seg_nii.shape
 
         seg_nii_rdy = seg_nii.reorient(verbose=logger)
-        debug_data["inst_uncropped_Subreg_nii_a_PIR"] = seg_nii_rdy.copy()
+        debug_put(debug_data, "inst_uncropped_Subreg_nii_a_PIR", seg_nii_rdy.copy)
 
         # Padding?
         if pad_size > 0:
@@ -118,14 +183,14 @@ def predict_instance_mask(
         logger.print(
             "Vertebra seg_nii_uncropped", seg_nii_uncropped.zoom, seg_nii_uncropped.orientation, seg_nii_uncropped.shape, verbose=verbose
         )
-        debug_data["inst_uncropped_Subreg_nii_b_zms"] = seg_nii_uncropped.copy()
+        debug_put(debug_data, "inst_uncropped_Subreg_nii_b_zms", seg_nii_uncropped.copy)
         uncropped_vert_mask = np.zeros(seg_nii_uncropped.shape, dtype=seg_nii_uncropped.dtype)
         logger.print("Vertebra uncropped_vert_mask empty", uncropped_vert_mask.shape, verbose=verbose)
         crop = seg_nii_rdy.compute_crop(dist=INSTANCE_CROP_MARGIN_MM / min(seg_nii_rdy.zoom))
         seg_nii_rdy.apply_crop_(crop)
         logger.print(f"Crop down from {uncropped_vert_mask.shape} to {seg_nii_rdy.shape}", verbose=verbose)
         logger.print("Vertebra seg_nii_rdy", seg_nii_rdy.zoom, seg_nii_rdy.orientation, seg_nii_rdy.shape, verbose=verbose)
-        debug_data["inst_cropped_Subreg_nii_b"] = seg_nii_rdy.copy()
+        debug_put(debug_data, "inst_cropped_Subreg_nii_b", seg_nii_rdy.copy)
         #
         # make threshold in actual mm
         corpus_border_threshold = int(corpus_border_threshold / expected_zms[1])
@@ -138,7 +203,7 @@ def predict_instance_mask(
             logger.print(f"no corpus ({Location.Vertebra_Corpus_border.value}) labels in this segmentation, cannot proceed", Log_Type.FAIL)
             return None, ErrCode.EMPTY
         # get all the 3vert predictions
-        vert_predictions, hierarchical_existing_predictions, n_corpus_coms = collect_vertebra_predictions(
+        vert_predictions, n_corpus_coms = collect_vertebra_predictions(
             seg_nii=seg_nii_rdy,
             model=model,
             corpus_size_cleaning=corpus_size_cleaning if proc_corpus_clean else 0,
@@ -159,12 +224,12 @@ def predict_instance_mask(
         whole_vert_nii, debug_data, errcode = from_vert3_predictions_make_vert_mask(
             seg_nii_rdy,
             vert_predictions,
-            hierarchical_existing_predictions,
+            n_corpus_coms,
             vert_size_threshold,
             debug_data=debug_data,
             proc_inst_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
         )
-        del vert_predictions, hierarchical_existing_predictions
+        del vert_predictions
         if errcode != ErrCode.OK:
             return None, errcode
         logger.print("Merged predictions into vert mask")
@@ -177,7 +242,7 @@ def predict_instance_mask(
 
         if proc_inst_fill_3d_holes:
             whole_vert_nii.fill_holes_(verbose=logger)
-        debug_data["inst_cropped_vert_arr_c_proc"] = whole_vert_nii.copy()
+        debug_put(debug_data, "inst_cropped_vert_arr_c_proc", whole_vert_nii.copy)
         n_vert_bodies = len(uniq_labels)
         logger.print(f"Predicted {n_vert_bodies} vertebrae")
         if n_vert_bodies < n_corpus_coms:
@@ -195,7 +260,7 @@ def predict_instance_mask(
         uncropped_vert_mask[crop] = vert_nii_cleaned.get_seg_array()
         logger.print(f"Uncrop back from {vert_nii_cleaned.shape} to {uncropped_vert_mask.shape}", verbose=verbose)
         whole_vert_nii_uncropped = seg_nii_uncropped.set_array(uncropped_vert_mask)
-        debug_data["inst_uncropped_vert_arr_a"] = whole_vert_nii_uncropped.copy()
+        debug_put(debug_data, "inst_uncropped_vert_arr_a", whole_vert_nii_uncropped.copy)
 
         # Uncrop again
         if pad_size > 0:
@@ -297,9 +362,13 @@ def get_corpus_coms(
 
     stats_by_height = dict(sorted(stats.items(), key=lambda x: x[1][0]))
     stats_by_height_keys = list(stats_by_height.keys())
+    key_position = {k: n for n, k in enumerate(stats_by_height_keys)}
 
-    for vl in stats_by_height_keys:
-        idx = stats_by_height_keys.index(vl)
+    # Iterate a snapshot: the working list is rebuilt below whenever a same-height neighbour is merged away.
+    for vl in list(stats_by_height_keys):
+        if vl not in stats_by_height:
+            continue
+        idx = key_position[vl]
         statsvl = stats_by_height[vl]
 
         is_ivd = statsvl[1]
@@ -324,13 +393,14 @@ def get_corpus_coms(
                 stats_by_height.pop(vl)
                 stats_by_height = dict(sorted(stats_by_height.items(), key=lambda x: x[1][0]))
                 stats_by_height_keys = list(stats_by_height.keys())
+                key_position = {k: n for n, k in enumerate(stats_by_height_keys)}
                 continue
 
             logger.print("Merged corpi, try to fix it", verbose=verbose)
             neighbor_verts = {
                 stats_by_height_keys[idx + i]: stats_by_height[stats_by_height_keys[idx + i]]
                 for i in NEIGHBOR_OFFSETS
-                if (idx + i) < len(stats_by_height_keys) and (idx + i) >= 0 and stats_by_height_keys[idx + i] < 99
+                if (idx + i) < len(stats_by_height_keys) and (idx + i) >= 0 and stats_by_height_keys[idx + i] < IVD_LABEL_OFFSET
             }
 
             logger.print("neighbor_vert_labels", neighbor_verts, verbose=verbose)
@@ -360,6 +430,9 @@ def get_corpus_coms(
                         logger.print("Splitting by plane")
                         plane_split_nii = get_plane_split(segvert, corpus_nii, spart, tpart, spart_dil, tpart_dil)
                         split_vert = split_by_plane(segvert, plane_split_nii)
+                        # NOTE: `stats` / `stats_by_height` deliberately keep their pre-split values; the loop
+                        # only ever splits off one extra corpus per detected alternation error, and the final
+                        # centers of mass below are recomputed from `corpus_cc` anyway.
                         corpus_cc[split_vert == 2] = corpus_cc.max() + 1
                     except Exception as e:
                         logger.print(f"Separating Corpi failed with exception {e}", Log_Type.FAIL)
@@ -404,22 +477,26 @@ def get_separating_components(
     vol_old = vol.copy()
     iterations = 0
     while True:
-        vol_erode = np_erode_msk(vol, n_pixel=1, connectivity=connectivity)
+        # np_erode_msk mutates its input and returns the same object, so erode a copy. Without it `vol`,
+        # `vol_old` and `vol_erode` all end up aliasing one array after the first iteration, "the iteration
+        # before" is lost, and the subreg_cc_n == 0 branch below could never find its two parts.
+        vol_erode = np_erode_msk(vol.copy(), n_pixel=1, connectivity=connectivity)
         subreg_cc, subreg_cc_n = np_connected_components(vol_erode, connectivity=check_connectivity)
         if subreg_cc_n > 1:
             vol = subreg_cc
             break
         elif subreg_cc_n == 0:  # np.max(subreg_cc)# 1 not in np_unique(subreg_cc)
-            vol_dilated = np_dilate_msk(vol, n_pixel=1, connectivity=connectivity, mask=vol.copy())
+            # Dilate a copy: `vol` is read again two lines down, and np_dilate_msk works in place.
+            vol_dilated = np_dilate_msk(vol.copy(), n_pixel=1, connectivity=connectivity, mask=vol.copy())
             # use iteration before to get other CC
             vol[vol_old != 0] = 2  # all possible voxels are 2
             vol[vol_dilated == 1] = 1
 
-            if 2 not in np_volume(vol):
-                raise Exception(  # noqa: TRY002
-                    f"cannot split volume into two parts after {iterations} iterations, all values are 0 after erosion."
-                )
             volume = np_volume(vol)
+            if 1 not in volume or 2 not in volume:
+                raise Exception(  # noqa: TRY002
+                    f"cannot split volume into two parts after {iterations} iterations, got regions {volume}."
+                )
             dil_iter = 0
             while volume[1] / (volume[1] + volume[2]) < 0.5:
                 vol_dilated = np_dilate_msk(vol_dilated, n_pixel=1, connectivity=connectivity, mask=vol.copy())
@@ -456,8 +533,11 @@ def get_separating_components(
     if spart.sum() == 0 or tpart.sum() == 0:
         raise Exception("S or T are empty")  # noqa: TRY002
 
-    spart_dil = np_dilate_msk(spart, n_pixel=1, connectivity=connectivity)
-    tpart_dil = np_dilate_msk(tpart, n_pixel=1, connectivity=connectivity)
+    # Dilate copies: np_dilate_msk works in place and returns its input, so dilating `spart`/`tpart`
+    # directly grew them too -- the function then returned two overlapping blobs as "the two separated
+    # components", and get_plane_split took its normal vector between their smeared centers of mass.
+    spart_dil = np_dilate_msk(spart.copy(), n_pixel=1, connectivity=connectivity)
+    tpart_dil = np_dilate_msk(tpart.copy(), n_pixel=1, connectivity=connectivity)
     stpart = (spart_dil + (tpart_dil * 2)).astype(np.uint8)
     while 3 not in np_volume(stpart):
         spart_dil = np_dilate_msk(spart_dil, n_pixel=1, connectivity=connectivity)
@@ -636,7 +716,7 @@ def collect_vertebra_predictions(
     instance_batch_size: int = 4,
     amp: bool = False,
     verbose: bool = False,
-) -> tuple[np.ndarray | None, list[str], int]:
+) -> tuple[dict[tuple[int, int], SparsePrediction] | None, int]:
     """Run the instance model on a cutout around each corpus center of mass and collect per-label predictions.
 
     Computes corpus centers of mass, and for each one extracts a ``cutout_size`` window (nudged inferiorly until
@@ -660,9 +740,9 @@ def collect_vertebra_predictions(
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
-        tuple[np.ndarray | None, list[str], int]: A hierarchical prediction array of shape
-        ``(n_corpus_coms, 3, *seg_shape)``, a list of ``"comidx_label"`` identifiers for the predictions actually
-        produced, and the number of corpus centers of mass. Returns ``(None, [], 0)`` if no corpus is found.
+        tuple[dict[tuple[int, int], SparsePrediction] | None, int]: The produced predictions keyed by
+        ``(corpus-com index, label index)``, and the number of corpus centers of mass. Returns ``(None, 0)``
+        if no corpus is found.
     """
     corpus_coms = get_corpus_coms(
         seg_nii,
@@ -671,24 +751,16 @@ def collect_vertebra_predictions(
         verbose=verbose,
     )
     if corpus_coms is None:
-        return None, [], 0
+        return None, 0
     n_corpus_coms = len(corpus_coms)
 
     if n_corpus_coms < 3:
         logger.print(f"Too few vertebra semantically segmented ({n_corpus_coms}), might have bad result", Log_Type.WARNING)
-        # return None, [], 0
 
-    shp = (
-        # n_corpus_coms,
-        # 3
-        seg_nii.shape[0],
-        seg_nii.shape[1],
-        seg_nii.shape[2],
-    )
-    hierarchical_existing_predictions = []
-    # Holds only binary {0, 1} per-label masks, so uint8 is sufficient (the source dtype can be wider,
-    # which would needlessly inflate this n_coms x 3 x volume array and slow the Dice comparisons below).
-    hierarchical_predictions = np.zeros((n_corpus_coms, 3, *shp), dtype=np.uint8)
+    shp = seg_nii.shape
+    # Each prediction is kept where it lives (see SparsePrediction); the dense (n_coms, 3, *volume) array
+    # this replaces was almost all zeros and dominated both peak memory and the Dice comparisons below.
+    predictions: dict[tuple[int, int], SparsePrediction] = {}
 
     # relabel to the labels expected by the model
     # {41: 1, 42: 2, 43: 3, 44: 4, 45: 5, 46: 6, 47: 7, 48: 8, 49: 9, 50: 9, Location.Dens_axis.value: 9}
@@ -718,7 +790,7 @@ def collect_vertebra_predictions(
         # Calc cutout
         cut_nii, cutout_coords, paddings = nii_calc_crop_around_centerpoint(com, seg_arr_c, cutout_size)
         # cut_nii = seg_nii_for_cut.set_array(arr_cut, verbose=False).reorient_()
-        debug_data[f"inst_cutout_vert_nii_{com_idx}_cut"] = cut_nii
+        debug_put(debug_data, f"inst_cutout_vert_nii_{com_idx}_cut", lambda c=cut_nii: c)
         cut_niis.append(cut_nii)
         cut_meta.append((com_idx, com, cutout_coords, paddings))
 
@@ -735,7 +807,7 @@ def collect_vertebra_predictions(
 
     for (com_idx, com, cutout_coords, paddings), results in zip(cut_meta, batched_results):
         vert_cut_nii = results[OutputType.seg].reorient_()
-        debug_data[f"inst_cutout_vert_nii_{com_idx}_pred"] = vert_cut_nii.copy()
+        debug_put(debug_data, f"inst_cutout_vert_nii_{com_idx}_pred", vert_cut_nii.copy)
         vert_cut_nii = post_process_single_3vert_prediction(
             vert_cut_nii,
             None,
@@ -743,14 +815,14 @@ def collect_vertebra_predictions(
             largest_cc=proc_inst_largest_k_cc,  # type:ignore
         )
         vert_labels = vert_cut_nii.unique()  # 1,2,3
-        debug_data[f"inst_cutout_vert_nii_{com_idx}_proc"] = vert_cut_nii.copy()
+        debug_put(debug_data, f"inst_cutout_vert_nii_{com_idx}_proc", vert_cut_nii.copy)
 
         cutout_sizes = tuple(cutout_coords[i].stop - cutout_coords[i].start for i in range(len(cutout_coords)))
         pad_cutout = tuple(slice(paddings[i][0], paddings[i][0] + cutout_sizes[i]) for i in range(len(paddings)))
         arr = vert_cut_nii.get_seg_array()
         cutout_vals = arr[pad_cutout]
-        # Write straight into the (already fully-allocated) hierarchical_predictions slice instead of building
-        # full-volume-sized temporaries per vertebra/label: everything outside cutout_coords is 0 either way.
+        # Store the cutout-sized mask together with where it belongs, rather than scattering it into a
+        # full-volume array.
         local_com = tuple(int(com[i]) - cutout_coords[i].start for i in range(3))
         seg_at_com = cutout_vals[local_com]
         if seg_at_com == 0:
@@ -759,9 +831,8 @@ def collect_vertebra_predictions(
             mask = cutout_vals == l
             labelindex = l - 1
             if mask.any():
-                hierarchical_predictions[com_idx, labelindex][cutout_coords] = mask.astype(np.uint8)
-                hierarchical_existing_predictions.append(str_id_com_label(com_idx, labelindex))
-    return hierarchical_predictions, hierarchical_existing_predictions, n_corpus_coms
+                predictions[(com_idx, labelindex)] = SparsePrediction(cutout_coords, mask)
+    return predictions, n_corpus_coms
 
 
 def post_process_single_3vert_prediction(
@@ -789,29 +860,16 @@ def post_process_single_3vert_prediction(
     return vert_nii
 
 
-def str_id_com_label(com_idx: int, label: int) -> str:
-    """Build the string identifier for a single (corpus-com, label) prediction.
-
-    Args:
-        com_idx (int): Index of the corpus center of mass.
-        label (int): Label index within that center's three-vertebra prediction.
-
-    Returns:
-        str: The identifier ``"{com_idx}_{label}"``.
-    """
-    return str(com_idx) + "_" + str(label)
-
-
 def from_vert3_predictions_make_vert_mask(
     seg_nii: NII,
-    vert_predictions: np.ndarray,  # already hierarchical [com_idx, l, map]
-    hierarchical_existing_predictions: list[str],  # list of actually used vert predictions
+    vert_predictions: dict[tuple[int, int], SparsePrediction],
+    n_corpus_coms: int,
     vert_size_threshold: int,
     debug_data: dict,
     proc_inst_clean_small_cc_artifacts: bool = True,
     verbose: bool = False,
 ) -> tuple[NII, dict, ErrCode]:
-    """Merge the hierarchical three-vertebra predictions into a single vertebra instance mask.
+    """Merge the per-cutout three-vertebra predictions into a single vertebra instance mask.
 
     Each per-label prediction looks among neighboring predictions (center index -2 to +2, all three labels) for
     its most-agreeing partners (by Dice), forming prediction couples. The couples are then merged into one
@@ -819,8 +877,8 @@ def from_vert3_predictions_make_vert_mask(
 
     Args:
         seg_nii (NII): Reference segmentation providing shape and spatial metadata.
-        vert_predictions (np.ndarray): Hierarchical predictions of shape ``(com_idx, label, *shape)``.
-        hierarchical_existing_predictions (list[str]): Identifiers of the predictions that were actually produced.
+        vert_predictions (dict[tuple[int, int], SparsePrediction]): Predictions keyed by ``(com index, label index)``.
+        n_corpus_coms (int): Number of corpus centers of mass the predictions were made around.
         vert_size_threshold (int): Voxel threshold for removing small instance artifacts.
         debug_data (dict): Dictionary for collecting intermediate results.
         proc_inst_clean_small_cc_artifacts (bool, optional): Whether to delete small instance artifacts. Defaults to True.
@@ -835,16 +893,15 @@ def from_vert3_predictions_make_vert_mask(
 
     # idx is always in the order in predictions (so bottom2up corpus CC)
     # arcus_coms sorted bottom to top
-    hierarchical_predictions = vert_predictions
     # search space: all neighboring predictions
     # all search for up to two other predictions with best agreement
-    coupled_predictions = create_prediction_couples(hierarchical_predictions, hierarchical_existing_predictions)
+    coupled_predictions = create_prediction_couples(vert_predictions, n_corpus_coms)
 
     logger.print("Coupled predictions", coupled_predictions, verbose=verbose)
     return merge_coupled_predictions(
         seg_nii,
         coupled_predictions=coupled_predictions,
-        hierarchical_predictions=hierarchical_predictions,
+        predictions=vert_predictions,
         debug_data=debug_data,
         proc_clean_small_cc_artifacts=proc_inst_clean_small_cc_artifacts,
         vert_size_threshold=vert_size_threshold,
@@ -853,35 +910,31 @@ def from_vert3_predictions_make_vert_mask(
 
 
 def create_prediction_couples(
-    hierarchical_predictions: np.ndarray,
-    hierarchical_existing_predictions,
+    predictions: dict[tuple[int, int], SparsePrediction],
+    n_predictions: int,
     verbose: bool = False,
 ) -> dict:
-    """Form and rank prediction couples across all hierarchical predictions.
+    """Form and rank prediction couples across all cutout predictions.
 
     For every (center index, label) prediction, finds its best-agreeing partners and groups them into a couple,
     averaging the agreement scores of duplicate couples. The result is sorted so that larger, higher-agreement
     couples come first (key = ``(len(couple) + 1) * mean_agreement``).
 
     Args:
-        hierarchical_predictions (np.ndarray): Hierarchical predictions of shape ``(com_idx, label, *shape)``.
-        hierarchical_existing_predictions (list[str]): Identifiers of the predictions that were actually produced.
+        predictions (dict[tuple[int, int], SparsePrediction]): Predictions keyed by ``(com index, label index)``.
+        n_predictions (int): Number of corpus centers of mass.
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
     Returns:
         dict: Mapping from each couple (a tuple of ``(com_idx, label)`` members) to its mean agreement score,
         ordered by descending size-weighted agreement.
     """
-    n_predictions = hierarchical_predictions.shape[0]
-    # Set for O(1) membership in the inner candidate search (called 3 * n_predictions times).
-    existing_predictions = set(hierarchical_existing_predictions)
-
     coupled_predictions = {}
     # TODO try to calculate list of candidates here, take the predictions and then parallelize the find_prediction_couple
 
     for idx in range(n_predictions):
         for pred in range(3):
-            couple, agreement = find_prediction_couple(idx, pred, hierarchical_predictions, existing_predictions, n_predictions, verbose)
+            couple, agreement = find_prediction_couple(idx, pred, predictions, n_predictions, verbose)
             if couple is None:
                 continue
             if couple not in coupled_predictions:
@@ -899,39 +952,24 @@ def create_prediction_couples(
     return coupled_predictions
 
 
-def parallel_dice(anchor, pred, cand_loc: tuple) -> tuple[float, tuple]:
-    """Compute the Dice score between two masks, tagged with a candidate location.
-
-    Args:
-        anchor (np.ndarray): Anchor prediction mask.
-        pred (np.ndarray): Candidate prediction mask to compare against.
-        cand_loc: Candidate location identifier carried through unchanged.
-
-    Returns:
-        tuple[float, Any]: The Dice score between ``anchor`` and ``pred`` and the passed-through ``cand_loc``.
-    """
-    return float(np_dice(anchor, pred)), cand_loc
-
-
 def find_prediction_couple(
     idx,
     pred,
-    hierarchical_predictions: np.ndarray,
-    hierarchical_existing_predictions,
+    predictions: dict[tuple[int, int], SparsePrediction],
     n_predictions,
     verbose: bool = False,
 ) -> tuple[tuple | None, float]:
     """Find the best-agreeing partner predictions for one anchor prediction.
 
     Considers candidate predictions within +/-2 of the anchor's center index (all three labels, excluding the
-    anchor itself), ranks them by Dice with the anchor, and keeps up to the two best whose Dice exceeds 0.3.
-    The anchor itself is appended, and the members are returned sorted by center index.
+    anchor itself), ranks them by Dice with the anchor, and keeps up to the two best whose Dice exceeds
+    ``PREDICTION_COUPLE_DICE_THRESHOLD``. If two partners are kept but do not overlap each other, only the better
+    one survives. The anchor itself is appended, and the members are returned sorted by center index.
 
     Args:
         idx (int): Center-of-mass index of the anchor prediction.
         pred (int): Label index of the anchor prediction.
-        hierarchical_predictions (np.ndarray): Hierarchical predictions of shape ``(com_idx, label, *shape)``.
-        hierarchical_existing_predictions (list[str]): Identifiers of the predictions that were actually produced.
+        predictions (dict[tuple[int, int], SparsePrediction]): Predictions keyed by ``(com index, label index)``.
         n_predictions (int): Total number of corpus centers of mass.
         verbose (bool, optional): Emit additional progress logging. Defaults to False.
 
@@ -939,24 +977,18 @@ def find_prediction_couple(
         tuple[tuple | None, float]: The couple (a sorted tuple of ``(com_idx, label)`` members including the
         anchor) and its mean partner agreement. Returns ``(None, 0)`` if the anchor prediction does not exist.
     """
-    if str_id_com_label(idx, pred) not in hierarchical_existing_predictions:
-        logger.print(f"{str_id_com_label(idx, pred)} not in predictions {hierarchical_existing_predictions}", verbose=verbose)
+    if (idx, pred) not in predictions:
+        logger.print(f"({idx}, {pred}) not in predictions {sorted(predictions)}", verbose=verbose)
         return None, 0
-    anchor = hierarchical_predictions[idx][pred]
+    anchor = predictions[(idx, pred)]
     dices = {}
 
     min_idx = max(0, idx - 2)
     max_idx = min(idx + 2, n_predictions)
-    list_of_candidates = [
-        (i, l)
-        for i in range(min_idx, max_idx + 1)
-        for l in [0, 1, 2]
-        if i != idx and str_id_com_label(i, l) in hierarchical_existing_predictions
-    ]
+    list_of_candidates = [(i, l) for i in range(min_idx, max_idx + 1) for l in [0, 1, 2] if i != idx and (i, l) in predictions]
 
-    # list_of_candidates = np.array(np.meshgrid(idx_candidates, [0, 1, 2])).T.reshape(-1, 2)
     for cand_loc in list_of_candidates:
-        dices[tuple(cand_loc)] = float(np_dice(anchor, hierarchical_predictions[cand_loc[0]][cand_loc[1]]))
+        dices[cand_loc] = sparse_dice(anchor, predictions[cand_loc])
 
     # find k best partners
     dices = dict(sorted(dices.items(), key=lambda item: item[1], reverse=True))
@@ -964,23 +996,17 @@ def find_prediction_couple(
     best_k = best_k[:2]
 
     couple = []
-    dice_threshold = 0.3
-    if len(best_k) > 0 and dices[best_k[0]] > dice_threshold:
+    if len(best_k) > 0 and dices[best_k[0]] > PREDICTION_COUPLE_DICE_THRESHOLD:
         couple.append(best_k[0])
-    if len(best_k) > 1 and dices[best_k[1]] > dice_threshold:
+    if len(best_k) > 1 and dices[best_k[1]] > PREDICTION_COUPLE_DICE_THRESHOLD:
         couple.append(best_k[1])
-    # if dices[best_k[2]] > dice_threshold:
-    #    couple.append(best_k[2])
     if len(couple) == 2:
-        # sort out if the other two do not overlap over threshold
-        dice_partners = float(
-            np_dice(
-                hierarchical_predictions[best_k[0][0]][best_k[0][1]],
-                hierarchical_predictions[best_k[1][0]][best_k[1][1]],
-            )
-        )
-        if dice_partners < dice_threshold:
-            logger.print(couple, " was skipped because the partners do not overlap", verbose=verbose)
+        # The two partners agree with the anchor but not with each other, so they cannot both be the
+        # same vertebra -- keep only the better one (best_k is sorted by descending Dice).
+        dice_partners = sparse_dice(predictions[best_k[0]], predictions[best_k[1]])
+        if dice_partners < PREDICTION_COUPLE_DICE_THRESHOLD:
+            logger.print(couple[1], "was dropped because the partners do not overlap", verbose=verbose)
+            couple = couple[:1]
 
     agreement = 0
     if len(couple) > 0:
@@ -996,7 +1022,7 @@ def find_prediction_couple(
 def merge_coupled_predictions(
     seg_nii: NII,
     coupled_predictions,
-    hierarchical_predictions: np.ndarray,
+    predictions: dict[tuple[int, int], SparsePrediction],
     debug_data: dict,
     proc_clean_small_cc_artifacts: bool = True,
     vert_size_threshold: int = 0,
@@ -1007,12 +1033,13 @@ def merge_coupled_predictions(
     Iterates over the couples in priority order, summing their member maps and thresholding by voxel agreement
     (requiring overlap from at least two members unless the couple is small or low-agreement). Each accepted
     couple is written as a new instance label into voxels not yet claimed; couples overlapping established
-    vertebrae by more than 60% are skipped. Small connected-component artifacts are optionally cleaned afterwards.
+    vertebrae by more than ``MAX_ESTABLISHED_OVERLAP`` are skipped. Small connected-component artifacts are
+    optionally cleaned afterwards.
 
     Args:
         seg_nii (NII): Reference segmentation providing shape and spatial metadata.
         coupled_predictions (dict): Mapping from couple to mean agreement, ordered by priority.
-        hierarchical_predictions (np.ndarray): Hierarchical predictions of shape ``(com_idx, label, *shape)``.
+        predictions (dict[tuple[int, int], SparsePrediction]): Predictions keyed by ``(com index, label index)``.
         debug_data (dict): Dictionary for collecting intermediate results.
         proc_clean_small_cc_artifacts (bool, optional): Whether to delete small instance artifacts. Defaults to True.
         vert_size_threshold (int, optional): Voxel threshold for removing small instance artifacts. Defaults to 0.
@@ -1024,7 +1051,6 @@ def merge_coupled_predictions(
     """
     whole_vert_nii = seg_nii.copy()
     whole_vert_arr = np.zeros(whole_vert_nii.shape, dtype=np.uint16)  # this is fixed segmentations from vert
-    combine = np.zeros(whole_vert_nii.shape, dtype=whole_vert_nii.dtype)  # reused scratch buffer, reset per couple below
 
     idx = 1
     for k, overall_agreement in coupled_predictions.items():
@@ -1032,27 +1058,35 @@ def merge_coupled_predictions(
         take_no_overlap = len(k) <= 2
         if overall_agreement < 0.3 + 0.15 * (4 - len(k)):
             take_no_overlap = True
-        combine.fill(0)
+        # A couple only ever covers the union of its members' cutouts, so accumulate and write there
+        # instead of allocating and scanning whole-volume buffers per couple.
+        member_bboxes = [predictions[cid].bbox for cid in k]
+        window = tuple(
+            slice(min(b[axis].start for b in member_bboxes), max(b[axis].stop for b in member_bboxes))
+            for axis in range(len(member_bboxes[0]))
+        )
+        combine = np.zeros(tuple(s.stop - s.start for s in window), dtype=np.uint8)
         for cid in k:
-            combine += hierarchical_predictions[cid[0]][cid[1]]
+            member = predictions[cid]
+            combine[_local(window, member.bbox)] += member.mask
         m = 1 if take_no_overlap else 2
-        # m = min(max(1, np.max(combine)), 2)  # type:ignore
-        combine[combine < m] = 0
-        combine[combine != 0] = idx
+        selected = combine >= m
 
-        count_new = np_count_nonzero(combine)
+        count_new = int(np.count_nonzero(selected))
         if count_new == 0:
             logger.print("ZERO instance mask failure on vertebra instance creation", Log_Type.FAIL)
             return seg_nii, debug_data, ErrCode.EMPTY
-        count_cut = np_count_nonzero((combine != 0) & (whole_vert_arr == 0))
+        target = whole_vert_arr[window]
+        free = selected & (target == 0)
+        count_cut = int(np.count_nonzero(free))
         relative_overlap = (count_new - count_cut) / count_new
-        if relative_overlap > 0.6:
+        if relative_overlap > MAX_ESTABLISHED_OVERLAP:
             logger.print(k, f" was skipped because it overlaps {round(relative_overlap, 4)} with established verts", verbose=verbose)
             continue
-        whole_vert_arr[whole_vert_arr == 0] = combine[whole_vert_arr == 0]
+        target[free] = idx
         idx += 1
 
-    debug_data["inst_crop_vert_arr_a_raw"] = seg_nii.set_array(whole_vert_arr)
+    debug_put(debug_data, "inst_crop_vert_arr_a_raw", lambda: seg_nii.set_array(whole_vert_arr))
 
     if np_is_empty(whole_vert_arr):
         logger.print("Vert mask empty, will skip", Log_Type.FAIL)

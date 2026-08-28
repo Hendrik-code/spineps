@@ -7,7 +7,7 @@ from TPTBox import NII, Location, Log_Type
 
 from spineps.seg_enums import ErrCode, OutputType
 from spineps.seg_model import SegmentationModel
-from spineps.seg_pipeline import fill_holes_labels, logger
+from spineps.seg_pipeline import debug_put, fill_holes_labels, logger
 from spineps.utils.proc_functions import clean_cc_artifacts
 from spineps.utils.resolution import REFERENCE_VOXEL_VOLUME_MM3, REFERENCE_ZOOM, mm3_to_voxels, mm_to_voxels
 
@@ -73,14 +73,16 @@ def predict_semantic_mask(
 
         logger.print("Post-process semantic mask...")
 
-        debug_data["sem_raw"] = seg_nii.copy()
+        debug_put(debug_data, "sem_raw", seg_nii.copy)
 
         if seg_nii.is_empty:
             logger.print("Subregion mask is empty, skip this", Log_Type.FAIL)
             return seg_nii, softmax_logits, ErrCode.EMPTY
 
+        # Both helpers write through set_array_ and return the same object, and the result is rebound to
+        # seg_nii either way, so the defensive copies these calls used to make were pure whole-volume waste.
         if proc_remove_inferior_beyond_canal:
-            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii=seg_nii.copy())
+            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii)
 
         if proc_clean_small_cc_artifacts:
             seg_nii.set_array_(
@@ -110,14 +112,14 @@ def predict_semantic_mask(
 
         # Do two iterations of both processing if enabled to make sure
         if proc_remove_inferior_beyond_canal:
-            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii=seg_nii.copy())
+            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii)
 
         if proc_clean_beyond_largest_bounding_box:
-            seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
+            seg_nii = semantic_bounding_box_clean(seg_nii)
 
         if proc_remove_inferior_beyond_canal and proc_clean_beyond_largest_bounding_box:
-            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii=seg_nii.copy())
-            seg_nii = semantic_bounding_box_clean(seg_nii=seg_nii.copy())
+            seg_nii = remove_nonsacrum_beyond_canal_height(seg_nii)
+            seg_nii = semantic_bounding_box_clean(seg_nii)
 
         if proc_fill_3d_holes:
             seg_nii = seg_nii.fill_holes_(fill_holes_labels, verbose=logger)
@@ -210,16 +212,18 @@ def semantic_bounding_box_clean(seg_nii: NII) -> NII:
                     break
 
     seg_bin_arr = seg_binary.get_seg_array()
-    crop = (p_slice, i_slice, r_slice)
-    seg_bin_clean_arr = np.zeros(seg_bin_arr.shape)
-    seg_bin_clean_arr[crop] = 1
+    # The region to keep is the union of every incorporated component's bounding box, not just the
+    # largest component's -- otherwise growing the region has no effect on the result at all.
+    crop = tuple(slice(min(b[axis].start for b in bboxes), max(b[axis].stop for b in bboxes)) for axis in range(len(bboxes[0])))
+    seg_bin_clean_arr = np.zeros(seg_bin_arr.shape, dtype=bool)
+    seg_bin_clean_arr[crop] = True
 
-    # everything below biggest k get always removed
+    # every component that was never incorporated is dropped, even where it falls inside the union bbox
     largest_k_arr = seg_bin_largest_k_cc_nii.get_seg_array()
-    seg_bin_clean_arr[largest_k_arr == 0] = 0
+    seg_bin_clean_arr &= np.isin(largest_k_arr, incorporated)
 
     seg_arr = seg_nii.get_seg_array()
-    seg_arr[seg_bin_clean_arr != 1] = 0
+    seg_arr[~seg_bin_clean_arr] = 0
     seg_nii.set_array_(seg_arr)
     seg_nii.reorient_(ori)
     cleaned_ks = [l for l in range(2, max_k + 1) if l not in incorporated]

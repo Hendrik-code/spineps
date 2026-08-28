@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Union
 
-from TPTBox import BIDS_FILE, ZOOMS, Log_Type
+from TPTBox import BIDS_FILE, NII, Log_Type
 
 from spineps.seg_enums import Acquisition, Modality
 from spineps.seg_model import SegmentationModel
@@ -13,27 +13,6 @@ from spineps.seg_pipeline import logger
 # NOTE: plain runtime assignment, not an annotation, so `from __future__ import annotations` does not defer it --
 # `X | Y` on bare types needs Python 3.10+, so this must stay `Union[...]` for the 3.9 floor.
 Modality_Pair = tuple[Union[list[Modality], Modality], Acquisition]
-
-
-def find_best_matching_model(
-    modality_pair: Modality_Pair,
-    expected_resolution: ZOOMS | None,  # actual resolution here?
-) -> SegmentationModel:
-    """Select the segmentation model best matching a modality/acquisition pair and resolution.
-
-    Not yet implemented: intended to iterate over model configs and pick the one best matching the requested resolution.
-
-    Args:
-        modality_pair (Modality_Pair): The desired ``(modality(ies), acquisition)`` pair.
-        expected_resolution (ZOOMS | None): The desired voxel resolution, or None.
-
-    Returns:
-        SegmentationModel: The best-matching model (once implemented).
-
-    Raises:
-        NotImplementedError: Always, as this function is not yet implemented; also for an unmapped modality pair.
-    """
-    raise NotImplementedError("find_best_matching_model()")
 
 
 def check_model_modality_acquisition(
@@ -106,6 +85,7 @@ def check_input_model_compatibility(
     ignore_acquisition: bool = False,
     ignore_labelkey: bool = False,
     verbose: bool = True,
+    img_nii: NII | None = None,
 ) -> bool:
     """Check whether an input image file is compatible with a model's expected modality, acquisition, and naming.
 
@@ -120,6 +100,7 @@ def check_input_model_compatibility(
         ignore_acquisition (bool): If True, tolerate an acquisition mismatch.
         ignore_labelkey (bool): If True, tolerate an unexpected ``label`` key in the filename.
         verbose (bool): If True, log warnings describing incompatibilities.
+        img_nii (NII | None): The already-loaded image, to avoid re-reading it from disk just for the plane check.
 
     Returns:
         bool: True if the input is compatible with the model (after applying the ignore flags), otherwise False.
@@ -148,8 +129,9 @@ def check_input_model_compatibility(
             compatible = False
         else:
             add_ignore_text(logger_texts)
-    if has_seg_key and allowed_format not in Modality.format_keys(Modality.SEG):
-        logger_texts.append("Input acquisition not segmentation, but found a 'seg'-key.")
+    # `allowed_format` is a list, so the old `allowed_format not in Modality.format_keys(...)` was always True.
+    if has_seg_key and Modality.SEG not in model_modalities:
+        logger_texts.append("Found a 'seg'-key in the filename, but the model does not take a segmentation as input.")
         if not ignore_modality:
             compatible = False
         else:
@@ -173,7 +155,8 @@ def check_input_model_compatibility(
         logger_texts.append("Probably a debug file (debug in name or parent).")
         compatible = False
 
-    img_nii = img_ref.open_nii()
+    if img_nii is None:
+        img_nii = img_ref.open_nii()
     if img_nii.get_plane() not in ["iso", *allowed_acq]:
         logger_texts.append(f"input {img_nii.get_plane()=} is not 'iso' or one of the expected {allowed_acq}.")
         compatible = False

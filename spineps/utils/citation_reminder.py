@@ -12,7 +12,16 @@ GITHUB_LINK = "https://github.com/Hendrik-code/spineps"
 
 ARXIV_LINK = "https://arxiv.org/abs/2402.16368"
 
+# Set this environment variable to any of the values below to silence the reminder entirely.
+OPT_OUT_ENV_VAR = "SPINEPS_NO_CITATION_REMINDER"
+_OPT_OUT_VALUES = frozenset({"1", "true", "yes", "on"})
+
 has_reminded_citation = False
+
+
+def reminder_disabled() -> bool:
+    """Return whether the user opted out of the citation reminder via the environment."""
+    return os.environ.get(OPT_OUT_ENV_VAR, "").strip().lower() in _OPT_OUT_VALUES
 
 
 def citation_reminder(func):
@@ -21,7 +30,7 @@ def citation_reminder(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         global has_reminded_citation  # noqa: PLW0603
-        if not has_reminded_citation and os.environ.get("SPINEPS_TURN_OF_CITATION_REMINDER", "FALSE") != "TRUE":
+        if not has_reminded_citation and not reminder_disabled():
             print_citation_reminder()
             has_reminded_citation = True
         return func(*args, **kwargs)
@@ -45,4 +54,14 @@ def print_citation_reminder():
     console.line()
 
 
-atexit.register(print_citation_reminder)
+def _print_citation_reminder_at_exit() -> None:
+    """Repeat the reminder on interpreter exit, but only if SPINEPS actually ran and the user did not opt out.
+
+    Registering ``print_citation_reminder`` directly made merely importing ``spineps`` print the banner, and
+    ignored the opt-out environment variable entirely.
+    """
+    if has_reminded_citation and not reminder_disabled():
+        print_citation_reminder()
+
+
+atexit.register(_print_citation_reminder_at_exit)

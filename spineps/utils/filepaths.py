@@ -14,8 +14,9 @@ logger = No_Logger(prefix="filepaths")
 spineps_environment_path_override = None  # Path(
 #    "/DATA/NAS/ongoing_projects/hendrik/mri_usage/models/"
 # )  # None  # You can put an absolute path to the model weights here instead of using environment variable
-spineps_environment_path_backup = Path(__file__).parent.parent.joinpath("models")  # EDIT this to use this instead of environment variable
-spineps_environment_path_backup.mkdir(exist_ok=True)
+# EDIT this to use this instead of the environment variable. Created on demand by
+# get_mri_segmentor_models_dir(), never at import time (that would write into site-packages).
+spineps_environment_path_backup = Path(__file__).parent.parent.joinpath("models")
 
 
 def get_mri_segmentor_models_dir() -> Path:
@@ -25,26 +26,33 @@ def get_mri_segmentor_models_dir() -> Path:
         Path: Path to the overall models folder
 
     Raises:
-        RuntimeError: If no models directory could be determined from the environment variable, override or backup.
-        FileNotFoundError: If the resolved models directory does not exist.
+        RuntimeError: If no models directory could be determined, or the fallback directory cannot be created.
+        FileNotFoundError: If the directory named by 'SPINEPS_SEGMENTOR_MODELS' does not exist.
     """
-    folder_path = (
-        os.environ.get("SPINEPS_SEGMENTOR_MODELS")
-        if spineps_environment_path_override is None or not spineps_environment_path_override.exists()
-        else spineps_environment_path_override
-    )
-    if folder_path is None and spineps_environment_path_backup is not None:
-        folder_path = spineps_environment_path_backup
+    if spineps_environment_path_override is not None and spineps_environment_path_override.exists():
+        return spineps_environment_path_override
 
-    if folder_path is None:
+    from_env = os.environ.get("SPINEPS_SEGMENTOR_MODELS")
+    if from_env is not None:
+        folder_path = Path(from_env)
+        if not folder_path.exists():
+            raise FileNotFoundError(f"Environment variable 'SPINEPS_SEGMENTOR_MODELS' = {folder_path} does not exist")
+        return folder_path
+
+    if spineps_environment_path_backup is None:
         raise RuntimeError(
             "Environment variable 'SPINEPS_SEGMENTOR_MODELS' is not defined. Setup the environment variable as stated "
             "in the readme or set the override in utils.filepaths.py"
         )
-    folder_path = Path(folder_path)
-    if not folder_path.exists():
-        raise FileNotFoundError(f"Environment variable 'SPINEPS_SEGMENTOR_MODELS' = {folder_path} does not exist")
-    return folder_path
+    try:
+        spineps_environment_path_backup.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise RuntimeError(
+            f"Environment variable 'SPINEPS_SEGMENTOR_MODELS' is not defined and the fallback models directory "
+            f"{spineps_environment_path_backup} could not be created ({e}). Set the environment variable as stated "
+            "in the readme."
+        ) from e
+    return spineps_environment_path_backup
 
 
 def filepath_model(model_folder_name: str, model_dir: str | Path | None = None) -> Path:
