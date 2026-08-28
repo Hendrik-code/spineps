@@ -1,6 +1,6 @@
 # Utilities
 
-Image processing, the vertebra-labeling path solver, disc labeling and other helpers.
+Image processing, the vertebra-labeling path solver and other helpers.
 
 ## spineps.utils.resolution
 
@@ -16,10 +16,6 @@ behaviour is consistent across MRI and CT resolutions.
 ## spineps.utils.find_min_cost_path
 
 ::: spineps.utils.find_min_cost_path
-
-## spineps.utils.generate_disc_labels
-
-::: spineps.utils.generate_disc_labels
 
 ## spineps.utils.filepaths
 

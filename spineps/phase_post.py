@@ -5,6 +5,7 @@ from __future__ import annotations
 import heapq
 
 import numpy as np
+from scipy.ndimage import binary_dilation, generate_binary_structure
 from TPTBox import NII, Location, Log_Type, v_idx2name, v_name2idx
 from TPTBox.core.np_utils import (
     np_bbox_binary,
@@ -22,7 +23,7 @@ from TPTBox.core.np_utils import (
 )
 
 from spineps.phase_labeling import VertLabelingClassifier, perform_labeling_step
-from spineps.seg_pipeline import ENDPLATE_LABEL_OFFSET, IVD_LABEL_OFFSET, logger, vertebra_subreg_labels
+from spineps.seg_pipeline import ENDPLATE_LABEL_OFFSET, IVD_LABEL_OFFSET, debug_put, logger, vertebra_subreg_labels
 from spineps.utils.compat import zip_strict
 from spineps.utils.proc_functions import fix_wrong_posterior_instance_label
 from spineps.utils.resolution import REFERENCE_VOXEL_VOLUME_MM3, REFERENCE_ZOOM, isotropic_area_to_voxels
@@ -183,7 +184,7 @@ def phase_postprocess_combined(
         logger.print("vert_uncropped volumes", vert_uncropped.volumes())
         logger.print("seg_uncropped", seg_uncropped.unique())
 
-        debug_data["vert_arr_return_final"] = vert_uncropped.copy()
+        debug_put(debug_data, "vert_arr_return_final", vert_uncropped.copy)
     return seg_uncropped, vert_uncropped
 
 
@@ -236,7 +237,10 @@ def mask_cleaning_other(
         subreg_arr[deletion_map == 1] = 0
 
     n_vert_pixels = np_count_nonzero(vert_arr_cleaned)
-    n_subreg_vert_pixels = subreg_vert_nii.volumes()[1]
+    n_subreg_vert_pixels = subreg_vert_nii.volumes().get(1, 0)
+    if n_subreg_vert_pixels == 0 or n_vert_bodies == 0:
+        logger.print("No vertebra voxels to reconcile between the instance and semantic masks", Log_Type.WARNING)
+        return whole_vert_nii.set_array(vert_arr_cleaned), seg_nii.set_array(subreg_arr)
     n_vert_pixel_per_vertebra = n_subreg_vert_pixels / n_vert_bodies
     n_difference_pixels = n_subreg_vert_pixels - n_vert_pixels
     if n_difference_pixels > 0:
@@ -309,7 +313,7 @@ def assign_missing_cc(
         )
         subreg_arr_vert_rest = reference_arr.copy()
         subreg_arr_vert_rest[target_arr_ != 0] = 0
-        deletion_map = np.zeros(reference_arr.shape)
+        deletion_map = np.zeros_like(reference_arr, dtype=np.uint8)
 
         label_rest = np_unique(subreg_arr_vert_rest)
         if len(label_rest) == 1 and label_rest[0] == 0:
@@ -365,6 +369,85 @@ def assign_missing_cc(
     return target_arr, reference_arr, deletion_map
 
 
+def _split_endplates(seg_t: NII, vert_t: NII, ep_labels: list[int], verbose: bool = True) -> NII:
+    """Divide the endplate band into superior and inferior plates by growing each vertebra into it.
+
+    Each vertebra instance is dilated one voxel per round; endplate voxels it reaches, and that no other
+    vertebra has claimed yet, are labelled from the endplate instance id already stored in ``vert_t``:
+    the current vertebra's own plate becomes ``Vertebral_Body_Endplate_Inferior`` and the previous
+    vertebra's becomes ``Vertebral_Body_Endplate_Superior``. Whatever is still unclaimed when the rounds
+    end keeps the generic ``Endplate`` label.
+
+    This is the hot loop of the whole post-processing phase, so it runs on numpy arrays inside each
+    vertebra's own window rather than on whole-volume NII operators (every NII operator copies the array
+    twice), and each round dilates the previous round's mask by one instead of re-dilating the original
+    by ``dil``.
+
+    Args:
+        seg_t (NII): Subregion semantic mask in PIR, providing the endplate voxels and the output grid.
+        vert_t (NII): Vertebra instance mask in PIR, already carrying the endplate instance ids.
+        ep_labels (list[int]): Semantic labels that count as endplate.
+        verbose (bool): If True, report the detected fraction while iterating.
+
+    Returns:
+        NII: A mask holding only the superior/inferior/unassigned endplate labels.
+    """
+    inferior = Location.Vertebral_Body_Endplate_Inferior.value
+    superior = Location.Vertebral_Body_Endplate_Superior.value
+
+    ep_arr = seg_t.extract_label(ep_labels).get_seg_array().astype(bool)
+    vert_vals = vert_t.get_seg_array()
+    # int32 so `out + plates` cannot wrap: the intermediate values are vertebra ids offset by
+    # ENDPLATE_LABEL_OFFSET and can be summed where two rounds touch the same voxel.
+    out_arr = np.zeros(seg_t.shape, dtype=np.int32)
+    total = int(ep_arr.sum())
+    if total == 0:
+        return seg_t.set_array(out_arr)
+
+    # vert_t.unique() is sorted, so this is the same set the old `if i >= LIMIT: break` selected.
+    vert_labels_to_split = [int(i) for i in vert_t.unique() if i < INSTANCE_LABEL_LIMIT]
+    # Per-vertebra window: its bounding box grown by the largest dilation we can apply, so a window-local
+    # dilation is identical to the global one everywhere it can matter.
+    windows: dict[int, tuple[slice, ...]] = {}
+    grown: dict[int, np.ndarray] = {}
+    for i in vert_labels_to_split:
+        label_mask = vert_vals == i
+        bbox = np_bbox_binary(label_mask, px_dist=MAX_ENDPLATE_DILATION)
+        windows[i] = bbox
+        grown[i] = label_mask[bbox]
+    # connectivity=3 (26-neighbourhood), matching NII.dilate_msk's default. scipy's binary dilation is the
+    # same operation as TPTBox's np_dilate_msk on a single-label binary mask, but not a per-voxel Python loop.
+    struct = generate_binary_structure(3, 3)
+
+    pref = 1
+    old_vol = -1
+    for _dil in range(1, MAX_ENDPLATE_DILATION):
+        new_vol = int(np.count_nonzero((out_arr == inferior) | (out_arr == superior)))
+        logger.print(rf"{new_vol / total * 100:.2f}% endplates detected", end="\r") if verbose else None
+        if old_vol == new_vol and old_vol != 0:
+            break
+        old_vol = new_vol
+        if total == new_vol:
+            logger.print("Found all Endplates                                      ")
+            break
+        for i in vert_labels_to_split:
+            bbox = windows[i]
+            grown[i] = binary_dilation(grown[i], structure=struct)
+            out_w = out_arr[bbox]
+            unclaimed = (out_w != inferior) & (out_w != superior)
+            reached = ep_arr[bbox] & grown[i] & unclaimed
+            plates = np.where(reached, vert_vals[bbox], 0)
+            plates = np_map_labels(plates, {i + ENDPLATE_LABEL_OFFSET: inferior, pref + ENDPLATE_LABEL_OFFSET: superior})
+            out_arr[bbox] = out_w + plates
+            pref = i
+
+    # whatever no vertebra reached keeps the generic endplate label
+    leftover = ep_arr & (out_arr != inferior) & (out_arr != superior)
+    out_arr[leftover] += Location.Endplate.value
+    keep = (out_arr == inferior) | (out_arr == superior) | (out_arr == Location.Endplate.value)
+    return seg_t.set_array(np.where(keep, out_arr, 0))
+
+
 def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, include_sacrum=False, verbose=True) -> tuple[np.ndarray, np.ndarray]:
     """Attach intervertebral-disc and endplate instance labels and split endplates into superior/inferior.
 
@@ -393,16 +476,10 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, include_sacrum=Fals
     vert_arr = vert_t.get_seg_array()
     subreg_arr = seg_t.get_seg_array()
 
-    coms_vert_dict = {}
-    for l in vert_labels:
-        vert_l = vert_arr.copy()
-        vert_l[vert_l != l] = 0
-        vert_l[subreg_arr != 49] = 0  # com of corpus region
-        vert_l[vert_l != 0] = 1
-        try:
-            coms_vert_dict[l] = np_center_of_mass(vert_l)[1][1]  # center_of_mass(vert_l)[1]
-        except Exception:
-            coms_vert_dict[l] = 0
+    # One pass over the corpus voxels for every label at once, instead of a whole-volume copy per label.
+    corpus_instances = np.where(subreg_arr == Location.Vertebra_Corpus_border.value, vert_arr, 0)
+    corpus_coms = np_center_of_mass(corpus_instances)
+    coms_vert_dict = {l: (corpus_coms[l][1] if l in corpus_coms else 0) for l in vert_labels}
 
     coms_vert_y = list(coms_vert_dict.values())
     coms_vert_labels = list(coms_vert_dict.keys())
@@ -411,17 +488,15 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, include_sacrum=Fals
     n_ivd_unique = 0
     if Location.Vertebra_Disc.value in seg_t.unique():
         # Map IVDS
-        subreg_cc = seg_t.get_connected_components(labels=Location.Vertebra_Disc.value)
-        subreg_cc_n = len(subreg_cc.unique())
-        subreg_cc = subreg_cc.get_seg_array()
-        cc_labelset = list(range(1, subreg_cc_n + 1))
+        subreg_cc = seg_t.get_connected_components(labels=Location.Vertebra_Disc.value).get_seg_array()
         mapping_cc_to_vert_label = {}
 
+        # All component centroids in one pass; the per-component `subreg_cc == c` built a full-volume
+        # boolean for every disc.
+        cc_coms = np_center_of_mass(subreg_cc)
         coms_ivd_dict = {}
-        for c in cc_labelset:
-            if c == 0:
-                continue
-            com_y = np_center_of_mass(subreg_cc == c)[1][1]  # center_of_mass(c_l)[1]
+        for c, com in cc_coms.items():
+            com_y = com[1]
 
             if com_y < min(coms_vert_y):
                 label = min(coms_vert_labels) - 1
@@ -459,16 +534,11 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, include_sacrum=Fals
     # FIXME Problem: For some reason Endplate are mapped to the IVD in MRI aka the superior endplate hat the IVD of vertebra above instead of below.
     if Location.Endplate.value in u or has_split_endplates:
         # MAP Endplate
-        ep_cc = seg_t.get_connected_components(labels=ep_labels)
-        ep_cc_n = len(ep_cc.unique())
-        ep_cc = ep_cc.get_seg_array()
-        cc_ep_labelset = list(range(1, ep_cc_n + 1))
+        ep_cc = seg_t.get_connected_components(labels=ep_labels).get_seg_array()
         mapping_ep_cc_to_vert_label = {}
-        coms_ivd_dict = {}
-        for c in cc_ep_labelset:
-            if c == 0:
-                continue
-            com_y = np_center_of_mass(ep_cc == c)[1][1]
+        ep_cc_coms = np_center_of_mass(ep_cc)
+        for c, com in ep_cc_coms.items():
+            com_y = com[1]
             nearest_lower = (
                 find_nearest_lower(coms_vert_y, com_y)
                 if not has_split_endplates
@@ -489,52 +559,7 @@ def add_ivd_ep_vert_label(whole_vert_nii: NII, seg_nii: NII, include_sacrum=Fals
             # This code sets the IDs to the respective IVD instead of vertebra disc! has_split_endplates is True for CT
             vert_arr[subreg_arr == Location.Endplate.value] = subreg_ep[subreg_arr == Location.Endplate.value]
             vert_t.set_array_(vert_arr)
-            # divide into upper and lower endplate
-            out = seg_t * 0
-            pref = 1
-            old_vol = -1
-            # seg_t and vert_t are not modified in this loop, so compute these invariants once.
-            endplate_nii = seg_t.extract_label(ep_labels)
-            total = endplate_nii.sum()
-            vert_labels_to_split = vert_t.unique()
-            for dil in range(1, MAX_ENDPLATE_DILATION):
-                curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
-                new_vol = curr.sum()
-                logger.print(rf"{new_vol / total * 100:.2f}% endplates detected", end="\r") if verbose else None
-                if old_vol == new_vol and old_vol != 0:
-                    break
-                old_vol = new_vol
-                if total == new_vol:
-                    logger.print("Found all Endplates                                      ")
-                    break
-                for i in vert_labels_to_split:
-                    if i >= INSTANCE_LABEL_LIMIT:
-                        break
-                    curr = out.extract_label(
-                        [Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value]
-                    )
-                    v = vert_t.extract_label(i).dilate_msk(dil, verbose=False)
-                    end = endplate_nii * v
-                    end *= -curr + 1  # type: ignore
-                    plates = vert_t * end
-                    plates.map_labels_(
-                        {
-                            i + ENDPLATE_LABEL_OFFSET: Location.Vertebral_Body_Endplate_Inferior.value,
-                            pref + ENDPLATE_LABEL_OFFSET: Location.Vertebral_Body_Endplate_Superior.value,
-                        },
-                        verbose=False,
-                    )
-                    out += plates
-                    pref = i
-            curr = out.extract_label([Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value])
-
-            end = seg_t.extract_label(ep_labels)
-            end *= -curr + 1
-            # end += end.dilate_msk(3)
-            out += end * Location.Endplate.value
-            seg_t = out.extract_label(
-                [Location.Vertebral_Body_Endplate_Inferior.value, Location.Vertebral_Body_Endplate_Superior.value, Location.Endplate.value]
-            )
+            seg_t = _split_endplates(seg_t, vert_t, ep_labels, verbose=verbose)
         else:
             # Endplates are already split semantically.
             # Assign endplate instance IDs while preserving the semantic labels.
@@ -567,14 +592,14 @@ def find_nearest_lower(seq, x) -> float:
 
 
 def find_nearest_higher(seq, x) -> float:
-    """Return the largest element of ``seq`` strictly smaller than ``x``, or the minimum if none exists.
+    """Return the smallest element of ``seq`` strictly larger than ``x``, or the maximum if none exists.
 
     Args:
         seq (Sequence[float]): Values to search.
         x (float): Reference value.
 
     Returns:
-        float: The greatest element below ``x``, or ``min(seq)`` when no element is below ``x``.
+        float: The smallest element above ``x``, or ``max(seq)`` when no element is above ``x``.
     """
     values_higher = [item for item in seq if item > x]
     if len(values_higher) == 0:
@@ -653,9 +678,12 @@ def assign_vertebra_inconsistency(
             if ccl == 0:
                 continue
             cc_map = np_extract_label(subreg_cc, ccl, inplace=False)
-            vert_arr_cc = vert_arr.copy()
-            vert_arr_cc += 1
-            vert_arr_cc[cc_map == 0] = 0
+            # An articular process is tiny next to the volume; work inside its bounding box instead of
+            # copying and incrementing the whole instance array once per connected component.
+            cc_bbox = np_bbox_binary(cc_map)
+            cc_map_c = cc_map[cc_bbox]
+            vert_arr_cc = vert_arr[cc_bbox] + 1
+            vert_arr_cc[cc_map_c == 0] = 0
             gt_volume = np_volume(vert_arr_cc)
             k_keys_sorted = heapq.nlargest(2, gt_volume, key=gt_volume.__getitem__)
 
@@ -667,7 +695,7 @@ def assign_vertebra_inconsistency(
             if biggest_volume[1] * ARTICULAR_DOMINANCE_RATIO > second_volume[1]:
                 to_label = biggest_volume[0] - 1  # int(list(gt_volume.keys())[argmax] - 1)
 
-                vert_arr[cc_map == 1] = to_label
+                vert_arr[cc_bbox][cc_map_c == 1] = to_label
                 logger.print(
                     f"set cc to {to_label}, with volume decision {gt_volume}, based on {biggest_volume}, {second_volume}",
                 )
@@ -695,7 +723,9 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII) -> tuple[NII, 
     stats = {}
     # Map IVDS
     subreg_cc: NII = seg_sem.get_connected_components(labels=Location.Vertebra_Disc.value)
-    subreg_cc += 100
+    # Offset only the foreground: a plain `+= OFFSET` would also lift the background out of 0 and
+    # add a phantom component spanning the whole volume to the stats below.
+    subreg_cc[subreg_cc > 0] += IVD_LABEL_OFFSET
 
     coms = subreg_cc.center_of_masses()
     volumes = subreg_cc.volumes()
@@ -712,6 +742,8 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII) -> tuple[NII, 
     stats_by_height_keys = list(stats_by_height.keys())
 
     # detect C2 split into two components
+    if len(stats_by_height_keys) < 2:
+        return seg_nii, vert_nii
     first_key, second_key = stats_by_height_keys[0], stats_by_height_keys[1]
     first_stats, second_stats = stats_by_height[first_key], stats_by_height[second_key]
     if first_stats[1] is False and second_stats[1] is False:  # noqa: SIM102

@@ -182,9 +182,12 @@ def check_available_models(
 
     config_paths = search_path(models_folder, query="**/inference_config.json", suppress=True)
     global _modelid2folder_semantic, _modelid2folder_instance, _modelid2folder_labeling  # noqa: PLW0603
-    _modelid2folder_semantic = semantic  # id to model_folder
-    _modelid2folder_instance = instances  # id to model_folder
-    _modelid2folder_labeling = labeling
+    # Copies, not aliases: these dicts are seeded from the download registry and then filled with the
+    # locally found model folders. Mutating the registry itself would permanently replace its release
+    # URLs with local paths for the rest of the process.
+    _modelid2folder_semantic = dict(semantic)  # id to model_folder
+    _modelid2folder_instance = dict(instances)  # id to model_folder
+    _modelid2folder_labeling = dict(labeling)
     for cp in tqdm(config_paths, desc="Checking models"):
         model_folder = cp.parent
         model_folder_name = model_folder.parent.name.lower() if "nnUNetPlans" in model_folder.name else model_folder.name.lower()

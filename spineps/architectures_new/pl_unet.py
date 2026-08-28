@@ -13,7 +13,6 @@ from torch import nn
 from torch.optim import Adam, lr_scheduler
 
 from .dice import MemoryEfficientSoftDiceLoss
-from .unet2D import Unet2D
 from .unet3D import Unet3D
 
 
@@ -42,36 +41,41 @@ def _tb_logger(module: pl.LightningModule) -> TensorBoardLogger:
 
 
 class PLNet(pl.LightningModule):
-    """LightningModule training a 2D or 3D U-Net with a combined cross-entropy, Dice and L2 loss.
+    """LightningModule training a 3D U-Net with a combined cross-entropy, Dice and L2 loss.
 
-    Wraps :class:`Unet2D` or :class:`Unet3D` and handles the training/validation loops, loss computation,
-    Dice metric logging and optimizer configuration.
+    Wraps :class:`Unet3D` and handles the training/validation loops, loss computation, Dice metric
+    logging and optimizer configuration.
     """
 
-    def __init__(self, opt: Namespace | None = None, do2D: bool = False, num_channels=11, dim=8, *args: Any, **kwargs: Any) -> None:  # ruff: ignore[unused-method-argument]
+    # The previous suppression comment here used a directive form ruff does not recognise, so it never
+    # silenced anything; ARG002 needs a real noqa.
+    def __init__(self, opt: Namespace | None = None, do2D: bool = False, num_channels=11, dim=8, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         """Build the network and configure losses, metrics and training hyperparameters.
 
         Args:
             opt (Namespace): Configuration namespace providing ``channelwise``, ``n_epoch``, ``lr``,
                 ``lr_end_factor``, ``l2_reg_w`` and ``dsc_loss_w``.
-            do2D (bool): If ``True``, use the 2D U-Net; otherwise the 3D U-Net.
+            do2D (bool): Kept so 2.x checkpoints still restore their saved hyperparameters. Only 3D is
+                supported; passing ``True`` raises.
             *args (Any): Unused positional arguments.
             **kwargs (Any): Unused keyword arguments.
         """
         if opt is None:
             opt = Namespace(**kwargs)
 
+        if do2D:
+            raise NotImplementedError("PLNet only supports the 3D U-Net; the 2D variant was removed in SPINEPS 2.0")
+
         super().__init__()
         self.save_hyperparameters()
-        arch = Unet2D if do2D else Unet3D
-        self.network = arch(
+        self.network = Unet3D(
             dim=dim,
             dim_mults=(1, 2, 4, 8),
             out_dim=4,
             channels=1 if not opt.channelwise else num_channels,
         )
 
-        self.do2D = do2D
+        self.do2D = False
         self.n_epoch = opt.n_epoch
         self.start_lr = opt.lr
         self.linear_end_factor = opt.lr_end_factor
@@ -314,4 +318,4 @@ class PLNet(pl.LightningModule):
         Returns:
             str: ``"Unet_2D"`` or ``"Unet_3D"``.
         """
-        return f"Unet_{'2D' if self.do2D else '3D'}"
+        return "Unet_3D"

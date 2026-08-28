@@ -184,15 +184,18 @@ def find_most_probably_sequence(  # noqa: C901
     # define regions
     n_classes = shape[1]
     assert min_start_class < n_classes
-    regions_ranges = None
+    if n_classes < regions[-1]:
+        warn(f"n_classes < defined regions, got {n_classes} and {regions}", stacklevel=3)
+    # Local copy closed by the class-axis end: appending to `regions` would mutate the caller's list
+    # (and DEFAULT_REGION_STARTS itself for any caller that forgets to copy it).
+    region_bounds = [*regions, n_classes]
+    # Built unconditionally: minCostAlgo indexes it whenever allow_skip_at_region is non-empty, which is
+    # independent of whether region_rel_cost was given.
+    regions_ranges = [(region_bounds[i], region_bounds[i + 1] - 1) for i in range(len(region_bounds) - 1)]
     if region_rel_cost is not None:
-        if n_classes < regions[-1]:
-            warn(f"n_classes < defined regions, got {n_classes} and {regions}", stacklevel=3)
-        regions.append(n_classes)
-        regions_ranges = [(regions[i], regions[i + 1] - 1) for i in range(len(regions) - 1)]
         region_rel_shape = region_rel_cost.shape
-        assert region_rel_shape[1] == ((len(regions) - 1) * 2), (
-            f"expected region_rel_cost with shape {((len(regions) - 1) * 2)}, but got {region_rel_shape[1]}"
+        assert region_rel_shape[1] == ((len(region_bounds) - 1) * 2), (
+            f"expected region_rel_cost with shape {((len(region_bounds) - 1) * 2)}, but got {region_rel_shape[1]}"
         )
 
     # softmax (deprecated, handled elsewhere)
@@ -220,7 +223,7 @@ def find_most_probably_sequence(  # noqa: C901
     def minCostAlgo(r, c):
         logger.print(f"Called vert {r}, label {c}")
         # get current region
-        region_cur = c_to_region_idx(c, regions)
+        region_cur = c_to_region_idx(c, region_bounds)
         # start point
         if c == -1 and r == -1:
             # go over each possible start column
@@ -311,7 +314,7 @@ def find_most_probably_sequence(  # noqa: C901
         cost_add = 0
         if vertt13_cost is not None:
             vt13_cost = vertt13_cost[r][1]
-            if c == 18:
+            if c == T12_CLASS_IDX:
                 cost_add += vt13_cost
         return cost_add
 
@@ -334,7 +337,7 @@ def find_most_probably_sequence(  # noqa: C901
                     logger.print(f"Added F {rel_cost} to vert {r}, label {c}, {internal_to_real_path(pnext)}")
                     cost_add += rel_cost
                     # break
-                elif last == 1 and (c_to_region_idx(pnext[-1][1], regions) >= region_cur + 1):  # or pnext[-1][1] == c):
+                elif last == 1 and (c_to_region_idx(pnext[-1][1], region_bounds) >= region_cur + 1):  # or pnext[-1][1] == c):
                     logger.print(f"Added L {rel_cost} to vert {r}, label {c}, {internal_to_real_path(pnext)}")
                     cost_add += rel_cost
         return cost_add

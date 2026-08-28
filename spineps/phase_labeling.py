@@ -54,6 +54,8 @@ C2_CLASS_IDX = 1
 T13_LABEL = 28
 # Crop margin in millimeters kept around the vertebrae before labeling.
 LABELING_CROP_MARGIN_MM = 128
+# A dens (odontoid process) overlapping an instance by at least this physical volume identifies that instance as C2.
+MIN_DENS_VOLUME_MM3 = 250
 
 
 def perform_labeling_step(
@@ -84,21 +86,25 @@ def perform_labeling_step(
     if model.predictor is None:
         model.load()
 
+    vert_nii_u = vert_nii.unique()
+    if len(vert_nii_u) == 0:
+        logger.on_fail("perform_labeling_step: instance mask is empty, nothing to label")
+        return vert_nii
+
     if subreg_nii is not None:
         # crop for corpus instead of whole vertebra
         corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border, Location.Dens_axis))
         vert_nii_c = vert_nii * corpus_nii
     else:
         vert_nii_c = vert_nii
-    vert_nii_u = vert_nii.unique()
     force_c2 = None
     force_c1 = None
-    if not disable_c1:
+    if not disable_c1 and subreg_nii is not None:
         dense = vert_nii_c * subreg_nii.extract_label(Location.Dens_axis.value)
         volumes = dense.volumes(in_mm3=True)  # dict[label, volume_mm3]
         if volumes:
             max_label, max_volume = max(volumes.items(), key=lambda x: x[1])
-            if max_volume > 250:
+            if max_volume > MIN_DENS_VOLUME_MM3:
                 force_c2 = max_label
                 # Force C1 if the preceding vertebra exists
                 if force_c2 != 1:

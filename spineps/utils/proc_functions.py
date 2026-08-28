@@ -125,49 +125,65 @@ def clean_cc_artifacts(
         f"cc_size_threshold size does not match number of given labels to clean, got {len(labels)} and {len(cc_size_threshold)}. Specifiy only an int for cc_size_threshold to use it for all labels"
     )
 
-    subreg_cc, subreg_cc_stats = connected_components_3d(result_arr, connectivity=1)
-
     cc_to_clean = {}
     for lidx, label in enumerate(tqdm(labels, desc=f"{logger._get_logger_prefix()} cleaning...", disable=not verbose)):
+        # One label at a time: each costs a full-volume component array, and asking for all of them up
+        # front made this the memory peak of the instance merge (~25 labels). Components come from the
+        # untouched input, exactly as when they were all computed before the loop started.
+        subreg_cc, subreg_cc_stats = connected_components_3d(mask_arr, connectivity=1, label_ref=[label])
+        if label not in subreg_cc:
+            continue
         idx = [i for i, v in enumerate(subreg_cc_stats[label]["voxel_counts"]) if v < cc_size_threshold[lidx] and v > 0]
         if len(idx) > 0:
             cc_to_clean[label] = idx
 
+        bounding_boxes = subreg_cc_stats[label]["bounding_boxes"]
+        mask_cc = subreg_cc[label]
         for cc_idx in idx:
-            # extract cc label
-            mask_cc = subreg_cc[label]
-            mask_cc_l = mask_cc.copy()
+            # The components handled here are by definition small, so everything below runs inside the
+            # component's own bounding box (padded so the 1-voxel dilation still fits) instead of over
+            # the whole volume.
+            bbox = _padded_bbox(bounding_boxes[cc_idx], mask_cc.shape, pad=2)
+            mask_cc_l = mask_cc[bbox].copy()
             mask_cc_l[mask_cc_l != cc_idx] = 0
+            cc_voxels = mask_cc_l != 0
             log_string = ""
             if verbose:
                 cc_volume = np_count_nonzero(mask_cc_l)
-                cc_centroid = center_of_mass(mask_cc_l)
-                cc_centroid = [int(c) + 1 for c in cc_centroid]  # type: ignore
+                cc_centroid = [int(c + bbox[d].start) + 1 for d, c in enumerate(center_of_mass(mask_cc_l))]
                 log_string = f"Label {label}, cc{cc_idx}, at {cc_centroid}, volume {cc_volume}: "
             if only_delete:
                 logger.print(log_string + "deleted") if verbose else None
                 # dilated mask nothing in original mask, just delete it
-                result_arr[mask_cc_l != 0] = 0
+                result_arr[bbox][cc_voxels] = 0
                 continue
-            dilated_m = np_dilate_msk(mask_cc_l, n_pixel=1)
-            dilated_m[mask_cc_l != 0] = 0
+            # np_dilate_msk mutates its input and returns the same object. The old code relied on that
+            # accidentally: `dilated_m[mask_cc_l != 0] = 0` re-read the *already dilated* mask, so it zeroed
+            # the shell as well as the component -- leaving an empty neighbourhood, an always-taken "delete"
+            # branch, and a `mask_cc_l` that no longer selected anything. The whole relabel/delete path was a
+            # no-op. Dilate a copy so the component mask stays intact.
+            dilated_m = np_dilate_msk(mask_cc_l.copy(), n_pixel=1)
+            dilated_m[cc_voxels] = 0
             neighbor_voxel_count = np_count_nonzero(dilated_m)
 
-            mult = mask_arr * dilated_m
+            mask_arr_c = mask_arr[bbox]
+            mult = mask_arr_c * dilated_m
             if np_count_nonzero(mult) <= int(neighbor_voxel_count * neighbor_factor_2_delete):
                 logger.print(log_string + "deleted") if verbose else None
                 # dilated mask nothing in original mask, just delete it
-                result_arr[mask_cc_l != 0] = 0
+                result_arr[bbox][cc_voxels] = 0
             else:
                 # majority voting
                 dilated_m[dilated_m != 0] = 1
-                mult = mask_arr * dilated_m
+                mult = mask_arr_c * dilated_m
                 volumes = np_volume(mult)
                 nlabels = list(volumes.keys())
                 volumes_values = list(volumes.values())
                 newlabel = nlabels[np.argmax(volumes_values)]  # type: ignore
-                result_arr[mask_cc_l != 0] = newlabel
+                result_arr[bbox][cc_voxels] = newlabel
                 logger.print(log_string + f"labeled as {newlabel}") if verbose else None
+        # release this label's full-volume component map before building the next one
+        del mask_cc, subreg_cc, subreg_cc_stats
     n_to_clean = {k: len(v) for k, v in cc_to_clean.items()}
     # By clearning: look at surrounding neighbor pixels. If too few, remove cc. otherwise, do majority voting
     if len(n_to_clean) != 0:
@@ -175,7 +191,17 @@ def clean_cc_artifacts(
     return result_arr
 
 
-def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbose: bool = False) -> tuple[dict, dict]:  # noqa: ARG001
+def _padded_bbox(bbox: tuple[slice, ...], shape: tuple[int, ...], pad: int) -> tuple[slice, ...]:
+    """Grow a component bounding box by ``pad`` voxels per side, clamped to the array bounds."""
+    return tuple(slice(max(s.start - pad, 0), min(s.stop + pad, shape[d])) for d, s in enumerate(bbox))
+
+
+def connected_components_3d(
+    mask_image: np.ndarray,
+    connectivity: int = 3,
+    verbose: bool = False,  # noqa: ARG001
+    label_ref: int | list[int] | None = None,
+) -> tuple[dict, dict]:
     """Compute 3D connected components per label together with their statistics.
 
     Args:
@@ -183,14 +209,17 @@ def connected_components_3d(mask_image: np.ndarray, connectivity: int = 3, verbo
         connectivity (int, optional): Voxel connectivity in range [1, 3]. For 2D images 2 and 3 are equivalent.
             Defaults to 3.
         verbose (bool, optional): Currently unused. Defaults to False.
+        label_ref (int | list[int] | None, optional): Restrict the computation to these labels. Each label costs
+            one full-volume component array, so passing only the labels you need matters. Defaults to None (all).
 
     Returns:
         tuple[dict, dict]: A dict mapping each label to its connected-component array, and a dict mapping each
-        label to its ``cc3d`` component statistics.
+        label to its ``cc3d`` component statistics (including per-component ``bounding_boxes``).
     """
     subreg_cc = np_connected_components_per_label(
         mask_image,
         connectivity=connectivity,
+        label_ref=label_ref,
     )
     subreg_cc_stats = {k: cc3d.statistics(v) for k, v in subreg_cc.items()}
     return subreg_cc, subreg_cc_stats
@@ -226,8 +255,17 @@ def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger: Logg
     instance_labels = [i for i in seg_inst.unique() if 1 <= i <= MAX_VERTEBRA_INSTANCE_LABEL]
 
     for vert in instance_labels:
-        inst_vert = seg_inst.extract_label(vert)
-        # sem_vert = seg_sem.apply_mask(inst_vert)
+        # Everything below concerns one vertebra, so crop to its bounding box (+1, the margin the inner
+        # per-component crops use) once instead of running connected components and several crops over the
+        # whole volume for each of ~25 instances.
+        inst_vert_full = seg_inst.extract_label(vert)
+        try:
+            vert_crop = inst_vert_full.compute_crop(dist=1)
+        except ValueError:  # label vanished, nothing to reassign
+            continue
+        inst_vert = inst_vert_full.apply_crop(vert_crop)
+        seg_inst_c = seg_inst.apply_crop(vert_crop)
+        seg_sem_c = seg_sem.apply_crop(vert_crop)
 
         # Check if multiple CC exist
         inst_vert_cc: NII = inst_vert.filter_connected_components(max_count_component=3, keep_label=False)
@@ -242,7 +280,7 @@ def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger: Logg
             crop = inst_vert_cc_i.compute_crop(dist=1)
             inst_vert_cc_i_c = inst_vert_cc_i.apply_crop(crop)
 
-            cc_sem_vert = seg_sem.apply_crop(crop).apply_mask(inst_vert_cc_i_c)
+            cc_sem_vert = seg_sem_c.apply_crop(crop).apply_mask(inst_vert_cc_i_c)
             # cc_vert is semantic mask of only that cc of instance
 
             cc_sem_vert_labels = cc_sem_vert.unique()
@@ -251,7 +289,7 @@ def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger: Logg
                 [i in [Location.Arcus_Vertebrae.value, Location.Spinosus_Process.value] for i in cc_sem_vert_labels]
             ):
                 # neighbor that have non arcus/spinosus label?
-                neighbor_instance_labels = seg_inst.apply_crop(crop).get_seg_array()
+                neighbor_instance_labels = seg_inst_c.apply_crop(crop).get_seg_array()
                 neighbor_instance_labels[inst_vert_cc_i_c.get_seg_array() == 1] = 0
                 neighbor_instance_labels = np_unique_withoutzero(neighbor_instance_labels)
                 # which instance labels does it touch
@@ -260,7 +298,7 @@ def fix_wrong_posterior_instance_label(seg_sem: NII, seg_inst: NII, logger: Logg
                 if len(neighbor_instance_labels) == 1 and neighbor_instance_labels[0] != vert:
                     to_label = neighbor_instance_labels[0]
                     logger.print(f"vert {vert}, cc_k {i} relabel to instance {to_label}")
-                    seg_inst_arr_proc[inst_vert_cc_i.get_seg_array() == 1] = to_label
+                    seg_inst_arr_proc[vert_crop][inst_vert_cc_i.get_seg_array() == 1] = to_label
 
     seg_inst_proc = seg_inst.set_array(seg_inst_arr_proc).reorient_(orientation)
     return seg_inst_proc

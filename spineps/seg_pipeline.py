@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-import subprocess
+from collections.abc import Callable
+from functools import lru_cache
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _package_version
 from typing import Any
 
 from scipy.ndimage import center_of_mass
@@ -23,6 +26,31 @@ ENDPLATE_LABEL_OFFSET = 200
 _MAX_DERIVED_LABELS_PER_TYPE = 34
 IVD_LABEL_RANGE = range(IVD_LABEL_OFFSET, IVD_LABEL_OFFSET + _MAX_DERIVED_LABELS_PER_TYPE)
 ENDPLATE_LABEL_RANGE = range(ENDPLATE_LABEL_OFFSET, ENDPLATE_LABEL_OFFSET + _MAX_DERIVED_LABELS_PER_TYPE)
+
+
+class NoOpDebugSink(dict):
+    """Dict-like sink that discards writes; used to skip retaining debug data when it won't be saved."""
+
+    def __setitem__(self, key, value):
+        pass
+
+
+def debug_put(debug_data: dict, key: str, factory: Callable[[], Any]) -> None:
+    """Store a debug value, skipping its construction entirely when the sink discards writes.
+
+    ``NoOpDebugSink`` drops the value, but Python still evaluates the argument -- so a plain
+    ``debug_data[key] = nii.copy()`` paid for a whole-volume copy even with ``save_debug_data=False``.
+    Pass a zero-argument factory instead and the copy never happens.
+
+    Args:
+        debug_data (dict): The debug sink; a plain dict stores, a ``NoOpDebugSink`` discards.
+        key (str): Name to store the value under.
+        factory (Callable[[], Any]): Builds the value, called only when it will actually be kept.
+    """
+    if isinstance(debug_data, NoOpDebugSink):
+        return
+    debug_data[key] = factory()
+
 
 fill_holes_labels = [
     Location.Vertebra_Corpus_border.value,
@@ -87,48 +115,24 @@ def predict_centroids_from_both(
     ctd.info["source"] = "MRI Segmentation Pipeline"
     ctd.info["version"] = pipeline_version()
     ctd.info["models"] = models_repr
-    ctd.info["revision"] = pipeline_revision()
     ctd.info["timestamp"] = format_time_short(get_time())
     for pname, pvalue in parameter.items():
         ctd.info[pname] = str(pvalue)
     return ctd
 
 
+@lru_cache(maxsize=1)
 def pipeline_version() -> str:
-    """Return the pipeline version string derived from the git commit count on ``main``.
+    """Return the installed SPINEPS version.
+
+    Read from the package metadata, which poetry-dynamic-versioning derives from the git tag at build time.
+    (This used to shell out to ``git`` without a ``cwd``, so it reported whatever repository the caller
+    happened to be standing in.)
 
     Returns:
-        str: A version like ``"v1.<commit-count>"``, or ``"Version not found"`` if git is unavailable.
+        str: The installed version, or ``"unknown"`` if SPINEPS is not installed as a distribution.
     """
     try:
-        label = subprocess.check_output(["git", "rev-list", "--count", "main"]).strip()
-        label = str(label).replace("'", "")
-        while not label[0].isdigit():
-            label = label[1:]
-    except Exception:
-        return "Version not found"
-    return "v1." + str(label)
-
-
-def pipeline_revision() -> str:
-    """Return the current git revision string for the pipeline.
-
-    Returns:
-        str: ``"<git-describe>::<full-commit-hash>"``; either part is empty if the corresponding git call fails.
-    """
-    label = ""
-    rev = ""
-    try:
-        label = subprocess.check_output(["git", "describe", "--always"]).strip()
-    except Exception:
-        pass
-    try:
-        rev = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("ascii").strip()
-    except Exception:
-        pass
-    return str(label) + "::" + str(rev)
-
-
-if __name__ == "__main__":
-    print(pipeline_version())
-    print(pipeline_revision())
+        return _package_version("SPINEPS")
+    except PackageNotFoundError:
+        return "unknown"

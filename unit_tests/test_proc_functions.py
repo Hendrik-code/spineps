@@ -8,6 +8,7 @@ import os
 import unittest
 from pathlib import Path
 
+import numpy as np
 from TPTBox import Log_Type, No_Logger
 from TPTBox.tests.test_utils import get_test_mri
 
@@ -75,3 +76,40 @@ class Test_proc_functions(unittest.TestCase):
                     l3_cleaned = clean_cc_artifacts(
                         l3, logger=logger, labels=[41, 42, 43, 44, 45, 46, 47, 48, 49], ignore_missing_labels=ignore_missing_labels
                     )
+
+
+class Test_Clean_CC_Artifacts_Branches(unittest.TestCase):
+    """Pin both cleaning branches: a small component next to a big one is relabeled, an isolated one deleted.
+
+    ``clean_cc_artifacts`` now works inside each component's padded bounding box instead of over the whole
+    volume, so the neighbourhood dilation and the majority vote need to keep giving the same answers.
+    """
+
+    @staticmethod
+    def _mask() -> np.ndarray:
+        arr = np.zeros((20, 20, 20), dtype=np.uint8)
+        arr[2:12, 2:12, 2:12] = 1  # big label-1 body
+        arr[12:14, 5:7, 5:7] = 2  # small label-2 speck glued to it -> majority vote says 1
+        arr[17:19, 17:19, 17:19] = 2  # isolated label-2 speck -> deleted
+        return arr
+
+    def test_relabel_and_delete(self):
+        arr = self._mask()
+        out = clean_cc_artifacts(arr, logger=logger, labels=[2], cc_size_threshold=100, only_delete=False, verbose=False)
+        self.assertTrue(np.all(out[12:14, 5:7, 5:7] == 1), "the attached speck should inherit its neighbour's label")
+        self.assertTrue(np.all(out[17:19, 17:19, 17:19] == 0), "the isolated speck should be deleted")
+        self.assertTrue(np.all(out[2:12, 2:12, 2:12] == 1), "the big component must be untouched")
+
+    def test_only_delete_removes_both(self):
+        arr = self._mask()
+        out = clean_cc_artifacts(arr, logger=logger, labels=[2], cc_size_threshold=100, only_delete=True, verbose=False)
+        self.assertEqual(int((out == 2).sum()), 0)
+        self.assertTrue(np.all(out[2:12, 2:12, 2:12] == 1))
+
+    def test_component_touching_the_volume_edge(self):
+        """The bounding-box crop must clamp at the array bounds exactly like the full-volume code did."""
+        arr = np.zeros((20, 20, 20), dtype=np.uint8)
+        arr[2:12, 2:12, 2:12] = 1
+        arr[0:2, 0:2, 0:2] = 2  # in the corner, so the padded bbox is clipped
+        out = clean_cc_artifacts(arr, logger=logger, labels=[2], cc_size_threshold=100, only_delete=False, verbose=False)
+        self.assertEqual(int((out == 2).sum()), 0)

@@ -529,6 +529,9 @@ class SegmentationModelUnet3D(SegmentationModel):
             raise FileNotFoundError(
                 f"expected exactly one '*weights*.ckpt' checkpoint in {self.model_folder}, found {len(chktpath)}: {chktpath}"
             )
+        # Two U-Net wrappers are kept on purpose: released checkpoints exist for both the legacy
+        # `spineps.architectures` PLNet and the current `spineps.architectures_new` one, and only the
+        # weights themselves say which. Try the legacy layout first and fall back on a shape mismatch.
         try:
             model = PLNet.load_from_checkpoint(checkpoint_path=chktpath[0], weights_only=False, map_location=self.device)
         except RuntimeError:
