@@ -18,9 +18,13 @@ from spineps.architectures.read_labels import (
 from spineps.lab_model import VertLabelingClassifier
 from spineps.utils.find_min_cost_path import (
     DEFAULT_REGION_STARTS,
+    DEFAULT_REGION_STARTS_EXACT,
+    DEFAULT_SKIPPABLE_CLASSES_EXACT,
     L5_CLASS_IDX,
     T11_CLASS_IDX,
     T12_CLASS_IDX,
+    T12_CLASS_IDX_EXACT,
+    T13_CLASS_IDX_EXACT,
     find_most_probably_sequence,
 )
 
@@ -30,6 +34,14 @@ VERT_CLASSES = 24
 CERV = slice(None, 7)  # 0 to 7
 THOR = slice(7, 19)  # 7 to 18
 LUMB = slice(19, None)  # 19 to end (23)
+
+# 26-class (VertExactClass) axis: T13 and L6 are explicit classes rather than a repeated T12/L5.
+VERT_CLASSES_EXACT = 26
+CERV_EXACT = slice(None, 7)  # C1..C7
+THOR_EXACT = slice(7, 20)  # T1..T13
+LUMB_EXACT = slice(20, None)  # L1..L6
+# Heads that carry a 26-class VertExactClass posterior.
+EXACT_HEAD_KEYS = ("VERTEX", "VERTEXACT")
 
 DIVIDE_BY_ZERO_OFFSET = 1e-8
 
@@ -42,6 +54,8 @@ C2_CLASS_IDX = 1
 T13_LABEL = 28
 # Crop margin in millimeters kept around the vertebrae before labeling.
 LABELING_CROP_MARGIN_MM = 128
+# A dens (odontoid process) overlapping an instance by at least this physical volume identifies that instance as C2.
+MIN_DENS_VOLUME_MM3 = 250
 
 
 def perform_labeling_step(
@@ -72,21 +86,25 @@ def perform_labeling_step(
     if model.predictor is None:
         model.load()
 
+    vert_nii_u = vert_nii.unique()
+    if len(vert_nii_u) == 0:
+        logger.on_fail("perform_labeling_step: instance mask is empty, nothing to label")
+        return vert_nii
+
     if subreg_nii is not None:
         # crop for corpus instead of whole vertebra
         corpus_nii = subreg_nii.extract_label((Location.Vertebra_Corpus, Location.Vertebra_Corpus_border, Location.Dens_axis))
         vert_nii_c = vert_nii * corpus_nii
     else:
         vert_nii_c = vert_nii
-    vert_nii_u = vert_nii.unique()
     force_c2 = None
     force_c1 = None
-    if not disable_c1:
+    if not disable_c1 and subreg_nii is not None:
         dense = vert_nii_c * subreg_nii.extract_label(Location.Dens_axis.value)
         volumes = dense.volumes(in_mm3=True)  # dict[label, volume_mm3]
         if volumes:
             max_label, max_volume = max(volumes.items(), key=lambda x: x[1])
-            if max_volume > 250:
+            if max_volume > MIN_DENS_VOLUME_MM3:
                 force_c2 = max_label
                 # Force C1 if the preceding vertebra exists
                 if force_c2 != 1:
@@ -252,19 +270,35 @@ def run_model_for_vert_labeling_cutouts(
     return labelmap, fcost, fpath, fpath_post, costlist, min_costs_path, predictions
 
 
-def region_to_vert(region_softmax_values: np.ndarray) -> np.ndarray:  # shape(1,3)
+def class_axis(exact_classes: bool = False) -> tuple[int, tuple[slice, slice, slice]]:
+    """Return ``(n_classes, (cervical, thoracic, lumbar) slices)`` for the requested class axis.
+
+    Args:
+        exact_classes (bool): Use the 26-class VertExactClass axis instead of the 24-class VertExact one.
+
+    Returns:
+        tuple[int, tuple[slice, slice, slice]]: Number of classes and the per-region slices along that axis.
+    """
+    if exact_classes:
+        return VERT_CLASSES_EXACT, (CERV_EXACT, THOR_EXACT, LUMB_EXACT)
+    return VERT_CLASSES, (CERV, THOR, LUMB)
+
+
+def region_to_vert(region_softmax_values: np.ndarray, exact_classes: bool = False) -> np.ndarray:  # shape(1,3)
     """Broadcast a 3-region (cervical, thoracic, lumbar) softmax into a per-vertebra-class vector.
 
     Args:
         region_softmax_values (np.ndarray): Length-3 region softmax values ordered cervical, thoracic, lumbar.
+        exact_classes (bool): Use the 26-class VertExactClass axis instead of the 24-class VertExact one.
 
     Returns:
-        np.ndarray: Length-``VERT_CLASSES`` vector with each region's value broadcast across that region's vertebra classes.
+        np.ndarray: Per-class vector with each region's value broadcast across that region's vertebra classes.
     """
-    vert_prediction_values = np.zeros(VERT_CLASSES)
-    vert_prediction_values[CERV] = region_softmax_values[0]
-    vert_prediction_values[THOR] = region_softmax_values[1]
-    vert_prediction_values[LUMB] = region_softmax_values[2]
+    n_classes, (cerv, thor, lumb) = class_axis(exact_classes)
+    vert_prediction_values = np.zeros(n_classes)
+    vert_prediction_values[cerv] = region_softmax_values[0]
+    vert_prediction_values[thor] = region_softmax_values[1]
+    vert_prediction_values[lumb] = region_softmax_values[2]
     return vert_prediction_values
 
 
@@ -273,25 +307,28 @@ def prepare_vert(
     gaussian_sigma: float = 0.85,
     gaussian_radius: int = 2,
     gaussian_regionwise: bool = True,
+    exact_classes: bool = False,
 ) -> np.ndarray:
     """Smooth and normalize a per-vertebra-class softmax vector.
 
     Optionally applies a 1-D Gaussian filter (either per spinal region or across all classes) and then normalizes to sum to 1.
 
     Args:
-        vert_softmax_values (np.ndarray): Length-``VERT_CLASSES`` per-class softmax values.
+        vert_softmax_values (np.ndarray): Per-class softmax values along the chosen class axis.
         gaussian_sigma (float): Gaussian smoothing sigma; 0 disables smoothing.
         gaussian_radius (int): Half-width of the Gaussian kernel.
         gaussian_regionwise (bool): If True, smooth each spinal region independently instead of across the whole vector.
+        exact_classes (bool): Interpret the input on the 26-class VertExactClass axis instead of the 24-class one.
 
     Returns:
         np.ndarray: The smoothed, sum-normalized per-class vector.
     """
     # gaussian region-wise
     softmax_values = vert_softmax_values.copy()
+    _, region_slices = class_axis(exact_classes)
     if gaussian_sigma > 0.0:
         if gaussian_regionwise:
-            for s in [CERV, THOR, LUMB]:
+            for s in region_slices:
                 softmax_values[s] = gaussian_filter1d(softmax_values[s], sigma=gaussian_sigma, mode="nearest", radius=gaussian_radius)
         else:
             softmax_values = gaussian_filter1d(softmax_values, sigma=gaussian_sigma, mode="nearest", radius=gaussian_radius)
@@ -305,25 +342,33 @@ def prepare_vertexact(
     gaussian_radius: int = 2,
     gaussian_regionwise: bool = True,
 ) -> np.ndarray:
-    """Smooth and normalize a per-vertebra-class softmax vector.
+    """Collapse a 26-class VertExactClass softmax onto the 24-class VertExact axis, then smooth and normalize it.
 
-    Optionally applies a 1-D Gaussian filter (either per spinal region or across all classes) and then normalizes to sum to 1.
+    T13 is folded into T12 and L6 into L5, mirroring :func:`spineps.architectures.read_labels.vert_label_to_class`. Optionally
+    applies a 1-D Gaussian filter (either per spinal region or across all classes) and then normalizes to sum to 1.
 
     Args:
-        vert_softmax_values (np.ndarray): Length-``VERT_CLASSES`` per-class softmax values.
+        vert_softmax_values (np.ndarray): Length-``VERT_CLASSES_EXACT`` (26) VertExactClass softmax values.
         gaussian_sigma (float): Gaussian smoothing sigma; 0 disables smoothing.
         gaussian_radius (int): Half-width of the Gaussian kernel.
         gaussian_regionwise (bool): If True, smooth each spinal region independently instead of across the whole vector.
 
     Returns:
-        np.ndarray: The smoothed, sum-normalized per-class vector.
+        np.ndarray: The collapsed, smoothed, sum-normalized length-``VERT_CLASSES`` (24) vector.
+
+    Raises:
+        ValueError: If the input is not a 26-class VertExactClass vector.
     """
+    if len(vert_softmax_values) != VERT_CLASSES_EXACT:
+        raise ValueError(
+            f"prepare_vertexact expects a {VERT_CLASSES_EXACT}-class VertExactClass vector, got length {len(vert_softmax_values)}"
+        )
     # gaussian region-wise
     softmax_values = vert_softmax_values.copy()
-    softmax_values[18] += softmax_values[19]  # add t13 to t12
-    softmax_values[24] += softmax_values[25]  # add l6 to l5
-    # remove 19 and 25 from the entire array, because they are not real classes and would mess up the smoothing
-    softmax_values = np.delete(softmax_values, [19, 25], axis=0)
+    softmax_values[VertExactClass.T12.value] += softmax_values[VertExactClass.T13.value]  # add t13 to t12
+    softmax_values[VertExactClass.L5.value] += softmax_values[VertExactClass.L6.value]  # add l6 to l5
+    # remove T13 and L6 from the entire array, because they are not VertExact classes and would mess up the smoothing
+    softmax_values = np.delete(softmax_values, [VertExactClass.T13.value, VertExactClass.L6.value], axis=0)
     if gaussian_sigma > 0.0:
         if gaussian_regionwise:
             for s in [CERV, THOR, LUMB]:
@@ -402,18 +447,21 @@ def prepare_visible(predictions: dict, visible_w: float = 1.0, gaussian_sigma: f
     return visible_chain
 
 
-def prepare_region(region_softmax_values: np.ndarray, gaussian_sigma: float = 0.75, gaussian_radius: int = 1) -> np.ndarray:
+def prepare_region(
+    region_softmax_values: np.ndarray, gaussian_sigma: float = 0.75, gaussian_radius: int = 1, exact_classes: bool = False
+) -> np.ndarray:
     """Broadcast a region softmax to per-vertebra classes, then smooth and normalize it.
 
     Args:
         region_softmax_values (np.ndarray): Length-3 region softmax values (cervical, thoracic, lumbar).
         gaussian_sigma (float): Gaussian smoothing sigma; 0 disables smoothing.
         gaussian_radius (int): Half-width of the Gaussian kernel.
+        exact_classes (bool): Broadcast onto the 26-class VertExactClass axis instead of the 24-class one.
 
     Returns:
         np.ndarray: The broadcast, smoothed, sum-normalized per-class vector.
     """
-    softmax_values = region_to_vert(region_softmax_values)
+    softmax_values = region_to_vert(region_softmax_values, exact_classes=exact_classes)
     if gaussian_sigma > 0.0 and np.sum(softmax_values) > 0.0:
         softmax_values = gaussian_filter1d(softmax_values, sigma=gaussian_sigma, mode="nearest", radius=gaussian_radius)
     softmax_values /= np.sum(softmax_values) + DIVIDE_BY_ZERO_OFFSET
@@ -554,6 +602,10 @@ def find_vert_path_from_predictions(
     force_c1_instance: int | None = None,
     force_c2_instance: int | None = None,
     #
+    exact_classes: bool | None = None,
+    punish_skip_t12: float = 0.0,
+    punish_skip_t13: float = 0.0,
+    #
     verbose: bool = False,
 ) -> tuple[float, list[int], list[int], list, list, dict]:
     """Combine the classifier's prediction heads into a cost matrix and solve for the most probable vertebra label sequence.
@@ -564,6 +616,10 @@ def find_vert_path_from_predictions(
     :func:`find_most_probably_sequence` (unless ``argmax_combined_cost_matrix_instead_of_path_algorithm`` is set, which falls
     back to a plain per-instance argmax). Special transitional vertebrae (T11 skip, T12/L5 repeats) and per-region skips are
     permitted via the corresponding flags. Finally the path is post-processed (see :func:`fpath_post_processing`).
+
+    Two class axes are supported: the 24-class ``VertExact`` axis (T13/L6 encoded as a repeated T12/L5) and the 26-class
+    ``VertExactClass`` axis, where T13 and L6 are explicit classes and transitional anatomy is expressed by *omitting*
+    T13 (or T12 and T13) from an otherwise strictly monotone path. See ``exact_classes``.
 
     Args:
         predictions (dict): Per-instance classifier outputs, each holding a ``"soft"`` dict of per-head softmax arrays.
@@ -592,6 +648,12 @@ def find_vert_path_from_predictions(
         argmax_combined_cost_matrix_instead_of_path_algorithm (bool): If True, take a plain per-instance argmax instead of the
             path search.
         proc_lab_force_no_tl_anomaly (bool): If True, disallow T13 transitional-vertebra anomalies (no T11 skip / no T12 repeat).
+        force_c1_instance (int | None): Index of the instance to force to C1, or None.
+        force_c2_instance (int | None): Index of the instance to force to C2, or None.
+        exact_classes (bool | None): Solve on the 26-class ``VertExactClass`` axis (explicit T13/L6) instead of the 24-class
+            ``VertExact`` one. None auto-detects it from the available heads: a VERTEX/VERTEXACT head without a VERT head.
+        punish_skip_t12 (float): Extra cost for omitting T12 from a 26-class path (11-thoracic case).
+        punish_skip_t13 (float): Extra cost for omitting T13 from a 26-class path (the normal 12-thoracic case).
         verbose (bool): If True, print the active head weights.
 
     Returns:
@@ -614,14 +676,22 @@ def find_vert_path_from_predictions(
     #
     n_vert = len(predictions)
     #
-    cost_matrix = np.zeros((n_vert, VERT_CLASSES))
-    relative_cost_matrix = np.zeros((n_vert, len(VertRel)))
-    visible_chain = prepare_visible(predictions, visible_w)
-
     predict_keys = list(predictions[list(predictions.keys())[0]]["soft"].keys())  # noqa: RUF015
     assert "VERT" in predict_keys or "VERTEXACT" in predict_keys or "VERTEX" in predict_keys or "VERTGRP" in predict_keys, (
         f"No vital classification head found, got {predict_keys}"
     )
+    # A VertExactClass head (T13/L6 as explicit classes) implies the 26-class axis unless told otherwise.
+    exact_head = next((k for k in EXACT_HEAD_KEYS if k in predict_keys), None)
+    if exact_classes is None:
+        exact_classes = exact_head is not None and "VERT" not in predict_keys
+    if exact_classes:
+        assert exact_head is not None, f"exact_classes=True needs one of {EXACT_HEAD_KEYS}, got {predict_keys}"
+    n_classes, _ = class_axis(exact_classes)
+    args["exact_classes"] = exact_classes
+    #
+    cost_matrix = np.zeros((n_vert, n_classes))
+    relative_cost_matrix = np.zeros((n_vert, len(VertRel)))
+    visible_chain = prepare_visible(predictions, visible_w)
 
     # VertRel normalize over labels
     if "VERTREL" in predict_keys:
@@ -659,35 +729,50 @@ def find_vert_path_from_predictions(
         )
 
     for idx, (_, k) in enumerate(predictions.items()):
-        vert_softmax_output = k["soft"]["VERT"] if "VERT" in predict_keys else np.zeros(len(VertExact))
+        # On the 26-class axis the VertExactClass head *is* the vert head; on the 24-class axis it is collapsed
+        # onto VertExact by prepare_vertexact and added as a separate term.
+        if exact_classes:
+            vert_softmax_output = np.asarray(k["soft"][exact_head])
+        elif "VERT" in predict_keys:
+            vert_softmax_output = k["soft"]["VERT"]
+        else:
+            vert_softmax_output = np.zeros(len(VertExact))
         vert_values = np.multiply(
             prepare_vert(
                 vert_softmax_output,
                 gaussian_sigma=vert_gaussian_sigma,
                 gaussian_regionwise=vert_gaussian_regionwise,
+                exact_classes=exact_classes,
             ),
             vert_w,
         )
 
-        vertex_softmax_output = k["soft"]["VERTEX"] if "VERTEX" in predict_keys else np.zeros(len(VertExactClass))
-        vertex_values = np.multiply(
-            prepare_vertexact(
-                vertex_softmax_output,
-                gaussian_sigma=vert_gaussian_sigma,
-                gaussian_regionwise=vert_gaussian_regionwise,
-            ),
-            vert_w,
-        )
+        if exact_classes:
+            vertex_values = np.zeros(n_classes)
+        else:
+            vertex_softmax_output = k["soft"]["VERTEX"] if "VERTEX" in predict_keys else np.zeros(len(VertExactClass))
+            vertex_values = np.multiply(
+                prepare_vertexact(
+                    vertex_softmax_output,
+                    gaussian_sigma=vert_gaussian_sigma,
+                    gaussian_regionwise=vert_gaussian_regionwise,
+                ),
+                vert_w,
+            )
 
-        vertgrp_softmax_output = k["soft"]["VERTGRP"] if "VERTGRP" in predict_keys else np.zeros(len(VertGroup))
-        vertgrp_values = np.multiply(
-            prepare_vertgrp(
-                vertgrp_softmax_output,
-                gaussian_sigma=vertgrp_gaussian_sigma,
-                gaussian_regionwise=vertgrp_gaussian_regionwise,
-            ),
-            vertgrp_w,
-        )
+        # VERTGRP maps onto the 24-class axis only; it has no VertExactClass counterpart.
+        if exact_classes:
+            vertgrp_values = np.zeros(n_classes)
+        else:
+            vertgrp_softmax_output = k["soft"]["VERTGRP"] if "VERTGRP" in predict_keys else np.zeros(len(VertGroup))
+            vertgrp_values = np.multiply(
+                prepare_vertgrp(
+                    vertgrp_softmax_output,
+                    gaussian_sigma=vertgrp_gaussian_sigma,
+                    gaussian_regionwise=vertgrp_gaussian_regionwise,
+                ),
+                vertgrp_w,
+            )
 
         # if "REGION" in k["soft"] else np.zeros((4, *vert_softmax_output.shape[1:]))
         region_softmax_output = k["soft"]["REGION"] if "REGION" in predict_keys else np.zeros(len(VertRegion))
@@ -695,6 +780,7 @@ def find_vert_path_from_predictions(
             prepare_region(
                 region_softmax_output,
                 gaussian_sigma=region_gaussian_sigma,
+                exact_classes=exact_classes,
             ),
             region_w,
         )
@@ -736,8 +822,18 @@ def find_vert_path_from_predictions(
         min_costs_path = [[]]
         fpath = list(np.argmax(cost_matrix, axis=1))
     else:
-        allow_multiple_at_class = [T12_CLASS_IDX, L5_CLASS_IDX] if not proc_lab_force_no_tl_anomaly else [L5_CLASS_IDX]
-        allow_skip_at_class = [T11_CLASS_IDX] if not proc_lab_force_no_tl_anomaly else []
+        if exact_classes:
+            # T13/L6 are real classes, so no class ever repeats. Transitional anatomy is expressed by
+            # omitting T13 (the normal 12-thoracic case) or both T12 and T13 (the 11-thoracic case).
+            allow_multiple_at_class = []
+            allow_skip_at_class = []
+            skippable_classes = [] if proc_lab_force_no_tl_anomaly else list(DEFAULT_SKIPPABLE_CLASSES_EXACT)
+            punish_skip_class = {T12_CLASS_IDX_EXACT: punish_skip_t12, T13_CLASS_IDX_EXACT: punish_skip_t13}
+        else:
+            allow_multiple_at_class = [T12_CLASS_IDX, L5_CLASS_IDX] if not proc_lab_force_no_tl_anomaly else [L5_CLASS_IDX]
+            allow_skip_at_class = [T11_CLASS_IDX] if not proc_lab_force_no_tl_anomaly else []
+            skippable_classes = None
+            punish_skip_class = 0.0
         allow_skip_at_region = []
         if allow_cervical_skip:
             allow_skip_at_region.append(0)
@@ -756,31 +852,40 @@ def find_vert_path_from_predictions(
             punish_multiple_sequence=punish_multiple_sequence,
             punish_skip_sequence=punish_skip_sequence,
             # no touch
-            regions=list(DEFAULT_REGION_STARTS),
+            regions=list(DEFAULT_REGION_STARTS_EXACT if exact_classes else DEFAULT_REGION_STARTS),
             allow_multiple_at_class=allow_multiple_at_class,
             allow_skip_at_class=allow_skip_at_class,
             #
             allow_skip_at_region=allow_skip_at_region,
             punish_skip_at_region_sequence=punish_skip_at_region_sequence,
+            skippable_classes=skippable_classes,
+            punish_skip_class=punish_skip_class,
             verbose=False,
         )
     # post processing
-    fpath_post = fpath_post_processing(fpath)
+    fpath_post = fpath_post_processing(fpath, exact_classes=exact_classes)
     return fcost, fpath, fpath_post, cost_matrix.tolist(), min_costs_path, args
 
 
-def fpath_post_processing(fpath) -> list[int]:
+def fpath_post_processing(fpath, exact_classes: bool = False) -> list[int]:
     """Post-process a raw 0-based class path into the final 1-based vertebra label sequence.
 
-    Resolves transitional-vertebra anomalies (two consecutive T12 become T12 + T13; a trailing double L5 becomes L5 + L6) and
-    shifts every class index by 1 to the final label convention, leaving the special T13 label untouched.
+    On the 24-class axis this resolves transitional-vertebra anomalies (two consecutive T12 become T12 + T13; a trailing
+    double L5 becomes L5 + L6) and shifts every class index by 1 to the final label convention, leaving the special T13
+    label untouched. On the 26-class ``VertExactClass`` axis T13 and L6 are already explicit classes, so the path only
+    needs the index -> label mapping and no anomaly heuristics.
 
     Args:
         fpath (list[int]): Raw 0-based class path from the cost/path search.
+        exact_classes (bool): Interpret ``fpath`` on the 26-class VertExactClass axis.
 
     Returns:
         list[int]: The post-processed 1-based vertebra label sequence (with T13/L6 anomalies applied).
     """
+    if exact_classes:
+        # C1..T12 -> 1..19, T13 -> 28, L1..L6 -> 20..25 (inverse of vert_label_to_exactclass)
+        return [T13_LABEL if c == T13_CLASS_IDX_EXACT else c + 1 if c < T13_CLASS_IDX_EXACT else c for c in fpath]
+
     fpath_post = fpath[:]
 
     # Two T12 -> T12 + T13

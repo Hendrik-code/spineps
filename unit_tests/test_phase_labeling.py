@@ -8,17 +8,23 @@ import unittest
 
 import numpy as np
 
-from spineps.architectures.read_labels import VertExact, vert_group_idx_to_exact_idx_dict
+from spineps.architectures.read_labels import VertExact, VertExactClass, vert_group_idx_to_exact_idx_dict
 from spineps.phase_labeling import (
     CERV,
+    CERV_EXACT,
     LUMB,
+    LUMB_EXACT,
     T13_LABEL,
     THOR,
+    THOR_EXACT,
     VERT_CLASSES,
+    VERT_CLASSES_EXACT,
+    class_axis,
     fpath_post_processing,
     is_valid_vertebra_sequence,
     prepare_region,
     prepare_vert,
+    prepare_vertexact,
     prepare_vertgrp,
     prepare_vertrel,
     prepare_vertrel_columns,
@@ -304,6 +310,98 @@ class Test_is_valid_vertebra_sequence(unittest.TestCase):
 
     def test_vertexact_input_invalid_skip(self):
         self.assertFalse(is_valid_vertebra_sequence([VertExact.L1, VertExact.L3]))
+
+
+class Test_class_axis(unittest.TestCase):
+    def test_default_axis(self):
+        n_classes, slices = class_axis(False)
+        self.assertEqual(n_classes, VERT_CLASSES)
+        self.assertEqual(slices, (CERV, THOR, LUMB))
+
+    def test_exact_axis(self):
+        n_classes, slices = class_axis(True)
+        self.assertEqual(n_classes, VERT_CLASSES_EXACT)
+        self.assertEqual(slices, (CERV_EXACT, THOR_EXACT, LUMB_EXACT))
+
+    def test_exact_slices_partition_the_axis(self):
+        idx = np.arange(VERT_CLASSES_EXACT)
+        covered = np.concatenate([idx[CERV_EXACT], idx[THOR_EXACT], idx[LUMB_EXACT]])
+        self.assertEqual(covered.tolist(), idx.tolist())
+
+
+class Test_region_to_vert_exact(unittest.TestCase):
+    def test_length_and_region_broadcast(self):
+        out = region_to_vert(np.array([0.2, 0.5, 0.3]), exact_classes=True)
+        self.assertEqual(out.shape, (VERT_CLASSES_EXACT,))
+        self.assertTrue(np.allclose(out[CERV_EXACT], 0.2))
+        self.assertTrue(np.allclose(out[THOR_EXACT], 0.5))
+        self.assertTrue(np.allclose(out[LUMB_EXACT], 0.3))
+
+    def test_t13_belongs_to_thoracic(self):
+        out = region_to_vert(np.array([0.0, 1.0, 0.0]), exact_classes=True)
+        self.assertEqual(out[VertExactClass.T13.value], 1.0)
+        self.assertEqual(out[VertExactClass.L1.value], 0.0)
+
+
+class Test_prepare_vert_exact(unittest.TestCase):
+    def test_keeps_all_26_classes(self):
+        values = np.full(VERT_CLASSES_EXACT, 1.0 / VERT_CLASSES_EXACT)
+        out = prepare_vert(values, exact_classes=True)
+        self.assertEqual(out.shape, (VERT_CLASSES_EXACT,))
+        self.assertAlmostEqual(float(np.sum(out)), 1.0, places=5)
+
+    def test_smoothing_does_not_leak_across_regions(self):
+        values = np.zeros(VERT_CLASSES_EXACT)
+        values[VertExactClass.T13.value] = 1.0
+        out = prepare_vert(values, gaussian_sigma=1.0, gaussian_regionwise=True, exact_classes=True)
+        # T13 is the last thoracic class, so region-wise smoothing must not bleed into L1.
+        self.assertEqual(out[VertExactClass.L1.value], 0.0)
+        self.assertGreater(out[VertExactClass.T12.value], 0.0)
+
+
+class Test_prepare_vertexact(unittest.TestCase):
+    def test_collapses_to_24_classes(self):
+        values = np.full(VERT_CLASSES_EXACT, 1.0 / VERT_CLASSES_EXACT)
+        out = prepare_vertexact(values, gaussian_sigma=0.0)
+        self.assertEqual(out.shape, (VERT_CLASSES,))
+        self.assertAlmostEqual(float(np.sum(out)), 1.0, places=5)
+
+    def test_t13_folds_into_t12_and_l6_into_l5(self):
+        values = np.zeros(VERT_CLASSES_EXACT)
+        values[VertExactClass.T13.value] = 0.5
+        values[VertExactClass.L6.value] = 0.5
+        out = prepare_vertexact(values, gaussian_sigma=0.0)
+        self.assertAlmostEqual(float(out[VertExact.T12.value]), 0.5, places=5)
+        self.assertAlmostEqual(float(out[VertExact.L5.value]), 0.5, places=5)
+
+    def test_rejects_non_26_class_input(self):
+        with self.assertRaises(ValueError):
+            prepare_vertexact(np.zeros(VERT_CLASSES))
+
+
+class Test_fpath_post_processing_exact(unittest.TestCase):
+    def test_cervical_and_thoracic_shift_by_one(self):
+        self.assertEqual(fpath_post_processing([0, 1, 2], exact_classes=True), [1, 2, 3])
+        self.assertEqual(fpath_post_processing([VertExactClass.T12.value], exact_classes=True), [19])
+
+    def test_t13_maps_to_its_label(self):
+        out = fpath_post_processing([VertExactClass.T12.value, VertExactClass.T13.value], exact_classes=True)
+        self.assertEqual(out, [19, T13_LABEL])
+
+    def test_lumbar_maps_identically(self):
+        out = fpath_post_processing([VertExactClass.L1.value, VertExactClass.L5.value, VertExactClass.L6.value], exact_classes=True)
+        self.assertEqual(out, [20, 24, 25])
+
+    def test_no_anomaly_heuristics_applied(self):
+        # A repeated class is left as-is on the exact axis (the solver cannot produce one anyway).
+        out = fpath_post_processing([VertExactClass.T12.value, VertExactClass.T12.value], exact_classes=True)
+        self.assertEqual(out, [19, 19])
+
+    def test_normal_spine_roundtrip(self):
+        fpath = [*range(19), *range(20, 25)]
+        out = fpath_post_processing(fpath, exact_classes=True)
+        self.assertEqual(out, [*range(1, 20), *range(20, 25)])
+        self.assertNotIn(T13_LABEL, out)
 
 
 if __name__ == "__main__":

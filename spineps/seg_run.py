@@ -20,23 +20,16 @@ from spineps.phase_pre import compute_crop, preprocess_input
 from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
 from spineps.seg_model import SegmentationModel
-from spineps.seg_pipeline import logger, predict_centroids_from_both
-from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition, find_best_matching_model
+from spineps.seg_pipeline import NoOpDebugSink, logger, predict_centroids_from_both
+from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition
 from spineps.utils.citation_reminder import citation_reminder
-
-
-class _NoOpDebugDict(dict):
-    """Dict-like sink that discards writes; used to skip retaining debug data when it won't be saved."""
-
-    def __setitem__(self, key, value):
-        pass
 
 
 @citation_reminder
 def process_dataset(  # noqa: C901
     dataset_path: Path,
     model_instance: SegmentationModel,
-    model_semantic: list[SegmentationModel] | SegmentationModel | None = None,
+    model_semantic: list[SegmentationModel] | SegmentationModel,
     model_labeling: VertLabelingClassifier | None = None,
     #
     rawdata_name: str = "rawdata",
@@ -90,8 +83,8 @@ def process_dataset(  # noqa: C901
     Args:
         dataset_path (Path): Path to the BIDS dataset.
         model_instance (SegmentationModel): Model for the vertebra (instance) segmentation.
-        model_semantic (list[SegmentationModel] | SegmentationModel | None, optional): Models for the subregion (semantic)
-            segmentation, one per modality pair. If None, attempts to find a matching model for each modality. Defaults to None.
+        model_semantic (list[SegmentationModel] | SegmentationModel): Model(s) for the subregion (semantic) segmentation.
+            Pass a list with one model per modality pair, or a single model used for all of them.
         model_labeling (VertLabelingClassifier | None, optional): Classifier used to label the vertebra instances. Defaults to None.
         rawdata_name (str, optional): Name of the rawdata folder. Defaults to "rawdata".
         derivative_name (str, optional): Name of the derivatives output folder. Defaults to "derivatives_seg".
@@ -142,8 +135,7 @@ def process_dataset(  # noqa: C901
             Defaults to False.
         ignore_bids_filter (bool, optional): If true, disables the BIDS query filters and processes all niftys found. Defaults to False.
         tta (bool | None, optional): If not None, forces test-time augmentation (mirroring) on/off for the semantic
-            model(s), covering both explicitly-passed and auto-resolved models. If None, uses each model's configured
-            setting. Defaults to None.
+            model(s). If None, uses each model's configured setting. Defaults to None.
         log_inference_time (bool, optional): If true, logs the inference time of each step. Defaults to True.
         verbose (bool, optional): If true, prints verbose information. Defaults to False.
     """
@@ -160,17 +152,13 @@ def process_dataset(  # noqa: C901
     elif snapshot_copy_folder is False:
         snapshot_copy_folder = None
 
-    if model_semantic is None:
-        model_semantic = [find_best_matching_model(m, expected_resolution=None) for m in modalities]
-        logger.print("Found matching models:")
-        for idx, m in enumerate(model_semantic):
-            logger.print("-", str(modalities[idx]), ":", str(m.modelid()))
-        del idx, m
     if not isinstance(model_semantic, list):
-        model_semantic = [model_semantic]
+        model_semantic = [model_semantic] * len(modalities)
+    if len(model_semantic) != len(modalities):
+        raise ValueError(f"need one semantic model per modality pair, got {len(model_semantic)} models for {len(modalities)} modalities")
 
-    # Optionally force test-time augmentation (mirroring) on/off for the semantic model(s); covers both
-    # explicitly-passed and auto-resolved models. Load eagerly so the toggle reaches the predictor.
+    # Optionally force test-time augmentation (mirroring) on/off for the semantic model(s).
+    # Load eagerly so the toggle reaches the predictor.
     if tta is not None:
         for m in model_semantic:
             if m is not None:
@@ -187,9 +175,18 @@ def process_dataset(  # noqa: C901
 
     if not compatible and not ignore_model_compatibility:
         logger.print("Compatibility issues (see above), stop program", Log_Type.FAIL)
+        raise ValueError(
+            "the given model(s) do not support the requested modality/acquisition pairs (see the warnings above); "
+            "pass ignore_model_compatibility=True (CLI: --ignore-model-compatibility) to run anyway"
+        )
 
-    # Activate logger
-    args = locals()
+    # Activate logger. Log the plain options plus the model ids -- the model objects stringify to their
+    # entire inference config, which floods the log file.
+    _not_logged = ("model_instance", "model_semantic", "model_labeling", "compatible")
+    args = {k: v for k, v in locals().items() if k not in _not_logged}
+    args["model_instance"] = model_instance.modelid()
+    args["model_semantic"] = [m.modelid() for m in model_semantic]
+    args["model_labeling"] = model_labeling.modelid() if model_labeling is not None else None
     if save_log_data:
         logger = Logger(dataset_path, log_filename="segmentation_pipeline", default_verbose=True, log_arguments=args, prefix="SegPipeline")
     logger.print(f"Processing dataset in {dataset_path}", Log_Type.BOLD)
@@ -202,7 +199,7 @@ def process_dataset(  # noqa: C901
     processed_seen_counter = 0
     processed_alldone_counter = 0
     processed_counter = 0
-    not_properly_processed: list[str] = []
+    not_properly_processed: list[tuple[ErrCode, str]] = []
 
     for s_idx, (name, subject) in enumerate(bids_ds.enumerate_subjects(sort=True)):
         logger.print()
@@ -447,7 +444,6 @@ def segment_image(  # noqa: C901
     out_snap = output_paths["out_snap"]
     out_ctd = output_paths["out_ctd"]
     out_snap2 = output_paths["out_snap2"]
-    out_raw = output_paths["out_raw"]
     out_debug = output_paths["out_debug"]
     if isinstance(snapshot_copy_folder, Path):
         snapshot_copy_folder.mkdir(parents=True, exist_ok=True)
@@ -467,8 +463,8 @@ def segment_image(  # noqa: C901
         return output_paths, ErrCode.ALL_DONE
 
     done_something = False
-    # Avoid retaining full-volume debug copies for the whole run when they'll never be saved (see seg_run.py:699).
-    debug_data_run: dict[str, NII] = {} if save_debug_data else _NoOpDebugDict()
+    # Avoid retaining -- and, via debug_put, even building -- full-volume debug copies when they'll never be saved.
+    debug_data_run: dict[str, NII] = {} if save_debug_data else NoOpDebugSink()
 
     if Modality.CT in model_semantic.modalities():
         proc_normalize_input = False  # Never normalize input if it is an CT
@@ -476,8 +472,13 @@ def segment_image(  # noqa: C901
         if model_semantic.inference_config.has_c1:
             vertebra_instance_labeling_offset = 1
 
-    compatible = check_input_model_compatibility(img_ref, model=model_semantic)
-    compatible_labeling = check_input_model_compatibility(img_ref, model=model_labeling) if model_labeling is not None else True
+    # Load the volume once and hand it to the compatibility checks: BIDS_FILE.open_nii() does not cache,
+    # so the input used to be read from disk up to three times per image.
+    input_nii = _nii if _nii is not None else img_ref.open_nii()
+    compatible = check_input_model_compatibility(img_ref, model=model_semantic, img_nii=input_nii)
+    compatible_labeling = (
+        check_input_model_compatibility(img_ref, model=model_labeling, img_nii=input_nii) if model_labeling is not None else True
+    )
     if not (compatible and compatible_labeling):
         if not ignore_compatibility_issues:
             return output_paths, ErrCode.COMPATIBILITY
@@ -491,7 +492,6 @@ def segment_image(  # noqa: C901
     with logger:
         if verbose:
             model_semantic.logger.default_verbose = True
-        input_nii = _nii if _nii is not None else img_ref.open_nii()
         input_nii.seg = False
         input_nii_ = input_nii.copy()
         if timing:
@@ -592,6 +592,8 @@ def segment_image(  # noqa: C901
                     seg_nii_modelres.save(out_spine_raw, verbose=logger)
                 if save_softmax_logits and isinstance(softmax_logits, np.ndarray):
                     save_nparray(softmax_logits, out_logits)
+            # Both are whole-volume and finished with; drop them before the instance stage allocates.
+            del input_preprocessed, softmax_logits
             done_something = True
             if timing:
                 logger.print(f"Predict semantic took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
@@ -701,20 +703,15 @@ def segment_image(  # noqa: C901
 
         # save debug
         if save_debug_data:
-            if debug_data_run is None:
-                logger.print("Save_debug_data: no debug data found", Log_Type.WARNING)
-            else:
-                out_debug.parent.mkdir(parents=True, exist_ok=True)
-                for k, v in debug_data_run.items():
-                    v.reorient_(input_nii_.orientation).save(
-                        out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False
-                    )
-                logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
-                if timing:
-                    logger.print(
-                        f"Save debug data took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time
-                    )
-                    start_time2 = perf_counter()
+            out_debug.parent.mkdir(parents=True, exist_ok=True)
+            for k, v in debug_data_run.items():
+                v.reorient_(input_nii_.orientation).save(
+                    out_debug.joinpath(k + f"_{input_format}.nii.gz"), make_parents=True, verbose=False
+                )
+            logger.print(f"Saved debug data into {out_debug}/*", Log_Type.OK)
+            if timing:
+                logger.print(f"Save debug data took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
+                start_time2 = perf_counter()
 
         # Snapshot
         if not out_snap.exists() or done_something:
@@ -736,7 +733,7 @@ def segment_image(  # noqa: C901
                 start_time2 = perf_counter()
         elif not out_snap2.exists():
             logger.print(f"Copying snapshot into {snapshot_copy_folder!s}")
-            out_snap2.parent.mkdir(exist_ok=True)
+            out_snap2.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(out_snap, out_snap2)
 
     logger.print(f"Pipeline took: {perf_counter() - start_time:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
@@ -816,14 +813,6 @@ def output_paths_from_input(
         make_parent=False,
     )
     out_vert_raw = out_raw.joinpath(out_vert_raw.name)
-    out_unc = img_ref.get_changed_path(
-        bids_format="uncertainty",
-        parent=derivative_name,
-        info={"seg": "spine", "mod": img_ref.format},
-        non_strict_mode=non_strict_mode,
-        make_parent=False,
-    )
-    out_unc = out_raw.joinpath(out_unc.name)
     out_logits = img_ref.get_changed_path(
         file_type="npz",
         bids_format="logit",
@@ -845,7 +834,6 @@ def output_paths_from_input(
         "out_spine_raw": out_spine_raw,
         "out_vert": out_vert,
         "out_vert_raw": out_vert_raw,
-        "out_unc": out_unc,
         "out_logits": out_logits,
         "out_snap": out_snap,
         "out_ctd": out_ctd,

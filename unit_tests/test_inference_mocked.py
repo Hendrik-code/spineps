@@ -442,6 +442,17 @@ class Test_Unet3D_Batching(unittest.TestCase):
             single = model.segment_scan(cut, **kwargs)
             np.testing.assert_array_equal(res[OutputType.seg].get_seg_array(), single[OutputType.seg].get_seg_array())
 
+    def test_segment_scan_batch_accepts_dict_inputs(self):
+        # dict-form inputs must be resolved to the model's first expected input, exactly as segment_scan does
+        model = _make_unet3d_test_model()
+        cutouts = self._cutouts(3)
+        input_type = model.inference_config.expected_inputs[0]
+        kwargs = {"resample_to_recommended": False, "pad_size": 0, "resample_output_to_input_space": True}
+        batched = model.segment_scan_batch([{input_type: c} for c in cutouts], batch_size=2, **kwargs)
+        for cut, res in zip(cutouts, batched):
+            single = model.segment_scan({input_type: cut}, **kwargs)
+            np.testing.assert_array_equal(res[OutputType.seg].get_seg_array(), single[OutputType.seg].get_seg_array())
+
     def test_set_test_time_augmentation(self):
         model = _make_unet3d_test_model()
         # the instance predictor has no use_mirroring attribute -> no-op, must not raise

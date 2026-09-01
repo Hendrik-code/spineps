@@ -99,6 +99,9 @@ BibTeX citation:
 
 This installation assumes you know your way around conda and virtual environments.
 
+SPINEPS supports Python 3.9 to 3.13. On Windows, Python 3.10 or newer is required: antspyx (pulled in via TPTBox)
+publishes no Windows wheel for 3.9, so installing it there would mean building it from source.
+
 ### Setup Venv
 
 The order of the following instructions is important!
@@ -173,6 +176,9 @@ spineps sample -i <path-to-nifty> --model-semantic <model_name> --model-instance
 ```
 (replacing `<model_name>` with the model you want to use). You can also call SPINEPS from Python — see
 [Using the Code](#using-the-code).
+
+SPINEPS prints a short citation reminder on first use and at exit. Set `SPINEPS_NO_CITATION_REMINDER=1`
+(or `true`/`yes`/`on`) to silence it.
 
 ### Issues
 
@@ -273,7 +279,7 @@ To that end, we are using TPTBox (see https://github.com/Hendrik-code/TPTBox)
 | argument | explanation |
 | :--- | --------- |
 | --directory, -i, -d | Absolute path to the dataset directory, preferably a BIDS dataset (required) |
-| --model-semantic, -ms  | The model used for the semantic segmentation, or `auto` to select automatically by modality (default: t2w) |
+| --model-semantic, -ms  | The model used for the semantic segmentation (default: t2w) |
 | --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: instance) |
 | --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling (default: t2w_labeling) |
 | --rawdata-name, -rn | Sets the name of the rawdata folder of the dataset (default: "rawdata")
@@ -317,9 +323,11 @@ In the subregion segmentation:
 | 47  | Inferior_Articular_Left |
 | 48  | Inferior_Articular_Right |
 | 49  | Vertebra_Corpus_border |
+| 52  | Vertebral_Body_Endplate_Superior |
+| 53  | Vertebral_Body_Endplate_Inferior |
 | 60  | Spinal_Cord |
 | 61  | Spinal_Canal |
-| 62  | Endplate |
+| 62  | Endplate (only where the plate could not be assigned to a vertebra) |
 | 100 | Vertebra_Disc |
 | 26  | Sacrum |
 
