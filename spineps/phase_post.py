@@ -751,11 +751,10 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII) -> tuple[NII, 
         if first_stats[2] < MERGED_VERTEBRA_SIZE_RATIO * second_stats[2]:
             # first is significantly smaller than second and they are close in height
             # how many pixels are touching
-            vert_firsttwo_arr = vert_nii.extract_label(first_key).get_seg_array()
-            vert_firsttwo_arr2: np.ndarray = vert_nii.extract_label(second_key).get_seg_array()
-            vert_firsttwo_arr += vert_firsttwo_arr2.astype(vert_firsttwo_arr.dtype) + 1
+            vert_firsttwo_arr = vert_nii.extract_label(first_key).get_seg_array().astype(np.uint8)
+            vert_firsttwo_arr[vert_nii.extract_label(second_key) > 0] = 2  # type: ignore
             contacts = np_contacts(vert_firsttwo_arr, connectivity=3)
-            if contacts[(1, 2)] > isotropic_area_to_voxels(MERGED_VERTEBRA_MIN_CONTACT_MM2, vert_nii.zoom):
+            if (1, 2) in contacts and contacts[(1, 2)] > isotropic_area_to_voxels(MERGED_VERTEBRA_MIN_CONTACT_MM2, vert_nii.zoom):
                 logger.print("Found first two instance weird, will merge", Log_Type.STRANGE)
                 vert_nii.map_labels_({first_key: second_key}, verbose=False)
 
