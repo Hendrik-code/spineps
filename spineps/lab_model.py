@@ -87,6 +87,8 @@ class VertLabelingClassifier(SegmentationModel):
         cutout_size (tuple[int, int, int]): Patch size used when cutting out a vertebra, set from the loaded model.
         totensor (ToTensor): Transform converting numpy arrays to tensors.
         transform (Compose): Intensity normalization and center-crop transform applied to each patch.
+        patch_rotation (bool): Whether cutouts are rotated to the spine axis before inference. Set from the loaded
+            checkpoint, because it must match how the model was trained.
     """
 
     def __init__(
@@ -114,6 +116,7 @@ class VertLabelingClassifier(SegmentationModel):
         assert len(self.inference_config.expected_inputs) == 1, "Unet3D cannot expect more than one input"
         self.device = torch.device("cuda:0" if torch.cuda.is_available() and not use_cpu else "cpu")
         self.final_size: tuple[int, int, int] = DEFAULT_CLASSIFIER_INPUT_SIZE
+        self.patch_rotation: bool = True
         self.totensor = ToTensor()
         self.transform = Compose(
             [
@@ -153,6 +156,15 @@ class VertLabelingClassifier(SegmentationModel):
         model.to(self.device)
         self.predictor = model
         self.cutout_size = model.opt.final_size
+        # Patch rotation (added 2025-06-11 in 9bb4585) aligns each cutout to the spine axis. It must
+        # only be applied to models trained on rotated cutouts, i.e. the `v4corpus` / ROT variants.
+        # The released t2w checkpoint (T2W_A40) was trained on `sagittal_v3corpus_npz`, which is not
+        # rotated; feeding it rotated patches costs 2.2 points of perfect-sequence accuracy on
+        # NAKO blocks 106/107 (98.20 -> 96.00). Derive the setting from the checkpoint so that
+        # weights and preprocessing always travel together.
+        ds_name = str(getattr(model.opt, "ds_name", "") or "")
+        self.patch_rotation = "v4corpus" in ds_name
+        self.print(f"patch_rotation={self.patch_rotation} (ds_name={ds_name or 'unknown'})", verbose=True)
         self.print("Model loaded from", self.model_folder, Log_Type.OK, verbose=True)
         return self
 
@@ -252,6 +264,13 @@ class VertLabelingClassifier(SegmentationModel):
         seg = seg.reorient()
         # TODO assert order of seg labels are order from top to bottom
         predictions = {}
+
+        if not self.patch_rotation:
+            # model trained on non-rotated cutouts: extract patches axis-aligned
+            for v in seg.unique():
+                logits_soft, pred_cls = self.run_given_seg_pos(img, seg, vert_label=v, angle=None)
+                predictions[v] = {"soft": logits_soft, "pred": pred_cls}
+            return predictions
 
         coms = seg.reorient(("I", "P", "L")).center_of_masses()
         sorted_ctds = sorted([[a, *b] for a, b in coms.items()], key=lambda x: x[1])

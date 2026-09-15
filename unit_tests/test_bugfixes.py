@@ -336,3 +336,83 @@ class Test_Fix_Wrong_Posterior_Instance_Label(unittest.TestCase):
         out = fix_wrong_posterior_instance_label(sem_nii, inst_nii, logger=logger).get_seg_array()
         self.assertTrue(np.all(out[22:25, 22:26, 9:11] == 2), "the stray arcus should follow the instance it touches")
         self.assertTrue(np.all(out[6:16, 4:12, 6:14] == 1), "the real instance-1 corpus must be untouched")
+
+
+class Test_Labeling_Patch_Rotation_Gate(unittest.TestCase):
+    """Patch rotation must match the cutouts the checkpoint was trained on.
+
+    Sagittal patch rotation was added to inference unconditionally, but the released t2w model was
+    trained on non-rotated cutouts (``sagittal_v3corpus_npz``); only the ``v4corpus`` variants saw
+    rotated ones. Feeding the released model rotated patches cost 2.2 points of perfect-sequence
+    accuracy on 1000 NAKO subjects, so the setting is derived from the checkpoint itself.
+    """
+
+    @staticmethod
+    def _classifier(ds_name: str):
+        from types import SimpleNamespace
+
+        from spineps.lab_model import VertLabelingClassifier
+        from spineps.seg_model import Segmentation_Inference_Config
+
+        config = Segmentation_Inference_Config(
+            logger=logger,
+            modality=["T2w"],
+            acquisition="sag",
+            log_name="RotationGateDummy",
+            modeltype="classifier",
+            model_expected_orientation=("P", "I", "R"),
+            available_folds=1,
+            inference_augmentation=False,
+            resolution_range=[0.8571, 0.8571, 3.3],
+            default_step_size=1,
+            labels={1: 1},
+        )
+        model = VertLabelingClassifier(__file__, config, default_verbose=False, default_allow_tqdm=False)
+
+        predictor = SimpleNamespace(
+            opt=SimpleNamespace(ds_name=ds_name, final_size=(152, 168, 32)),
+            net=SimpleNamespace(eval=lambda: None),
+            eval=lambda: None,
+            to=lambda _device: None,
+        )
+        with (
+            patch("spineps.lab_model.os.path.exists", return_value=True),
+            patch("spineps.lab_model.search_path", return_value=["dummy.ckpt"]),
+            patch("spineps.lab_model.PLClassifier.load_from_checkpoint", return_value=predictor),
+        ):
+            return model.load()
+
+    def test_gate_follows_the_training_dataset(self):
+        self.assertFalse(self._classifier("sagittal_v3corpus_npz").patch_rotation, "v3corpus cutouts are not rotated")
+        self.assertTrue(self._classifier("sagittal_v4corpus_npz").patch_rotation, "v4corpus cutouts are rotated")
+
+    def test_default_is_rotation(self):
+        """An unknown/absent ds_name must not silently change the behaviour of the ROT models."""
+        self.assertFalse(self._classifier("").patch_rotation)
+
+    def test_non_rotating_model_gets_axis_aligned_patches(self):
+        """With the gate off, no angle is computed and every patch is cut axis-aligned."""
+        shape = (12, 60, 12)
+        vert = np.zeros(shape, dtype=np.uint8)
+        for i, top in enumerate([10, 24, 38]):
+            # shift each vertebra posteriorly so a spine axis (and thus a non-zero angle) exists
+            vert[2 + i : 8 + i, top : top + 10, 3:9] = i + 1
+        vert_nii = _nii(vert)
+
+        angles: list[float | None] = []
+
+        def _record(img, seg, vert_label=None, angle=None):  # noqa: ARG001
+            angles.append(angle)
+            return {"VERT": np.zeros(24)}, {"VERT": 0}
+
+        model = self._classifier("sagittal_v3corpus_npz")
+        model.run_given_seg_pos = _record
+        predictions = model.run_all_seg_instances(vert_nii.copy(), vert_nii.copy())
+        self.assertEqual(len(predictions), 3)
+        self.assertTrue(all(a is None for a in angles), f"expected no rotation, got angles {angles}")
+
+        model = self._classifier("sagittal_v4corpus_npz")
+        model.run_given_seg_pos = _record
+        angles.clear()
+        model.run_all_seg_instances(vert_nii.copy(), vert_nii.copy())
+        self.assertTrue(any(a not in (None, 0) for a in angles), f"expected rotation angles, got {angles}")
