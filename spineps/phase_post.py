@@ -750,12 +750,16 @@ def detect_and_solve_merged_vertebra(seg_nii: NII, vert_nii: NII) -> tuple[NII, 
         # both vertebra
         if first_stats[2] < MERGED_VERTEBRA_SIZE_RATIO * second_stats[2]:
             # first is significantly smaller than second and they are close in height
-            # how many pixels are touching
-            vert_firsttwo_arr = vert_nii.extract_label(first_key).get_seg_array()
-            vert_firsttwo_arr2 = vert_nii.extract_label(second_key).get_seg_array()
-            vert_firsttwo_arr += vert_firsttwo_arr2 + 1
+            # Paint the two instances as 1 and 2 with the background left at 0, so the contact count
+            # is the one between the two vertebrae. Adding the two binary masks plus one instead
+            # labelled the background 1 and *both* vertebrae 2, so `(1, 2)` measured the outer
+            # surface of the pair and the branch fired on virtually any pair of top instances.
+            # `extract_label` also returns a boolean mask, which cannot be accumulated into in place.
+            vert_firsttwo_arr = vert_nii.extract_label(first_key).get_seg_array().astype(np.uint8)
+            vert_firsttwo_arr[vert_nii.extract_label(second_key).get_seg_array() != 0] = 2
             contacts = np_contacts(vert_firsttwo_arr, connectivity=3)
-            if contacts[(1, 2)] > isotropic_area_to_voxels(MERGED_VERTEBRA_MIN_CONTACT_MM2, vert_nii.zoom):
+            # cc3d only reports label pairs that actually touch.
+            if contacts.get((1, 2), 0) > isotropic_area_to_voxels(MERGED_VERTEBRA_MIN_CONTACT_MM2, vert_nii.zoom):
                 logger.print("Found first two instance weird, will merge", Log_Type.STRANGE)
                 vert_nii.map_labels_({first_key: second_key}, verbose=False)
 
