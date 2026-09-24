@@ -64,11 +64,34 @@ class Test_Merged_Vertebra_Background(unittest.TestCase):
         seg[3:9, 37:39, 3:9] = 100  # an IVD below them, so the disc branch has something to find
         return _nii(seg), _nii(vert)
 
+    @staticmethod
+    def _detached_fixture() -> tuple[NII, NII]:
+        """Same shape as ``_fixture``, but with a gap between the two top instances.
+
+        They never touch, so the split-C2 heuristic must leave them alone. The old encoding
+        (background 1, both vertebrae 2) measured the outer surface of the pair instead of their
+        mutual contact, so this case was merged too.
+        """
+        shape = (12, 40, 12)
+        seg = np.zeros(shape, dtype=np.uint8)
+        vert = np.zeros(shape, dtype=np.uint8)
+        seg[3:9, 20:23, 3:9] = 49  # small instance 1
+        vert[3:9, 20:23, 3:9] = 1
+        seg[3:9, 27:37, 3:9] = 49  # large instance 2, four voxels below it
+        vert[3:9, 27:37, 3:9] = 2
+        seg[3:9, 37:39, 3:9] = 100  # an IVD below them
+        return _nii(seg), _nii(vert)
+
     def test_top_two_instances_are_merged(self):
         seg_nii, vert_nii = self._fixture()
         detect_and_solve_merged_vertebra(seg_nii, vert_nii)
         self.assertNotIn(1, vert_nii.unique(), "the small top instance should have been merged into its neighbour")
         self.assertIn(2, vert_nii.unique())
+
+    def test_detached_top_instance_is_kept(self):
+        seg_nii, vert_nii = self._detached_fixture()
+        detect_and_solve_merged_vertebra(seg_nii, vert_nii)
+        self.assertEqual([1, 2], list(vert_nii.unique()), "instances that do not touch must not be merged")
 
 
 class Test_Semantic_Bounding_Box_Clean(unittest.TestCase):
