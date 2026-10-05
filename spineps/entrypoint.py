@@ -16,6 +16,7 @@ from spineps.get_models import (
     get_instance_model,
     get_labeling_model,
     get_semantic_model,
+    looks_like_model_path,
     modelid2folder_instance,
     modelid2folder_labeling,
     modelid2folder_semantic,
@@ -290,19 +291,19 @@ def run_sample(opt: Namespace):
     if not os.path.isfile(input_path):  # noqa: PTH113
         raise FileNotFoundError(f"-input does not exist or is not a file, got {input_path}")
     # model semantic
-    if "/" in str(opt.model_semantic):
+    if looks_like_model_path(opt.model_semantic):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
     # model instance
-    if "/" in str(opt.model_instance):
+    if looks_like_model_path(opt.model_instance):
         model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
         model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
     # model labeling
     if opt.model_labeling == "none":
         model_labeling = None
-    elif "/" in str(opt.model_labeling):
+    elif looks_like_model_path(opt.model_labeling):
         model_labeling = get_actual_model(opt.model_labeling, use_cpu=opt.cpu).load()
     else:
         model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
@@ -388,13 +389,13 @@ def run_dataset(opt: Namespace):
         raise NotADirectoryError(f"-directory is not a directory, got {input_dir}")
 
     # Model semantic
-    if "/" in str(opt.model_semantic):
+    if looks_like_model_path(opt.model_semantic):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
 
     # Model Instance
-    if "/" in str(opt.model_instance):
+    if looks_like_model_path(opt.model_instance):
         model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
         model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
@@ -402,7 +403,7 @@ def run_dataset(opt: Namespace):
     # Model Labeling
     if opt.model_labeling == "none":
         model_labeling = None
-    elif "/" in str(opt.model_labeling):
+    elif looks_like_model_path(opt.model_labeling):
         model_labeling = get_actual_model(opt.model_labeling, use_cpu=opt.cpu).load()
     else:
         model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
