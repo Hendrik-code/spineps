@@ -20,10 +20,64 @@ from spineps.get_models import (
     modelid2folder_labeling,
     modelid2folder_semantic,
 )
+from spineps.seg_enums import Modality
 from spineps.seg_run import process_dataset, segment_image
 from spineps.utils.citation_reminder import citation_reminder
 
 logger = No_Logger(prefix="Init")
+
+# The instance and labeling models that belong with a semantic model, keyed by its modality. The instance
+# and labeling networks are modality specific, so pairing a CT semantic model with the T2w defaults made
+# every `--model-semantic ct` run abort on the input/model compatibility check before it segmented
+# anything. Resolved from the loaded semantic model rather than from argparse defaults.
+DEFAULT_COMPANION_MODELS = {
+    "ct": {"instance": "ct_instance", "labeling": "ct_labeling"},
+    "mr": {"instance": "instance", "labeling": "t2w_labeling"},
+}
+
+
+def companion_models(model_semantic) -> dict[str, str]:
+    """Returns the instance and labeling model ids that match an already-loaded semantic model.
+
+    Args:
+        model_semantic (SegmentationModel): The loaded semantic model whose modality decides the pairing.
+
+    Returns:
+        dict[str, str]: ``{"instance": <model id>, "labeling": <model id>}``.
+    """
+    return DEFAULT_COMPANION_MODELS["ct" if Modality.CT in model_semantic.modalities() else "mr"]
+
+
+def resolve_companion(given: str | None, kind: str, model_semantic) -> str:
+    """Returns ``given`` if the user named a model, else the default matching the semantic model.
+
+    Args:
+        given (str | None): The ``--model-instance`` / ``--model-labeling`` argument, or None if unset.
+        kind (str): Either ``"instance"`` or ``"labeling"``.
+        model_semantic (SegmentationModel): The loaded semantic model.
+
+    Returns:
+        str: The model id to load.
+    """
+    if given is not None:
+        return given
+    chosen = companion_models(model_semantic)[kind]
+    logger.print(f"No --model-{kind} given, using '{chosen}' to match {model_semantic.modelid()}", Log_Type.OK)
+    return chosen
+
+
+def resolve_companions_into(opt: Namespace, model_semantic) -> None:
+    """Fills unset ``--model-instance`` / ``--model-labeling`` on ``opt`` with the semantic model's companions.
+
+    Called once the semantic model is loaded, so everything downstream can treat the companion models as
+    if the user had named them.
+
+    Args:
+        opt (Namespace): Parsed CLI arguments, modified in place.
+        model_semantic (SegmentationModel): The loaded semantic model whose modality decides the defaults.
+    """
+    opt.model_instance = resolve_companion(opt.model_instance, "instance", model_semantic)
+    opt.model_labeling = resolve_companion(opt.model_labeling, "labeling", model_semantic)
 
 
 # TODO replace with Class_to_ArgParse and then load only from config files!
@@ -160,14 +214,17 @@ def entry_point():
         "--model-instance",
         "-mv",
         "-mi",
-        default="instance",
-        help="The model used for the vertebra instance segmentation. You can also pass an absolute path to the model folder",
+        default=None,
+        help="The model used for the vertebra instance segmentation. You can also pass an absolute path to the model "
+        "folder. Default: the model matching --model-semantic ('instance' for MR, 'ct_instance' for CT)",
     )
     parser_sample.add_argument(
         "--model-labeling",
         "-ml",
-        default="t2w_labeling",
-        help="The model used for the vertebra labeling classification. You can also pass an absolute path to the model folder",
+        default=None,
+        help="The model used for the vertebra labeling classification, or 'none' to skip labeling. You can also pass "
+        "an absolute path to the model folder. Default: the model matching --model-semantic ('t2w_labeling' for MR, "
+        "'ct_labeling' for CT)",
     )
     parser_sample = parser_arguments(parser_sample)
 
@@ -188,14 +245,17 @@ def entry_point():
         "--model-instance",
         "-mv",
         "-mi",
-        default="instance",
-        help="The model used for the vertebra segmentation. You can also pass an absolute path to the model folder",
+        default=None,
+        help="The model used for the vertebra segmentation. You can also pass an absolute path to the model folder. "
+        "Default: the model matching --model-semantic ('instance' for MR, 'ct_instance' for CT)",
     )
     parser_dataset.add_argument(
         "--model-labeling",
         "-ml",
-        default="t2w_labeling",
-        help="The model used for the vertebra labeling classification. You can also pass an absolute path to the model folder",
+        default=None,
+        help="The model used for the vertebra labeling classification, or 'none' to skip labeling. You can also pass "
+        "an absolute path to the model folder. Default: the model matching --model-semantic ('t2w_labeling' for MR, "
+        "'ct_labeling' for CT)",
     )
     parser_dataset.add_argument(
         "--ignore-bids-filter",
@@ -266,6 +326,9 @@ def run_sample(opt: Namespace):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
+    # Fill in the companion models now that the semantic model's modality is known; everything below
+    # resolves them exactly as if the user had named them.
+    resolve_companions_into(opt, model_semantic)
     # model instance
     if "/" in str(opt.model_instance):
         model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
@@ -360,6 +423,7 @@ def run_dataset(opt: Namespace):
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
 
+    resolve_companions_into(opt, model_semantic)
     # Model Instance
     if "/" in str(opt.model_instance):
         model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()

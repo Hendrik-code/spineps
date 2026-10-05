@@ -18,6 +18,9 @@ SPINEPS automatically and robustly segments the whole spine in sagittal images.
 ## NOW SUPPORTS BOTH CT AND T2W!
 There is a new release that finally supports both CT and T2W with completely independent, modality specific models. We are already working on completely modality/sequence robust version that works on everything. Stay tuned for that.
 
+For CT, pass `--model-semantic ct`; the matching CT instance and labeling models are selected
+automatically (`spineps sample -i scan.nii.gz --model-semantic ct`).
+
 
 ![pipeline_process](spineps/example/figures/pipeline_processflow.png?raw=true)
 
@@ -202,8 +205,8 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 | :--- | --------- |
 | --input, -i   | Absolute path to the single nifty file (.nii.gz) to be processed (required) |
 | --model-semantic, -ms  | The model used for the semantic segmentation (required) |
-| --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: instance) |
-| --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling (default: t2w_labeling) |
+| --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: matches --model-semantic, i.e. `instance` for MR and `ct_instance` for CT) |
+| --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling, or `none` to skip it (default: matches --model-semantic, i.e. `t2w_labeling` for MR and `ct_labeling` for CT) |
 
 Plus the common processing options below, shared with `dataset` mode. Run `spineps sample -h` for the full list
 with defaults.
@@ -235,12 +238,22 @@ with defaults.
 There are a lot more arguments, run `spineps sample -h` to see them.
 
 #### Example
+
+`--model-instance` and `--model-labeling` default to the models that match `--model-semantic`, so for
+each modality you only have to name the semantic model:
+
 ```bash
 #T2w sagittal
-spineps sample --ignore-inference-compatibility -i /path/sub-testsample_T2w.nii.gz --model-semantic t2w --model-instance instance
+spineps sample -i /path/sub-testsample_T2w.nii.gz --model-semantic t2w
 #T1w sagittal
-spineps sample --ignore-inference-compatibility -i ~/path/sub-testsample_T1w.nii.gz --model-semantic t1w --model-instance instance
+spineps sample -i ~/path/sub-testsample_T1w.nii.gz --model-semantic t1w
+#CT (uses ct_instance + ct_labeling automatically)
+spineps sample -i /path/sub-testsample_ct.nii.gz --model-semantic ct
 ```
+
+Pass them explicitly to override (`--model-instance <id-or-path>`, `--model-labeling none` to skip
+labeling). The available semantic models are `t2w`, `t1w`, `vibe` and `ct`.
+
 (`--ignore-bids-filter` is a `dataset`-only option — see below — it isn't accepted by `sample`.)
 
 
@@ -280,8 +293,8 @@ To that end, we are using TPTBox (see https://github.com/Hendrik-code/TPTBox)
 | :--- | --------- |
 | --directory, -i, -d | Absolute path to the dataset directory, preferably a BIDS dataset (required) |
 | --model-semantic, -ms  | The model used for the semantic segmentation (default: t2w) |
-| --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: instance) |
-| --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling (default: t2w_labeling) |
+| --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: matches --model-semantic) |
+| --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling, or `none` to skip it (default: matches --model-semantic) |
 | --rawdata-name, -rn | Sets the name of the rawdata folder of the dataset (default: "rawdata")
 | --ignore-bids-filter, -ibf   | If true, will search the BIDS dataset without the strict filters. Use with care! (default: False) |
 | --ignore-model-compatibility, -imc  | If true, will not stop the pipeline to use the given models on unfitting input modalities (default: False) |
