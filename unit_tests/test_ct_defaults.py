@@ -113,23 +113,28 @@ class Test_Parser_Defaults(unittest.TestCase):
 
 class Test_Ct_Run_Loads_Ct_Companions(unittest.TestCase):
     def test_run_sample_requests_the_ct_models(self):
+        import tempfile
+        from pathlib import Path
+
         ct_model = _Model("CT", "iso").load()
-        with (
-            mock.patch.object(entrypoint, "get_semantic_model", return_value=ct_model),
-            mock.patch.object(entrypoint, "get_instance_model") as get_instance_model,
-            mock.patch.object(entrypoint, "get_labeling_model") as get_labeling_model,
-            mock.patch.object(entrypoint, "segment_image", return_value=({"out_spine": mock.MagicMock()}, None)),
-            mock.patch.object(entrypoint, "BIDS_FILE"),
-            mock.patch("os.path.exists", return_value=True),
-            mock.patch("os.path.isfile", return_value=True),
-        ):
-            parser = argparse.ArgumentParser()
-            entrypoint.parser_arguments(parser)
-            opt = parser.parse_args([])
-            opt.input = "/tmp/sub-01_ct.nii.gz"
-            opt.model_semantic, opt.model_instance, opt.model_labeling = "ct", None, None
-            opt.tta = None
-            entrypoint.run_sample(opt)
+        with tempfile.TemporaryDirectory() as td:
+            # A real file, so the input validation passes whatever it is implemented with.
+            input_path = Path(td) / "sub-01_ct.nii.gz"
+            input_path.write_bytes(b"")
+            with (
+                mock.patch.object(entrypoint, "get_semantic_model", return_value=ct_model),
+                mock.patch.object(entrypoint, "get_instance_model") as get_instance_model,
+                mock.patch.object(entrypoint, "get_labeling_model") as get_labeling_model,
+                mock.patch.object(entrypoint, "segment_image", return_value=({"out_spine": mock.MagicMock()}, None)),
+                mock.patch.object(entrypoint, "BIDS_FILE"),
+            ):
+                parser = argparse.ArgumentParser()
+                entrypoint.parser_arguments(parser)
+                opt = parser.parse_args([])
+                opt.input = str(input_path)
+                opt.model_semantic, opt.model_instance, opt.model_labeling = "ct", None, None
+                opt.tta = None
+                entrypoint.run_sample(opt)
 
         self.assertEqual(get_instance_model.call_args[0][0], "ct_instance")
         self.assertEqual(get_labeling_model.call_args[0][0], "ct_labeling")
