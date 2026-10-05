@@ -53,7 +53,11 @@ class Test_Messages_Name_Real_Flags(unittest.TestCase):
             if "logger.print(" not in line and "raise " not in line and 'f"' not in line:
                 continue
             for quoted in re.findall(r'"([^"]*)"', line):
-                for candidate in self.FLAG_PATTERN.findall(quoted):
+                for match in self.FLAG_PATTERN.finditer(quoted):
+                    candidate = match.group()
+                    # "--model-{kind}" is built at runtime; the literal prefix is not a flag on its own.
+                    if quoted[match.end() : match.end() + 1] == "{":
+                        continue
                     if "_" in candidate or candidate.startswith("--"):
                         with self.subTest(module=module.__name__, flag=candidate, line=line.strip()[:90]):
                             self.assertIn(candidate, flags, f"message mentions unknown flag {candidate}")
