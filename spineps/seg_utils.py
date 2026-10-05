@@ -125,11 +125,13 @@ def check_input_model_compatibility(
 
     if input_format not in allowed_format:
         if input_format not in Modality.known_format_keys():
-            # The file name carries no modality tag at all (e.g. "myscan.nii.gz"), so it cannot contradict
-            # the chosen model. Refusing here meant SPINEPS silently did nothing on any non-BIDS input.
+            # '{input_format}' names no modality SPINEPS knows, so the file name cannot contradict the
+            # model the user picked. Refusing here meant SPINEPS silently did nothing on any input that is
+            # not BIDS-named, which is most of them.
             logger_texts.append(
-                f"File name does not say which modality '{filename}' is, assuming it matches the selected "
-                f"model ({allowed_format}). Name it 'sub-<id>_<modality>.nii.gz' to make this explicit."
+                f"Cannot tell the modality of '{filename}' from its name ('{input_format}' is not a known "
+                f"modality key), trusting the selected model instead ({allowed_format}). Name the file "
+                "'sub-<id>_<modality>.nii.gz' (e.g. sub-01_T2w.nii.gz) if you want this checked."
             )
         else:
             logger_texts.append(f"Input format '{input_format}' incompatible, model expected {allowed_format}.")
