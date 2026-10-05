@@ -20,12 +20,10 @@ from spineps.get_models import (
     modelid2folder_semantic,
 )
 from spineps.seg_run import process_dataset, segment_image
+from spineps.seg_utils import NIFTI_FILE_TYPES
 from spineps.utils.citation_reminder import citation_reminder
 
 logger = No_Logger(prefix="Init")
-
-# Input extensions accepted by --input; the outputs are always written as .nii.gz.
-NIFTI_SUFFIXES = (".nii.gz", ".nii")
 
 
 # TODO replace with Class_to_ArgParse and then load only from config files!
@@ -232,6 +230,10 @@ def entry_point():
         run_dataset(opt)
     else:
         raise NotImplementedError("cmd", opt.cmd)
+
+
+# Input extensions accepted by --input; the outputs are always written as .nii.gz.
+NIFTI_SUFFIXES = tuple(f".{t}" for t in NIFTI_FILE_TYPES)
 
 
 @citation_reminder
