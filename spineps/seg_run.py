@@ -21,7 +21,13 @@ from spineps.phase_semantic import predict_semantic_mask
 from spineps.seg_enums import Acquisition, ErrCode, Modality
 from spineps.seg_model import SegmentationModel
 from spineps.seg_pipeline import NoOpDebugSink, logger, predict_centroids_from_both
-from spineps.seg_utils import Modality_Pair, check_input_model_compatibility, check_model_modality_acquisition
+from spineps.seg_utils import (
+    NIFTI_FILE_TYPES,
+    Modality_Pair,
+    check_input_model_compatibility,
+    check_model_modality_acquisition,
+    input_image_path,
+)
 from spineps.utils.citation_reminder import citation_reminder
 
 
@@ -214,7 +220,7 @@ def process_dataset(  # noqa: C901
             allowed_acq = Acquisition.format_keys(mod_pair[1])
             q = subject.new_query(flatten=True)
             # optional give subject list
-            q.filter_filetype("nii.gz")
+            q.filter_filetype(list(NIFTI_FILE_TYPES))
             q.filter_non_existence("seg", required=True)
             if not ignore_bids_filter:
                 q.filter_format(allowed_format)
@@ -270,7 +276,7 @@ def process_dataset(  # noqa: C901
                 elif errcode == ErrCode.ALL_DONE:
                     processed_alldone_counter += 1
                 else:
-                    not_properly_processed.append((errcode, str(s.file["nii.gz"])))
+                    not_properly_processed.append((errcode, str(input_image_path(s))))
         if subject_scan_processed == 0:
             logger.print(f"Subject {s_idx + 1}: {name} had no scans to be processed")
 
@@ -486,7 +492,7 @@ def segment_image(  # noqa: C901
             logger.print("Issues are ignored, might not have expected outcome", Log_Type.WARNING)
 
     start_time = start_time2 = perf_counter()
-    file_dir = img_ref.file["nii.gz"]
+    file_dir = input_image_path(img_ref)
 
     logger.print("Processing", file_dir.name)
     with logger:

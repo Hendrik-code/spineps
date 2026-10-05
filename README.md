@@ -189,7 +189,7 @@ SPINEPS prints a short citation reminder on first use and at exit. Set `SPINEPS_
 ## SPINEPS Capabilities
 
 The pipeline can process either:
-- Single Nifty (.nii.gz) files
+- Single Nifty files, `.nii.gz` or uncompressed `.nii` (the outputs are always written as `.nii.gz`)
 - Whole Datasets
 
 ### Single nifty
@@ -200,7 +200,7 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 
 | argument | explanation |
 | :--- | --------- |
-| --input, -i   | Absolute path to the single nifty file (.nii.gz) to be processed (required) |
+| --input, -i   | Path to the single nifty file (`.nii.gz` or `.nii`) to be processed (required) |
 | --model-semantic, -ms  | The model used for the semantic segmentation (required) |
 | --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: instance) |
 | --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling (default: t2w_labeling) |

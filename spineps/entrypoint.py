@@ -20,6 +20,7 @@ from spineps.get_models import (
     modelid2folder_semantic,
 )
 from spineps.seg_run import process_dataset, segment_image
+from spineps.seg_utils import NIFTI_FILE_TYPES
 from spineps.utils.citation_reminder import citation_reminder
 
 logger = No_Logger(prefix="Init")
@@ -231,6 +232,10 @@ def entry_point():
         raise NotImplementedError("cmd", opt.cmd)
 
 
+# Input extensions accepted by --input; the outputs are always written as .nii.gz.
+NIFTI_SUFFIXES = tuple(f".{t}" for t in NIFTI_FILE_TYPES)
+
+
 @citation_reminder
 def run_sample(opt: Namespace):
     """Run the full segmentation pipeline on a single input NIfTI file.
@@ -250,17 +255,14 @@ def run_sample(opt: Namespace):
         FileNotFoundError: If the input path's parent directory is missing, or the input file does not exist.
     """
     input_path = Path(opt.input).absolute()
-    if not input_path.exists() and not input_path.name.endswith(".nii.gz"):
+    if not input_path.exists() and not input_path.name.endswith(NIFTI_SUFFIXES):
         input_path = input_path.with_name(input_path.name + ".nii.gz")  # allow --input without the extension
     if not input_path.parent.exists():
         raise FileNotFoundError(f"--input/-i: the folder {input_path.parent} does not exist")
     if not input_path.is_file():
         raise FileNotFoundError(f"--input/-i: {input_path} does not exist or is not a file")
-    if not input_path.name.endswith(".nii.gz"):
-        raise ValueError(
-            f"--input/-i: SPINEPS reads gzipped NIfTI images (.nii.gz), got {input_path.name}. "
-            f"Compress it first, e.g. 'gzip {input_path.name}'."
-        )
+    if not input_path.name.endswith(NIFTI_SUFFIXES):
+        raise ValueError(f"--input/-i: SPINEPS reads NIfTI images ({' or '.join(NIFTI_SUFFIXES)}), got {input_path.name}.")
     dataset = str(input_path.parent)
     input_path = str(input_path)
     # model semantic

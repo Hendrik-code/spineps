@@ -3,9 +3,9 @@
 
 The hints told users to set flags that do not exist (`-override_subreg`, `-override_vert`,
 `-override_ctd`, `-model_instance`; the real ones are `--override-semantic`, `--override-instance`,
-`--override-ctd`, `--model-instance`), and `--input scan.nii` -- an uncompressed NIfTI, which SPINEPS
-cannot read -- silently became `scan.nii.nii.gz` and then reported *"-input does not exist or is not a
-file"* about a path the user never typed.
+`--override-ctd`, `--model-instance`), and `--input scan.mha` -- a file SPINEPS cannot read --
+silently became `scan.mha.nii.gz` and then reported *"-input does not exist or is not a file"* about a
+path the user never typed.
 """
 
 from __future__ import annotations
@@ -83,17 +83,17 @@ class Test_Input_Validation_Messages(unittest.TestCase):
         opt.model_labeling = "none"
         return opt
 
-    def test_uncompressed_nifti_says_so(self):
+    def test_unsupported_extension_says_so(self):
         with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "scan.nii"
+            path = Path(td) / "scan.mha"
             path.write_bytes(b"")
             with self.assertRaises(ValueError) as cm:
                 entrypoint.run_sample(self._opt(str(path)))
         message = str(cm.exception)
-        self.assertIn("scan.nii", message)
+        self.assertIn("scan.mha", message)
         self.assertIn(".nii.gz", message)
         # and it must not invent a path the user never typed
-        self.assertNotIn("scan.nii.nii.gz", message)
+        self.assertNotIn("scan.mha.nii.gz", message)
 
     def test_missing_file_names_the_path_given(self):
         with tempfile.TemporaryDirectory() as td:
