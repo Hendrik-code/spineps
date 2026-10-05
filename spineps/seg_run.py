@@ -458,6 +458,9 @@ def segment_image(  # noqa: C901
         and not override_postpair
         and not override_ctd
         and (snapshot_copy_folder is None or out_snap2.exists())
+        # Skipping would hand the caller ErrCode.ALL_DONE and no masks at all, even though it asked for
+        # them in memory. The stages below load the existing derivatives instead, which is just as cheap.
+        and not return_output_instead_of_save
     ):
         logger.print(f"{out_spine.name}: Outputs are all already created and no override set, will skip")
         return output_paths, ErrCode.ALL_DONE
@@ -688,7 +691,8 @@ def segment_image(  # noqa: C901
                 models=[model_semantic, model_instance, model_labeling],  # TODO add labeling info and parameters
                 parameter={l: v for l, v in arguments.items() if "proc_" in l},
             )
-            ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
+            if not return_output_instead_of_save:
+                ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
             done_something = True
             if timing:
                 logger.print(f"Centroids took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
