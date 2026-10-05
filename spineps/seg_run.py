@@ -476,6 +476,9 @@ def segment_image(  # noqa: C901
         and not override_postpair
         and not override_ctd
         and (snapshot_copy_folder is None or out_snap2.exists())
+        # Skipping would hand the caller ErrCode.ALL_DONE and no masks at all, even though it asked for
+        # them in memory. The stages below load the existing derivatives instead, which is just as cheap.
+        and not return_output_instead_of_save
     ):
         logger.print(f"{out_spine.name}: Outputs are all already created and no override set, will skip")
         return output_paths, ErrCode.ALL_DONE
@@ -706,7 +709,8 @@ def segment_image(  # noqa: C901
                 models=[model_semantic, model_instance, model_labeling],  # TODO add labeling info and parameters
                 parameter={l: v for l, v in arguments.items() if "proc_" in l},
             )
-            ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
+            if not return_output_instead_of_save:
+                ctd.resample_from_to(input_nii_).save(out_ctd, verbose=logger)
             done_something = True
             if timing:
                 logger.print(f"Centroids took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
@@ -771,17 +775,45 @@ def output_paths_from_input(
     Builds the BIDS-conform output paths (semantic/vertebra masks, raw masks, centroids, snapshots, logits, debug and
     VIBESeg crop) used throughout the pipeline, keyed by a descriptive name.
 
+    Strict BIDS naming only works for inputs that are themselves BIDS-conform (``sub-<id>_<modality>.nii.gz``).
+    A plain file name such as ``myscan.nii.gz`` used to abort the whole run with an ``AssertionError`` from the
+    naming layer; it now falls back to non-strict naming (the file name becomes the subject id) and says so.
+
     Args:
         img_ref (BIDS_FILE): Input BIDS_FILE the outputs are derived from.
         derivative_name (str): Name of the derivatives output folder.
         snapshot_copy_folder (Path | str | None): If given, location to which the snapshot is additionally copied
             (used to build out_snap2).
         input_format (str): Format string of the input, used to name the debug and raw output subfolders.
-        non_strict_mode (bool, optional): If true, builds the paths in non-strict BIDS mode. Defaults to False.
+        non_strict_mode (bool, optional): If true, builds the paths in non-strict BIDS mode directly, without
+            attempting strict naming first. Defaults to False.
 
     Returns:
         dict[str, Path]: Mapping of output names (e.g. "out_spine", "out_vert", "out_ctd", "out_snap") to their file paths.
     """
+    if non_strict_mode:
+        return _build_output_paths(img_ref, derivative_name, snapshot_copy_folder, input_format, True, _dataset_id_ct_crop)
+    try:
+        return _build_output_paths(img_ref, derivative_name, snapshot_copy_folder, input_format, False, _dataset_id_ct_crop)
+    except (AssertionError, ValueError) as e:
+        logger.print(
+            f"'{img_ref.file['nii.gz'].name}' is not a BIDS-conform file name ({e}).",
+            "Naming the outputs in non-strict mode instead: the file name is reused as the subject id.",
+            "Name the input 'sub-<id>_<modality>.nii.gz' (e.g. sub-01_T2w.nii.gz) for strict BIDS output names.",
+            Log_Type.WARNING,
+        )
+        return _build_output_paths(img_ref, derivative_name, snapshot_copy_folder, input_format, True, _dataset_id_ct_crop)
+
+
+def _build_output_paths(
+    img_ref: BIDS_FILE,
+    derivative_name: str,
+    snapshot_copy_folder: Path | str | None,
+    input_format: str,
+    non_strict_mode: bool,
+    _dataset_id_ct_crop: int,
+) -> dict[str, Path]:
+    """Builds the output path dictionary in one naming mode; see :func:`output_paths_from_input`."""
     out_spine = img_ref.get_changed_path(
         bids_format="msk",
         parent=derivative_name,

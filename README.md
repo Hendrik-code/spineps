@@ -177,6 +177,11 @@ spineps sample -i <path-to-nifty> --model-semantic <model_name> --model-instance
 (replacing `<model_name>` with the model you want to use). You can also call SPINEPS from Python — see
 [Using the Code](#using-the-code).
 
+Any `.nii.gz` file name works: `myscan.nii.gz` is segmented just like `sub-01_T2w.nii.gz`. If the name is not
+BIDS-conform, SPINEPS says so once and names the outputs after the file instead (`sub-myscan_...`). Naming the
+input `sub-<id>_<modality>.nii.gz` additionally tells SPINEPS the modality, so it can warn you when it does not
+match the chosen model.
+
 SPINEPS prints a short citation reminder on first use and at exit. Set `SPINEPS_NO_CITATION_REMINDER=1`
 (or `true`/`yes`/`on`) to silence it.
 
