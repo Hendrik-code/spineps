@@ -26,26 +26,6 @@ from spineps.utils.citation_reminder import citation_reminder
 
 logger = No_Logger(prefix="Init")
 
-# Process exit status: 0 means every requested scan produced its outputs.
-EXIT_OK = 0
-EXIT_FAILED = 1
-
-# What to tell the user when a scan did not finish, per error code.
-_ERRCODE_EXPLANATION = {
-    ErrCode.COMPATIBILITY: (
-        "the input does not match the selected models (see the warnings above). Pick models for this "
-        "modality, or pass --ignore-inference-compatibility to run anyway."
-    ),
-    ErrCode.EMPTY: "the image or one of the predicted masks was empty. Does the input really show a spine?",
-    ErrCode.SHAPE: "the intermediate masks had mismatching shapes.",
-    ErrCode.UNKNOWN: "the instance phase produced no vertebra predictions.",
-}
-
-
-def explain_errcode(errcode: ErrCode) -> str:
-    """Returns a one-line, actionable explanation for a non-OK error code."""
-    return _ERRCODE_EXPLANATION.get(errcode, f"it failed with {errcode}.")
-
 
 # TODO replace with Class_to_ArgParse and then load only from config files!
 def parser_arguments(parser: argparse.ArgumentParser):
@@ -145,6 +125,27 @@ def parser_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--run-cprofiler", "-rcp", action="store_true", help="Runs a cprofiler over the entire action")
     parser.add_argument("--verbose", "-v", action="store_true", help="Prints much more stuff, may fully clutter your terminal")
     return parser
+
+
+# Process exit status: 0 means every requested scan produced its outputs.
+EXIT_OK = 0
+EXIT_FAILED = 1
+
+# What to tell the user when a scan did not finish, per error code.
+_ERRCODE_EXPLANATION = {
+    ErrCode.COMPATIBILITY: (
+        "the input does not match the selected models (see the warnings above). Pick models for this "
+        "modality, or pass --ignore-inference-compatibility to run anyway."
+    ),
+    ErrCode.EMPTY: "the image or one of the predicted masks was empty. Does the input really show a spine?",
+    ErrCode.SHAPE: "the intermediate masks had mismatching shapes.",
+    ErrCode.UNKNOWN: "the instance phase produced no vertebra predictions.",
+}
+
+
+def explain_errcode(errcode: ErrCode) -> str:
+    """Returns a one-line, actionable explanation for a non-OK error code."""
+    return _ERRCODE_EXPLANATION.get(errcode, f"it failed with {errcode}.")
 
 
 @citation_reminder
