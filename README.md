@@ -180,6 +180,11 @@ spineps sample -i <path-to-nifty> --model-semantic <model_name> --model-instance
 SPINEPS prints a short citation reminder on first use and at exit. Set `SPINEPS_NO_CITATION_REMINDER=1`
 (or `true`/`yes`/`on`) to silence it.
 
+**Exit status:** `spineps` exits `0` only if everything it was asked to segment produced its outputs, and
+`1` otherwise (input skipped for a model mismatch, empty mask, or -- for `dataset` -- no scan found or any
+scan failed). The reason is printed on the last lines, so `spineps sample ... || echo failed` works in
+scripts and job arrays.
+
 ### Issues
 
 - import issues: try installing via the requirements again, somethings it doesn't install everything
