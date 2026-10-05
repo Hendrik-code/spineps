@@ -138,6 +138,10 @@ def process_dataset(  # noqa: C901
             model(s). If None, uses each model's configured setting. Defaults to None.
         log_inference_time (bool, optional): If true, logs the inference time of each step. Defaults to True.
         verbose (bool, optional): If true, prints verbose information. Defaults to False.
+
+    Returns:
+        dict: Summary of the run with the keys ``seen``, ``processed``, ``already_done`` and ``failed``
+            (scan counts) plus ``failures``, a list of ``(ErrCode, path)`` for every scan that did not finish.
     """
     global logger  # noqa: PLW0603
     logger.print(f"Initialize setup for dataset in {dataset_path}", Log_Type.BOLD)
@@ -290,6 +294,20 @@ def process_dataset(  # noqa: C901
             else logger.print("Set save_log_data=True to get a detailed log. Here are the scans in question:")
         )
         logger.print(not_properly_processed)
+    if processed_seen_counter == 0:
+        logger.print(
+            f"Found no scans to process in {dataset_path}.",
+            f"Expected '{rawdata_name}/**/sub-<id>_*_<modality>.nii.gz' files for {modalities}.",
+            "Check --rawdata-name, or pass --ignore-bids-filter to process every nifty that is found.",
+            Log_Type.FAIL,
+        )
+    return {
+        "seen": processed_seen_counter,
+        "processed": processed_counter,
+        "already_done": processed_alldone_counter,
+        "failed": not_processed_ok,
+        "failures": not_properly_processed,
+    }
 
 
 @citation_reminder
