@@ -14,6 +14,30 @@ from spineps.seg_pipeline import logger
 # `X | Y` on bare types needs Python 3.10+, so this must stay `Union[...]` for the 3.9 floor.
 Modality_Pair = tuple[Union[list[Modality], Modality], Acquisition]
 
+# NIfTI file types SPINEPS reads, in the order they are preferred when a BIDS_FILE holds several.
+NIFTI_FILE_TYPES = ("nii.gz", "nii")
+
+
+def input_image_path(img_ref: BIDS_FILE):
+    """Returns the NIfTI file behind a ``BIDS_FILE``, gzipped or not.
+
+    ``BIDS_FILE.file`` is keyed by extension, so ``file["nii.gz"]`` raises ``KeyError`` for an
+    uncompressed ``.nii`` input -- which is what most DICOM converters produce by default.
+
+    Args:
+        img_ref (BIDS_FILE): The input reference.
+
+    Returns:
+        Path: Path to the image file.
+
+    Raises:
+        KeyError: If the reference holds no NIfTI file at all.
+    """
+    for file_type in NIFTI_FILE_TYPES:
+        if file_type in img_ref.file:
+            return img_ref.file[file_type]
+    raise KeyError(f"no NIfTI file in {img_ref.file}, expected one of {NIFTI_FILE_TYPES}")
+
 
 def check_model_modality_acquisition(
     model: SegmentationModel,
@@ -110,7 +134,7 @@ def check_input_model_compatibility(
     allowed_format = Modality.format_keys(model_modalities)
     allowed_acq = [*Acquisition.format_keys(model_acquisition), "iso"]
 
-    file_dir = img_ref.file["nii.gz"]
+    file_dir = input_image_path(img_ref)
     filename = file_dir.name
 
     compatible = True

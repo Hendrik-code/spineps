@@ -177,6 +177,8 @@ spineps sample -i <path-to-nifty> --model-semantic <model_name> --model-instance
 (replacing `<model_name>` with the model you want to use). You can also call SPINEPS from Python — see
 [Using the Code](#using-the-code).
 
+Both `.nii.gz` and uncompressed `.nii` inputs are read; the outputs are always written as `.nii.gz`.
+
 SPINEPS prints a short citation reminder on first use and at exit. Set `SPINEPS_NO_CITATION_REMINDER=1`
 (or `true`/`yes`/`on`) to silence it.
 
@@ -189,7 +191,7 @@ SPINEPS prints a short citation reminder on first use and at exit. Set `SPINEPS_
 ## SPINEPS Capabilities
 
 The pipeline can process either:
-- Single Nifty (.nii.gz) files
+- Single Nifty (`.nii.gz` or `.nii`) files
 - Whole Datasets
 
 ### Single nifty
@@ -200,7 +202,7 @@ Processes a single nifty file, will create a derivatves folder next to the nifty
 
 | argument | explanation |
 | :--- | --------- |
-| --input, -i   | Absolute path to the single nifty file (.nii.gz) to be processed (required) |
+| --input, -i   | Path to the single nifty file (`.nii.gz` or `.nii`) to be processed (required) |
 | --model-semantic, -ms  | The model used for the semantic segmentation (required) |
 | --model-instance, -mv, -mi  | The model used for the vertebra instance segmentation (default: instance) |
 | --model-labeling, -ml  | The (optional) VERIDAH model used for vertebra labeling (default: t2w_labeling) |

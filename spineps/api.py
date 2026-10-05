@@ -85,8 +85,8 @@ def _as_bids_file(image: ImageInput):
             yield BIDS_FILE(str(path), dataset=tmp, verbose=False)
     else:
         path = Path(image).absolute()
-        if not str(path).endswith(".nii.gz"):
-            raise ValueError(f"image must be a .nii.gz file, got {path}")
+        if not path.name.endswith((".nii.gz", ".nii")):
+            raise ValueError(f"image must be a .nii.gz or .nii file, got {path}")
         if not path.is_file():
             raise FileNotFoundError(f"image does not exist or is not a file, got {path}")
         yield BIDS_FILE(str(path), dataset=str(path.parent), verbose=False)
