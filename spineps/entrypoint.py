@@ -66,6 +66,20 @@ def resolve_companion(given: str | None, kind: str, model_semantic) -> str:
     return chosen
 
 
+def resolve_companions_into(opt: Namespace, model_semantic) -> None:
+    """Fills unset ``--model-instance`` / ``--model-labeling`` on ``opt`` with the semantic model's companions.
+
+    Called once the semantic model is loaded, so everything downstream can treat the companion models as
+    if the user had named them.
+
+    Args:
+        opt (Namespace): Parsed CLI arguments, modified in place.
+        model_semantic (SegmentationModel): The loaded semantic model whose modality decides the defaults.
+    """
+    opt.model_instance = resolve_companion(opt.model_instance, "instance", model_semantic)
+    opt.model_labeling = resolve_companion(opt.model_labeling, "labeling", model_semantic)
+
+
 # TODO replace with Class_to_ArgParse and then load only from config files!
 def parser_arguments(parser: argparse.ArgumentParser):
     """Add the shared SPINEPS processing options to an argument parser.
@@ -312,20 +326,21 @@ def run_sample(opt: Namespace):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
+    # Fill in the companion models now that the semantic model's modality is known; everything below
+    # resolves them exactly as if the user had named them.
+    resolve_companions_into(opt, model_semantic)
     # model instance
-    model_instance_id = resolve_companion(opt.model_instance, "instance", model_semantic)
-    if "/" in str(model_instance_id):
-        model_instance = get_actual_model(model_instance_id, use_cpu=opt.cpu).load()
+    if "/" in str(opt.model_instance):
+        model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
-        model_instance = get_instance_model(model_instance_id, use_cpu=opt.cpu).load()
+        model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
     # model labeling
-    model_labeling_id = resolve_companion(opt.model_labeling, "labeling", model_semantic)
-    if model_labeling_id == "none":
+    if opt.model_labeling == "none":
         model_labeling = None
-    elif "/" in str(model_labeling_id):
-        model_labeling = get_actual_model(model_labeling_id, use_cpu=opt.cpu).load()
+    elif "/" in str(opt.model_labeling):
+        model_labeling = get_actual_model(opt.model_labeling, use_cpu=opt.cpu).load()
     else:
-        model_labeling = get_labeling_model(model_labeling_id, use_cpu=opt.cpu).load()
+        model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
 
     if opt.tta is not None:
         model_semantic.set_test_time_augmentation(opt.tta)
@@ -408,21 +423,20 @@ def run_dataset(opt: Namespace):
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
 
+    resolve_companions_into(opt, model_semantic)
     # Model Instance
-    model_instance_id = resolve_companion(opt.model_instance, "instance", model_semantic)
-    if "/" in str(model_instance_id):
-        model_instance = get_actual_model(model_instance_id, use_cpu=opt.cpu).load()
+    if "/" in str(opt.model_instance):
+        model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
-        model_instance = get_instance_model(model_instance_id, use_cpu=opt.cpu).load()
+        model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
 
     # Model Labeling
-    model_labeling_id = resolve_companion(opt.model_labeling, "labeling", model_semantic)
-    if model_labeling_id == "none":
+    if opt.model_labeling == "none":
         model_labeling = None
-    elif "/" in str(model_labeling_id):
-        model_labeling = get_actual_model(model_labeling_id, use_cpu=opt.cpu).load()
+    elif "/" in str(opt.model_labeling):
+        model_labeling = get_actual_model(opt.model_labeling, use_cpu=opt.cpu).load()
     else:
-        model_labeling = get_labeling_model(model_labeling_id, use_cpu=opt.cpu).load()
+        model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
 
     if model_instance is None:
         raise ValueError("-model_instance/-mv resolved to None; pass a valid instance model id or path")
