@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import cProfile
-import os
 from argparse import Namespace
 from pathlib import Path
 from time import perf_counter
@@ -247,20 +246,23 @@ def run_sample(opt: Namespace):
         int: ``1`` on completion.
 
     Raises:
-        ValueError: If only a filename was given instead of a path to the file.
+        ValueError: If the input is not a gzipped NIfTI image (``.nii.gz``).
         FileNotFoundError: If the input path's parent directory is missing, or the input file does not exist.
     """
     input_path = Path(opt.input).absolute()
+    if not input_path.exists() and not input_path.name.endswith(".nii.gz"):
+        input_path = input_path.with_name(input_path.name + ".nii.gz")  # allow --input without the extension
+    if not input_path.parent.exists():
+        raise FileNotFoundError(f"--input/-i: the folder {input_path.parent} does not exist")
+    if not input_path.is_file():
+        raise FileNotFoundError(f"--input/-i: {input_path} does not exist or is not a file")
+    if not input_path.name.endswith(".nii.gz"):
+        raise ValueError(
+            f"--input/-i: SPINEPS reads gzipped NIfTI images (.nii.gz), got {input_path.name}. "
+            f"Compress it first, e.g. 'gzip {input_path.name}'."
+        )
     dataset = str(input_path.parent)
-    if dataset == "":
-        raise ValueError(f"-input you only gave a filename, not a path to the file, got {input_path}")
-    if not os.path.exists(dataset):  # noqa: PTH110
-        raise FileNotFoundError(f"-input parent directory does not exist, got {dataset}")
     input_path = str(input_path)
-    if not input_path.endswith(".nii.gz"):
-        input_path += ".nii.gz"
-    if not os.path.isfile(input_path):  # noqa: PTH113
-        raise FileNotFoundError(f"-input does not exist or is not a file, got {input_path}")
     # model semantic
     if "/" in str(opt.model_semantic):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
@@ -375,7 +377,7 @@ def run_dataset(opt: Namespace):
         model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
 
     if model_instance is None:
-        raise ValueError("-model_instance/-mv resolved to None; pass a valid instance model id or path")
+        raise ValueError("--model-instance/-mi resolved to None; pass a valid instance model id or path")
 
     kwargs = {
         "dataset_path": input_dir,

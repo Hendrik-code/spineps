@@ -182,7 +182,7 @@ def process_dataset(  # noqa: C901
 
     # Activate logger. Log the plain options plus the model ids -- the model objects stringify to their
     # entire inference config, which floods the log file.
-    _not_logged = ("model_instance", "model_semantic", "model_labeling", "compatible")
+    _not_logged = ("model_instance", "model_semantic", "model_labeling", "compatible", "_not_logged")
     args = {k: v for k, v in locals().items() if k not in _not_logged}
     args["model_instance"] = model_instance.modelid()
     args["model_semantic"] = [m.modelid() for m in model_semantic]
@@ -599,7 +599,7 @@ def segment_image(  # noqa: C901
                 logger.print(f"Predict semantic took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
         else:
-            logger.print("Subreg Mask already exists. Set -override_subreg to create it anew")
+            logger.print("Semantic mask already exists, loading it. Pass --override-semantic/-os to redo it")
             seg_nii_modelres = NII.load(out_spine_raw, seg=True)
             logger.print("seg_nii", seg_nii_modelres.zoom, seg_nii_modelres.orientation, seg_nii_modelres.shape)
         # Second stage
@@ -630,7 +630,7 @@ def segment_image(  # noqa: C901
                 logger.print(f"Predict instance took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
         else:
-            logger.print("Vert Mask already exists. Set -override_vert to create it anew")
+            logger.print("Vertebra mask already exists, loading it. Pass --override-instance/-oi to redo it")
             whole_vert_nii = NII.load(out_vert_raw, seg=True)
 
         # Cleanup Step
@@ -694,7 +694,7 @@ def segment_image(  # noqa: C901
                 logger.print(f"Centroids took: {perf_counter() - start_time2:.2f} seconds", Log_Type.OK, verbose=log_inference_time)
                 start_time2 = perf_counter()
         else:
-            logger.print("Centroids already exists, will load instead. Set -override_ctd = True to create it anew")
+            logger.print("Centroids already exist, loading them. Pass --override-ctd/-oc to redo them")
             ctd = POI.load(out_ctd)
 
         # return_output_instead_of_save:
