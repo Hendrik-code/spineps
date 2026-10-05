@@ -719,13 +719,16 @@ def segment_image(  # noqa: C901
             if snapshot_copy_folder is not None:
                 out_snap = [out_snap, out_snap2]
             ctd = ctd.extract_subregion(Location.Vertebra_Corpus)
+            # The model is the reliable statement about the modality; the file name is only a hint, and a CT
+            # scan that is not named "*_ct.nii.gz" used to get MR windowing in its snapshot.
+            is_ct = Modality.CT in model_semantic.modalities() or img_ref.bids_format.lower() == "ct"
             mri_snapshot(
                 img_ref,
                 vert_nii_clean,
                 ctd,
                 subreg_msk=seg_nii_clean,
                 out_path=out_snap,
-                mode="MRI" if img_ref.bids_format.lower() != "ct" else "CT",
+                mode="CT" if is_ct else "MRI",
             )
             logger.print(f"Snapshot saved into {out_snap}", Log_Type.SAVE)
             if timing:
