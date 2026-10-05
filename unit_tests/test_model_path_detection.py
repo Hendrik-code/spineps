@@ -75,36 +75,38 @@ class Test_Entrypoint_Model_Resolution(unittest.TestCase):
     def _run_sample_models(self, semantic, instance, labeling):
         """Returns which loader each --model-* argument was routed to."""
         import argparse
+        import tempfile
 
         from spineps import entrypoint
 
-        with (
-            mock.patch.object(entrypoint, "get_actual_model") as get_actual_model,
-            mock.patch.object(entrypoint, "get_semantic_model") as get_semantic_model,
-            mock.patch.object(entrypoint, "get_instance_model") as get_instance_model,
-            mock.patch.object(entrypoint, "get_labeling_model") as get_labeling_model,
-            mock.patch.object(entrypoint, "segment_image", return_value=({"out_spine": Path("/tmp/x")}, None)),
-            mock.patch.object(entrypoint, "BIDS_FILE"),
-            mock.patch("pathlib.Path.absolute", return_value=Path("/tmp/sub-01_T2w.nii.gz")),
-            mock.patch("os.path.exists", return_value=True),
-            mock.patch("os.path.isfile", return_value=True),
-        ):
-            parser = argparse.ArgumentParser()
-            entrypoint.parser_arguments(parser)
-            opt = parser.parse_args([])
-            opt.input = "/tmp/sub-01_T2w.nii.gz"
-            opt.model_semantic, opt.model_instance, opt.model_labeling = semantic, instance, labeling
-            opt.tta = None
-            try:
-                entrypoint.run_sample(opt)
-            except (TypeError, ValueError, AttributeError):
-                pass  # the mocked return value is not a real result; only the loader routing matters
-            return {
-                "actual": get_actual_model.call_count,
-                "semantic": get_semantic_model.call_count,
-                "instance": get_instance_model.call_count,
-                "labeling": get_labeling_model.call_count,
-            }
+        with tempfile.TemporaryDirectory() as td:
+            # A real file, so the input validation passes whatever it is implemented with.
+            input_path = Path(td) / "sub-01_T2w.nii.gz"
+            input_path.write_bytes(b"")
+            with (
+                mock.patch.object(entrypoint, "get_actual_model") as get_actual_model,
+                mock.patch.object(entrypoint, "get_semantic_model") as get_semantic_model,
+                mock.patch.object(entrypoint, "get_instance_model") as get_instance_model,
+                mock.patch.object(entrypoint, "get_labeling_model") as get_labeling_model,
+                mock.patch.object(entrypoint, "segment_image", return_value=({"out_spine": Path(td) / "x"}, None)),
+                mock.patch.object(entrypoint, "BIDS_FILE"),
+            ):
+                parser = argparse.ArgumentParser()
+                entrypoint.parser_arguments(parser)
+                opt = parser.parse_args([])
+                opt.input = str(input_path)
+                opt.model_semantic, opt.model_instance, opt.model_labeling = semantic, instance, labeling
+                opt.tta = None
+                try:
+                    entrypoint.run_sample(opt)
+                except (TypeError, ValueError, AttributeError):
+                    pass  # the mocked return value is not a real result; only the loader routing matters
+                return {
+                    "actual": get_actual_model.call_count,
+                    "semantic": get_semantic_model.call_count,
+                    "instance": get_instance_model.call_count,
+                    "labeling": get_labeling_model.call_count,
+                }
 
     def test_windows_paths_route_to_get_actual_model(self):
         counts = self._run_sample_models(r"C:\w\sem", r"C:\w\inst", r"C:\w\lab")
