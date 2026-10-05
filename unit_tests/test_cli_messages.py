@@ -55,8 +55,10 @@ class Test_Messages_Name_Real_Flags(unittest.TestCase):
             for quoted in re.findall(r'"([^"]*)"', line):
                 for match in self.FLAG_PATTERN.finditer(quoted):
                     candidate = match.group()
-                    # "--model-{kind}" is built at runtime; the literal prefix is not a flag on its own.
-                    if quoted[match.end() : match.end() + 1] == "{":
+                    # "--model-{kind}" is assembled at runtime, so the literal "--model" prefix in front
+                    # of the placeholder is not a flag on its own.
+                    rest = quoted[match.end() :]
+                    if rest.startswith("{") or (rest[:1] in "-_" and rest[1:2] == "{"):
                         continue
                     if "_" in candidate or candidate.startswith("--"):
                         with self.subTest(module=module.__name__, flag=candidate, line=line.strip()[:90]):
