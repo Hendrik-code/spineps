@@ -103,9 +103,12 @@ class Test_Input_Validation_Messages(unittest.TestCase):
         self.assertIn(str(missing), str(cm.exception))
 
     def test_missing_folder_names_the_folder(self):
-        with self.assertRaises(FileNotFoundError) as cm:
-            entrypoint.run_sample(self._opt("/this/path/does/not/exist/scan.nii.gz"))
-        self.assertIn("/this/path/does/not/exist", str(cm.exception))
+        with tempfile.TemporaryDirectory() as td:
+            # a native path, so the assertion holds on Windows too
+            missing_folder = Path(td) / "does" / "not" / "exist"
+            with self.assertRaises(FileNotFoundError) as cm:
+                entrypoint.run_sample(self._opt(str(missing_folder / "scan.nii.gz")))
+            self.assertIn(str(missing_folder), str(cm.exception))
 
     def test_extension_may_still_be_omitted(self):
         # `--input sub-01_T2w` keeps working: the extension is appended only if nothing is there already.
