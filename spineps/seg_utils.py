@@ -124,11 +124,19 @@ def check_input_model_compatibility(
     logger_texts = [f"{filename} is incompatible with the selected model."]
 
     if input_format not in allowed_format:
-        logger_texts.append(f"Input format '{input_format}' incompatible, model expected {allowed_format}.")
-        if not ignore_modality:
-            compatible = False
+        if input_format not in Modality.known_format_keys():
+            # The file name carries no modality tag at all (e.g. "myscan.nii.gz"), so it cannot contradict
+            # the chosen model. Refusing here meant SPINEPS silently did nothing on any non-BIDS input.
+            logger_texts.append(
+                f"File name does not say which modality '{filename}' is, assuming it matches the selected "
+                f"model ({allowed_format}). Name it 'sub-<id>_<modality>.nii.gz' to make this explicit."
+            )
         else:
-            add_ignore_text(logger_texts)
+            logger_texts.append(f"Input format '{input_format}' incompatible, model expected {allowed_format}.")
+            if not ignore_modality:
+                compatible = False
+            else:
+                add_ignore_text(logger_texts)
     # `allowed_format` is a list, so the old `allowed_format not in Modality.format_keys(...)` was always True.
     if has_seg_key and Modality.SEG not in model_modalities:
         logger_texts.append("Found a 'seg'-key in the filename, but the model does not take a segmentation as input.")
