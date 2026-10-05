@@ -177,8 +177,6 @@ spineps sample -i <path-to-nifty> --model-semantic <model_name> --model-instance
 (replacing `<model_name>` with the model you want to use). You can also call SPINEPS from Python — see
 [Using the Code](#using-the-code).
 
-Both `.nii.gz` and uncompressed `.nii` inputs are read; the outputs are always written as `.nii.gz`.
-
 SPINEPS prints a short citation reminder on first use and at exit. Set `SPINEPS_NO_CITATION_REMINDER=1`
 (or `true`/`yes`/`on`) to silence it.
 
@@ -191,7 +189,7 @@ SPINEPS prints a short citation reminder on first use and at exit. Set `SPINEPS_
 ## SPINEPS Capabilities
 
 The pipeline can process either:
-- Single Nifty (`.nii.gz` or `.nii`) files
+- Single Nifty files, `.nii.gz` or uncompressed `.nii` (the outputs are always written as `.nii.gz`)
 - Whole Datasets
 
 ### Single nifty
