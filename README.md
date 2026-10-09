@@ -1,5 +1,5 @@
 <h1 align="center">
-<img src="docs/spineps_logo.png" width="300">
+<img src="docs/spineps_logo.png" width="500">
 </h1><br>
 
 [![arXiv](https://img.shields.io/badge/Paper-10.1007-blue)](https://link.springer.com/article/10.1007/s00330-024-11155-y)
