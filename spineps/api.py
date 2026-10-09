@@ -25,7 +25,13 @@ from typing import Union
 from TPTBox import BIDS_FILE, NII, POI
 
 from spineps.config import InstanceConfig, LabelingConfig, PostConfig, SemanticConfig
-from spineps.get_models import get_actual_model, get_instance_model, get_labeling_model, get_semantic_model
+from spineps.get_models import (
+    get_actual_model,
+    get_instance_model,
+    get_labeling_model,
+    get_semantic_model,
+    looks_like_model_path,
+)
 from spineps.phase_labeling import VertLabelingClassifier
 from spineps.seg_enums import ErrCode
 from spineps.seg_model import SegmentationModel
@@ -68,7 +74,7 @@ def _resolve_model(model: ModelInput | None, getter, use_cpu: bool):
         return None
     if isinstance(model, (SegmentationModel, VertLabelingClassifier)):
         return model
-    if "/" in str(model):  # treat anything path-like as an explicit model folder
+    if looks_like_model_path(model):  # an explicit model folder, not a built-in model id
         return get_actual_model(model, use_cpu=use_cpu).load()
     return getter(str(model), use_cpu=use_cpu).load()
 

@@ -18,8 +18,6 @@ exclude = ["spineps/models", "spineps/example"]
 [tool.poetry.scripts]
 spineps = 'spineps.entrypoint:entry_point'
 
-spineps_ = 'spineps.entrypoint:entrypoint_no_checks'
-
 [tool.poetry.dependencies]
 python = "^3.9 || ^3.10 || ^3.11 || ^3.12 || ^3.13 || ^3.14"
 pytorch-lightning = "^2.0.8"
