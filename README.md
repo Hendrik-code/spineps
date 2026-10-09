@@ -1,3 +1,7 @@
+<h1 align="center">
+<img src="docs/spineps_logo.png" width="300">
+</h1><br>
+
 [![arXiv](https://img.shields.io/badge/Paper-10.1007-blue)](https://link.springer.com/article/10.1007/s00330-024-11155-y)
 [![Python Versions](https://img.shields.io/pypi/pyversions/spineps)](https://pypi.org/project/spineps/)
 [![PyPI version spineps](https://badge.fury.io/py/spineps.svg)](https://pypi.python.org/pypi/spineps/)
@@ -6,8 +10,6 @@
 [![tests](https://github.com/Hendrik-code/spineps/actions/workflows/tests.yml/badge.svg)](https://github.com/Hendrik-code/spineps/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Documentation Status](https://readthedocs.org/projects/spineps/badge/?version=latest)](https://spineps.readthedocs.io)
-
-# SPINEPS
 
 **Automatic whole-spine segmentation of MR (and CT) images** — a two-phase approach to multi-class semantic and
 instance segmentation, with **VERIDAH** ("Solving Enumeration Anomaly Aware Vertebra Labeling across Imaging
