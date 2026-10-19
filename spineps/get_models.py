@@ -26,6 +26,25 @@ _NO_MODELS_AVAILABLE_MSG = (
 )
 
 
+def looks_like_model_path(model: str | Path) -> bool:
+    """Tells an explicit model folder apart from a built-in model id.
+
+    A built-in model id is a bare name such as ``t2w`` or ``instance``; anything that carries a path
+    separator, or that is already a :class:`~pathlib.Path`, is an explicit model folder. The previous test
+    was ``"/" in str(model)``, which classified every Windows path (``C:\\weights\\t2w``) and every
+    relative ``Path("weights")`` as a model id -- and then failed with "Model ... does not exist, options
+    are [...]" instead of loading the folder the user pointed at.
+
+    Args:
+        model (str | Path): The ``--model-semantic`` / ``--model-instance`` / ``--model-labeling`` argument.
+
+    Returns:
+        bool: True if the argument should be loaded as a model folder, False if it is a model id.
+    """
+    text = str(model)
+    return isinstance(model, Path) or "/" in text or "\\" in text
+
+
 def _get_model_by_name(
     model_name: str,
     modelid2folder: dict[str, Path | str],
