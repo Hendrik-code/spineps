@@ -16,10 +16,12 @@ from spineps.get_models import (
     get_instance_model,
     get_labeling_model,
     get_semantic_model,
+    looks_like_model_path,
     modelid2folder_instance,
     modelid2folder_labeling,
     modelid2folder_semantic,
 )
+from spineps.seg_enums import ErrCode
 from spineps.seg_run import process_dataset, segment_image
 from spineps.utils.citation_reminder import citation_reminder
 
@@ -126,12 +128,38 @@ def parser_arguments(parser: argparse.ArgumentParser):
     return parser
 
 
+# Process exit status: 0 means every requested scan produced its outputs.
+EXIT_OK = 0
+EXIT_FAILED = 1
+
+# What to tell the user when a scan did not finish, per error code.
+_ERRCODE_EXPLANATION = {
+    ErrCode.COMPATIBILITY: (
+        "the input does not match the selected models (see the warnings above). Pick models for this "
+        "modality, or pass --ignore-inference-compatibility to run anyway."
+    ),
+    ErrCode.EMPTY: "the image or one of the predicted masks was empty. Does the input really show a spine?",
+    ErrCode.SHAPE: "the intermediate masks had mismatching shapes.",
+    ErrCode.UNKNOWN: "the instance phase produced no vertebra predictions.",
+}
+
+
+def explain_errcode(errcode: ErrCode) -> str:
+    """Returns a one-line, actionable explanation for a non-OK error code."""
+    return _ERRCODE_EXPLANATION.get(errcode, f"it failed with {errcode}.")
+
+
 @citation_reminder
 def entry_point():
     """Parse command-line arguments and dispatch to the ``sample`` or ``dataset`` workflow.
 
     Builds the top-level parser with the ``sample`` and ``dataset`` subcommands, parses ``sys.argv`` and
     calls :func:`run_sample` or :func:`run_dataset` accordingly.
+
+    Returns:
+        int: ``EXIT_OK`` (0) if everything requested was segmented, ``EXIT_FAILED`` (1) otherwise. The
+            ``spineps`` console script uses this as the process exit status, so shell scripts and job
+            arrays can tell a failed run from a successful one.
 
     Raises:
         NotImplementedError: If an unrecognized subcommand is supplied.
@@ -225,9 +253,9 @@ def entry_point():
     if opt.verbose:
         logger.print("Parsed arguments:", opt)
     if opt.cmd == "sample":
-        run_sample(opt)
+        return run_sample(opt)
     elif opt.cmd == "dataset":
-        run_dataset(opt)
+        return run_dataset(opt)
     else:
         raise NotImplementedError("cmd", opt.cmd)
 
@@ -244,7 +272,8 @@ def run_sample(opt: Namespace):
             override and saving flags, device and verbosity options).
 
     Returns:
-        int: ``1`` on completion.
+        int: ``EXIT_OK`` (0) if the scan was segmented (or was already done), ``EXIT_FAILED`` (1) if it was
+            skipped or failed -- the reason is logged.
 
     Raises:
         ValueError: If only a filename was given instead of a path to the file.
@@ -262,19 +291,19 @@ def run_sample(opt: Namespace):
     if not os.path.isfile(input_path):  # noqa: PTH113
         raise FileNotFoundError(f"-input does not exist or is not a file, got {input_path}")
     # model semantic
-    if "/" in str(opt.model_semantic):
+    if looks_like_model_path(opt.model_semantic):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
     # model instance
-    if "/" in str(opt.model_instance):
+    if looks_like_model_path(opt.model_instance):
         model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
         model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
     # model labeling
     if opt.model_labeling == "none":
         model_labeling = None
-    elif "/" in str(opt.model_labeling):
+    elif looks_like_model_path(opt.model_labeling):
         model_labeling = get_actual_model(opt.model_labeling, use_cpu=opt.cpu).load()
     else:
         model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
@@ -319,14 +348,18 @@ def run_sample(opt: Namespace):
             info={"desc": "cprofile", "mod": bids_sample.format, "ses": timestamp},
         )
         with cProfile.Profile() as pr:
-            segment_image(**kwargs)
+            output_paths, errcode = segment_image(**kwargs)
         pr.dump_stats(cprofile_out)
         logger.print(f"Saved cprofile log into {cprofile_out}", Log_Type.SAVE)
     else:
-        segment_image(**kwargs)
+        output_paths, errcode = segment_image(**kwargs)
 
-    logger.print(f"Sample took: {perf_counter() - start_time} seconds")
-    return 1
+    logger.print(f"Sample took: {perf_counter() - start_time:.2f} seconds")
+    if errcode not in (ErrCode.OK, ErrCode.ALL_DONE):
+        logger.print(f"{Path(input_path).name} was not segmented:", explain_errcode(errcode), Log_Type.FAIL)
+        return EXIT_FAILED
+    logger.print(f"Done. Results are in {output_paths['out_spine'].parent}", Log_Type.OK)
+    return EXIT_OK
 
 
 @citation_reminder
@@ -341,7 +374,8 @@ def run_dataset(opt: Namespace):
             derivatives names, model ids/paths, override/compatibility/saving flags, device and verbosity options).
 
     Returns:
-        int: ``1`` on completion.
+        int: ``EXIT_OK`` (0) if every scan found was segmented, ``EXIT_FAILED`` (1) if any scan failed or no
+            scan was found at all -- the reasons are logged.
 
     Raises:
         FileNotFoundError: If the directory does not exist.
@@ -355,13 +389,13 @@ def run_dataset(opt: Namespace):
         raise NotADirectoryError(f"-directory is not a directory, got {input_dir}")
 
     # Model semantic
-    if "/" in str(opt.model_semantic):
+    if looks_like_model_path(opt.model_semantic):
         model_semantic = get_actual_model(opt.model_semantic, use_cpu=opt.cpu).load()
     else:
         model_semantic = get_semantic_model(opt.model_semantic, use_cpu=opt.cpu).load()
 
     # Model Instance
-    if "/" in str(opt.model_instance):
+    if looks_like_model_path(opt.model_instance):
         model_instance = get_actual_model(opt.model_instance, use_cpu=opt.cpu).load()
     else:
         model_instance = get_instance_model(opt.model_instance, use_cpu=opt.cpu).load()
@@ -369,7 +403,7 @@ def run_dataset(opt: Namespace):
     # Model Labeling
     if opt.model_labeling == "none":
         model_labeling = None
-    elif "/" in str(opt.model_labeling):
+    elif looks_like_model_path(opt.model_labeling):
         model_labeling = get_actual_model(opt.model_labeling, use_cpu=opt.cpu).load()
     else:
         model_labeling = get_labeling_model(opt.model_labeling, use_cpu=opt.cpu).load()
@@ -415,13 +449,19 @@ def run_dataset(opt: Namespace):
         cprofile_out.mkdir(parents=True, exist_ok=True)
         cprofile_out = cprofile_out.joinpath(f"spineps_dataset_{start_time_short}_cprofiler_log.log")
         with cProfile.Profile() as pr:
-            process_dataset(**kwargs)
+            summary = process_dataset(**kwargs)
         pr.dump_stats(cprofile_out)
         logger.print(f"Saved cprofile log into {cprofile_out}", Log_Type.SAVE)
     else:
-        process_dataset(**kwargs)
-    return 1
+        summary = process_dataset(**kwargs)
+
+    for errcode, scan in summary["failures"]:
+        logger.print(f"{Path(scan).name}:", explain_errcode(errcode), Log_Type.FAIL)
+    if summary["seen"] == 0 or summary["failed"] > 0:
+        return EXIT_FAILED
+    logger.print(f"Done. Results are in {input_dir.joinpath(opt.derivative_name)}", Log_Type.OK)
+    return EXIT_OK
 
 
 if __name__ == "__main__":
-    entry_point()
+    raise SystemExit(entry_point())
