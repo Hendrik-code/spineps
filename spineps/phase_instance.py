@@ -137,7 +137,8 @@ def predict_instance_mask(
         seg_nii (NII): Subregion (semantic) segmentation mask used as input.
         model (SegmentationModel): Instance model producing the per-vertebra-body cutout predictions.
         debug_data (dict): Dictionary for collecting intermediate results across the pipeline.
-        pad_size (int, optional): Edge padding added before processing and removed afterwards. Defaults to 0.
+        pad_size (int, optional): Edge padding (in voxels of the model resolution) added around the mask
+            before the cutouts are taken and removed again from the result. Defaults to 0.
         proc_inst_fill_3d_holes (bool, optional): Whether to fill 3D holes in the final vertebra mask. Defaults to True.
         proc_detect_and_solve_merged_corpi (bool, optional): Whether to detect and split merged vertebral bodies. Defaults to True.
         proc_corpus_clean (bool, optional): Whether to clean small corpus connected-component artifacts. Defaults to True.
@@ -170,15 +171,16 @@ def predict_instance_mask(
         seg_nii_rdy = seg_nii.reorient(verbose=logger)
         debug_put(debug_data, "inst_uncropped_Subreg_nii_a_PIR", seg_nii_rdy.copy)
 
-        # Padding?
-        if pad_size > 0:
-            seg_nii_rdy = seg_nii_rdy.apply_pad(pad_size)
-
         zms = seg_nii_rdy.zoom
         logger.print("zms", zms, verbose=verbose)
         expected_zms = model.calc_recommended_resampling_zoom(seg_nii_rdy.zoom)
         if not seg_nii_rdy.assert_affine(zoom=expected_zms, raise_error=False):
             seg_nii_rdy.rescale_(expected_zms, verbose=logger)  # in PIR
+
+        # Padding? After the rescale, so that removing it at the end is the exact inverse: padding first
+        # meant `pad_size` input voxels became a different number of voxels in the rescaled grid.
+        if pad_size > 0:
+            seg_nii_rdy = seg_nii_rdy.apply_pad(pad_size)
         seg_nii_uncropped = seg_nii_rdy.copy()
         logger.print(
             "Vertebra seg_nii_uncropped", seg_nii_uncropped.zoom, seg_nii_uncropped.orientation, seg_nii_uncropped.shape, verbose=verbose
@@ -262,9 +264,11 @@ def predict_instance_mask(
         whole_vert_nii_uncropped = seg_nii_uncropped.set_array(uncropped_vert_mask)
         debug_put(debug_data, "inst_uncropped_vert_arr_a", whole_vert_nii_uncropped.copy)
 
-        # Uncrop again
+        # Remove the padding again. apply_pad() is not in place and returns a new NII, so the result has
+        # to be rebound -- dropping it left the padding on the returned mask, which is then neither the
+        # shape nor the field of view the caller handed in.
         if pad_size > 0:
-            whole_vert_nii_uncropped.apply_pad(-pad_size)
+            whole_vert_nii_uncropped = whole_vert_nii_uncropped.apply_pad(-pad_size, verbose=logger)
 
     return whole_vert_nii_uncropped, ErrCode.OK
 
