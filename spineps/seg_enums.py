@@ -124,6 +124,24 @@ class Modality(Enum_Compare):
                 raise NotImplementedError(modality)
         return result
 
+    @classmethod
+    def known_format_keys(cls) -> list[str]:
+        """Every file-name key that denotes any modality SPINEPS knows about.
+
+        Used to tell "this file name names a different modality" (a real mismatch) apart from "this file name
+        does not name a modality at all" (an input that simply is not BIDS-tagged, e.g. ``myscan.nii.gz``).
+
+        Returns:
+            list[str]: All format keys of all modalities that define them.
+        """
+        keys: list[str] = []
+        for modality in cls:
+            try:
+                keys += cls.format_keys(modality)
+            except NotImplementedError:  # modality without file-name keys (e.g. PD, FLAIR)
+                continue
+        return keys
+
 
 class Acquisition(Enum_Compare):
     """Acquisition plane of a scan.
